@@ -149,7 +149,11 @@ const DashboardView: React.FC = () => {
                     </div>
                   )}
                   <div className="flex items-center gap-2">
+<<<<<<< feature/tabbed-dashboard-layout-5884753225213578549
                     <input
+=======
+                    <input 
+>>>>>>> main
                       type="checkbox"
                       id="private-toggle"
                       checked={isPrivate}
