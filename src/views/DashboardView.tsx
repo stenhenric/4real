@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { collection, query, limit, orderBy, onSnapshot, setDoc, doc, where } from 'firebase/firestore';
+import { collection, query, limit, orderBy, onSnapshot, setDoc, doc, where, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
@@ -44,6 +44,11 @@ const DashboardView: React.FC = () => {
   }, []);
 
   const createGame = async () => {
+    if (!user) {
+      alert("You must be signed in to create a match.");
+      return;
+    }
+
     const amount = parseFloat(wager);
     if (isPrivate && (isNaN(amount) || amount < 0)) {
       alert("Please enter a valid wager amount.");
@@ -55,31 +60,42 @@ const DashboardView: React.FC = () => {
       return;
     }
 
-    const roomId = Math.random().toString(36).substring(2, 9);
+    const matchRef = doc(collection(db, 'matches'));
+    const roomId = matchRef.id;
 
     try {
-      // 1. If private, lock the wager from creator first
-      if (isPrivate && amount > 0) {
-        const userRef = doc(db, 'users', user!.uid);
-        await setDoc(userRef, {
-          balance: (userData?.balance || 0) - amount
-        }, { merge: true });
-      }
+      await runTransaction(db, async (transaction) => {
+        if (isPrivate && amount > 0) {
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await transaction.get(userRef);
+          const currentBalance = Number(userSnap.data()?.balance ?? 0);
 
-      // 2. Create the match record with roomId as DOC ID
-      const matchRef = doc(db, 'matches', roomId);
-      await setDoc(matchRef, {
-        roomId,
-        player1Id: user?.uid,
-        p1Username: userData?.username,
-        status: 'waiting',
-        isPrivate,
-        wager: isPrivate ? amount : 0,
-        timestamp: new Date().toISOString()
+          if (currentBalance < amount) {
+            throw new Error('INSUFFICIENT_BALANCE');
+          }
+
+          transaction.set(userRef, {
+            balance: currentBalance - amount
+          }, { merge: true });
+        }
+
+        transaction.set(matchRef, {
+          roomId,
+          player1Id: user.uid,
+          p1Username: userData?.username,
+          status: 'waiting',
+          isPrivate,
+          wager: isPrivate ? amount : 0,
+          timestamp: new Date().toISOString()
+        });
       });
 
       navigate(`/game/${roomId}`);
     } catch (error) {
+      if (error instanceof Error && error.message === 'INSUFFICIENT_BALANCE') {
+        alert("Insufficient balance to lock wager.");
+        return;
+      }
       console.error("Match creation failed:", error);
       alert("System error during minting. Try again.");
     }
@@ -149,11 +165,7 @@ const DashboardView: React.FC = () => {
                     </div>
                   )}
                   <div className="flex items-center gap-2">
-<<<<<<< feature/tabbed-dashboard-layout-5884753225213578549
                     <input
-=======
-                    <input 
->>>>>>> main
                       type="checkbox"
                       id="private-toggle"
                       checked={isPrivate}
