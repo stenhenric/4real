@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "henricstenson@gmail.com" ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.username != null; // For leaderboards
+      
+      allow create: if isOwner(userId) && 
+        incoming().keys().hasAll(['username', 'balance', 'elo']) &&
+        incoming().username is string && incoming().username.size() >= 3 &&
+        incoming().balance == 0 &&
+        incoming().elo == 1000 &&
+        (!('isAdmin' in incoming()) || incoming().isAdmin == false);
+        
+      allow update: if (isOwner(userId) || isAdmin()) && (
+        // Action: User updating their own profile (avatar/wallet)
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['tonWallet', 'username'])) ||
+        // Action: Admin releasing funds or updating score (Game result or Order completion)
+        (isAdmin() && incoming().diff(existing()).affectedKeys().hasAny(['balance', 'elo', 'isAdmin']))
+      );
+    }
+
+    // --- Matches ---
+    match /matches/{matchId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && 
+        incoming().player1Id == request.auth.uid &&
+        incoming().status == 'active';
+      allow update: if isSignedIn() && (
+        // Only players can update moves or status
+        (request.auth.uid == existing().player1Id || request.auth.uid == existing().player2Id) &&
+        incoming().diff(existing()).affectedKeys().hasAny(['moveHistory', 'status', 'winnerId', 'player2Id', 'p2Username'])
+      ) || isAdmin();
+    }
+
+    // --- Orders (Trades) ---
+    match /orders/{orderId} {
+      allow read: if isOwner(existing().userId) || isAdmin();
+      allow create: if isSignedIn() && 
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'PENDING' &&
+        incoming().createdAt == request.time;
+      allow update: if isAdmin() && 
+        incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+    }
+  }
+}

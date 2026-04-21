@@ -1,0 +1,142 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Indie+Flower&family=Inter:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Caveat", "Indie Flower", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-paper: #F2EFE9;
+  --color-ink-blue: #1A365D;
+  --color-ink-red: #9B2C2C;
+  --color-ink-black: #1A1A1A;
+  --color-marker-yellow: rgba(255, 255, 0, 0.4);
+}
+
+body {
+  @apply bg-paper text-ink-black min-h-screen font-sans antialiased;
+  background-image: repeating-linear-gradient(var(--color-paper) 0px, var(--color-paper) 23px, #D1D5DB 24px);
+  background-size: 100% 24px;
+}
+
+.notebook-bg {
+  background-image: repeating-linear-gradient(var(--color-paper) 0px, var(--color-paper) 23px, #D1D5DB 24px);
+  background-size: 100% 24px;
+}
+
+.paper-texture {
+  position: relative;
+}
+
+.paper-texture::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url('https://www.transparenttextures.com/patterns/recycled-paper.png');
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Handwritten inputs */
+input, textarea {
+  @apply outline-none bg-transparent;
+}
+
+/* Custom scrollbar for sketchy feel */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.1);
+  border-radius: 10px;
+}
+
+.sketchy-border, .rough-border {
+  border: 2.5px solid var(--color-ink-black);
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+}
+
+.sticky-note {
+  background: #fff9c4;
+  transform: rotate(-1deg);
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+  border-left: 1px solid #fbc02d;
+}
+
+.tape {
+  background: rgba(255, 255, 255, 0.4);
+  width: 60px;
+  height: 25px;
+  position: absolute;
+  transform: rotate(-5deg);
+  top: -10px;
+  left: 50%;
+  margin-left: -30px;
+  border: 1px solid rgba(0,0,0,0.05);
+  pointer-events: none;
+}
+
+.highlighter {
+  position: absolute;
+  height: 10px;
+  background: var(--color-marker-yellow);
+  z-index: -1;
+  transform: rotate(-1deg);
+}
+
+.sketch-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 10px;
+  background: rgba(26, 71, 171, 0.05);
+}
+
+.slot {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-ink-blue);
+  border-radius: 50%;
+  position: relative;
+}
+
+.disc-red {
+  background: repeating-conic-gradient(var(--color-ink-red) 0% 25%, transparent 0% 50%) 50% / 2px 2px;
+  border: 1px solid var(--color-ink-red);
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-5px) rotate(-1deg); }
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 3s ease-in-out infinite;
+}
+
+@keyframes sketchy-wobble {
+  0%, 100% { 
+    border-radius: 255px 15px 225px 15px/15px 225px 15px 255px; 
+    transform: scale(1.05) rotate(-1deg); 
+  }
+  33% { 
+    border-radius: 15px 225px 15px 255px/225px 15px 255px 15px; 
+    transform: scale(1.06) rotate(0deg); 
+  }
+  66% { 
+    border-radius: 225px 15px 255px 15px/15px 255px 15px 225px; 
+    transform: scale(1.04) rotate(-2deg); 
+  }
+}
+
+.active-player-highlight {
+  border: 2.5px solid var(--color-ink-black);
+  animation: sketchy-wobble 1.5s linear infinite;
+  background-color: white;
+  box-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+}
