@@ -97,7 +97,7 @@ const DashboardView: React.FC = () => {
         return;
       }
       console.error("Match creation failed:", error);
-      alert("System error during minting. Try again.");
+      alert("Match creation failed. Please try again.");
     }
   };
 
