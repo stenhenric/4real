@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
+import { useToast } from '../lib/ToastContext';
 import { SketchyButton } from '../components/SketchyButton';
 import { Landmark, Upload, History, StickyNote } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -12,6 +13,7 @@ const BankView: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const { success, error: showError } = useToast();
   const [orders, setOrders] = useState<any[]>([]);
 
   useEffect(() => {
@@ -21,6 +23,7 @@ const BankView: React.FC = () => {
         setOrders(data);
       } catch (error) {
         console.error('Failed to fetch orders:', error);
+        showError('Failed to fetch ledger history.');
       }
     };
 
@@ -33,12 +36,12 @@ const BankView: React.FC = () => {
 
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      alert("Invalid amount");
+      showError("Invalid amount entered.");
       return;
     }
 
     if (activeTab === 'sell' && parsedAmount > (userData?.balance || 0)) {
-      alert("Insufficient balance to withdraw.");
+      showError("Insufficient balance to withdraw.");
       return;
     }
 
@@ -55,11 +58,11 @@ const BankView: React.FC = () => {
       setOrders([order, ...orders]);
       setAmount('');
       setProofUrl('');
-      alert(`${activeTab.toUpperCase()} Order submitted successfully.`);
+      success(`${activeTab.toUpperCase()} Order submitted successfully. Awaiting merchant approval.`);
       await refreshUser();
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Transaction failed');
+      showError(err.message || 'Transaction failed');
     } finally {
       setLoading(false);
     }
@@ -74,9 +77,10 @@ const BankView: React.FC = () => {
 
       setOrders(orders.map(o => o._id === orderId ? updatedOrder : o));
       await refreshUser();
+      success(`Order status updated to ${newStatus}.`);
     } catch (err) {
       console.error(err);
-      alert('Failed to update status.');
+      showError('Failed to update status.');
     }
   };
 

@@ -6,6 +6,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { ToastProvider } from './lib/ToastContext';
 import { TonConnectUIProvider } from '@tonconnect/ui-react';
 
 // Components
@@ -52,11 +53,13 @@ export default function App() {
 
   return (
     <TonConnectUIProvider manifestUrl={manifestUrl}>
-      <AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
         <BrowserRouter>
           <AppRoutes />
         </BrowserRouter>
       </AuthProvider>
+      </ToastProvider>
     </TonConnectUIProvider>
   );
 }
