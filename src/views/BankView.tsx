@@ -6,10 +6,12 @@ import { SketchyButton } from '../components/SketchyButton';
 import { Landmark, ArrowUpRight, ArrowDownRight, Store, History } from 'lucide-react';
 import MerchantView from './MerchantView';
 import request from '../lib/api/apiClient';
+import DepositView from './DepositView';
+import WithdrawView from './WithdrawView';
 
 const BankView: React.FC = () => {
   const { userData } = useAuth();
-  const [activeView, setActiveView] = useState<'portal' | 'merchant'>('portal');
+  const [activeView, setActiveView] = useState<'portal' | 'merchant' | 'deposit' | 'withdraw'>('portal');
   const [transactions, setTransactions] = useState<any[]>([]);
 
   useEffect(() => {
@@ -40,6 +42,34 @@ const BankView: React.FC = () => {
     );
   }
 
+  if (activeView === 'deposit') {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setActiveView('portal')}
+          className="text-sm font-bold uppercase underline hover:opacity-70 transition-opacity mb-4 inline-block"
+        >
+          &larr; Back to Bank Portal
+        </button>
+        <DepositView />
+      </div>
+    );
+  }
+
+  if (activeView === 'withdraw') {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setActiveView('portal')}
+          className="text-sm font-bold uppercase underline hover:opacity-70 transition-opacity mb-4 inline-block"
+        >
+          &larr; Back to Bank Portal
+        </button>
+        <WithdrawView />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       {/* Header */}
@@ -55,23 +85,23 @@ const BankView: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {/* Deposit Card */}
-        <SketchyContainer roughness={1} className="bg-white/80 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl cursor-not-allowed opacity-50">
+        <SketchyContainer roughness={1} className="bg-white/80 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl">
           <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mb-4">
             <ArrowDownRight size={40} className="text-green-700" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Deposit</h2>
           <p className="text-xs font-mono font-bold opacity-50 mb-6">Automated TON Deposit</p>
-          <SketchyButton disabled className="w-full">Coming Soon</SketchyButton>
+          <SketchyButton onClick={() => setActiveView('deposit')} className="w-full">Deposit TON</SketchyButton>
         </SketchyContainer>
 
         {/* Withdraw Card */}
-        <SketchyContainer roughness={1} className="bg-white/80 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl cursor-not-allowed opacity-50">
+        <SketchyContainer roughness={1} className="bg-white/80 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl">
           <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mb-4">
             <ArrowUpRight size={40} className="text-red-700" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Withdraw</h2>
           <p className="text-xs font-mono font-bold opacity-50 mb-6">Automated TON Withdraw</p>
-          <SketchyButton disabled className="w-full">Coming Soon</SketchyButton>
+          <SketchyButton onClick={() => setActiveView('withdraw')} className="w-full">Withdraw TON</SketchyButton>
         </SketchyContainer>
 
         {/* Merchant Card */}
