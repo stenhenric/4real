@@ -47,7 +47,7 @@ export const requestWithdrawalHandler = async (req: AuthRequest, res: Response):
     const userId = req.user!.id;
     const { toAddress, amountUsdt } = req.body;
 
-    if (!toAddress || !amountUsdt || amountUsdt <= 0) {
+    if (!toAddress || !amountUsdt || !Number.isFinite(amountUsdt) || amountUsdt <= 0) {
       res.status(400).json({ error: 'Invalid toAddress or amountUsdt' });
       return;
     }
