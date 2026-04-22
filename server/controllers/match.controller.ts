@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { MatchService } from '../services/match.service';
 import { UserService } from '../services/user.service';
@@ -34,7 +35,7 @@ export class MatchController {
       }
 
       // We just create a roomId, and let socket handle the rest for now, or insert properly
-      const roomId = Math.random().toString(36).substring(2, 8);
+      const roomId = crypto.randomBytes(3).toString('hex');
 
       const match = await MatchService.createMatch({
         roomId,
