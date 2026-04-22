@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 
 export async function generateDepositMemo(userId: string) {
   const db = mongoose.connection.db;
   if (!db) throw new Error("Database not connected");
 
-  const memo = `d-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const secureRandomStr = crypto.randomBytes(2).toString('hex');
+  const memo = `d-${userId}-${Date.now()}-${secureRandomStr}`;
 
   await db.collection('deposit_memos').insertOne({
     memo,
