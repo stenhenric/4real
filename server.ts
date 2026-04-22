@@ -6,6 +6,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cors from 'cors';
 import connectDB from './server/config/db';
+import { setupIndexes } from './server/lib/setup-db';
+import { pollDeposits } from './server/workers/deposit-poller';
+import { initWorker, runWithdrawalWorker, recoverStuckWithdrawals } from './server/workers/withdrawal-worker';
 
 import authRoutes from './server/routes/auth.routes';
 import usersRoutes from './server/routes/users.routes';
@@ -20,6 +23,18 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   await connectDB();
+
+  // Initialize TON Payments Engine
+  await setupIndexes();
+  try {
+    await initWorker();
+    await recoverStuckWithdrawals();
+    setInterval(() => pollDeposits(), 15_000);
+    setInterval(() => runWithdrawalWorker(), 5_000);
+  } catch(e) {
+    console.error('Error starting TON workers', e);
+  }
+
 
   const app = express();
   app.use(cors());
