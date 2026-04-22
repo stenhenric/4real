@@ -1,4 +1,5 @@
 import express from 'express';
+import { getJwtSecret } from '../config/config.ts';
 type Request = express.Request;
 type Response = express.Response;
 type NextFunction = express.NextFunction;
@@ -17,7 +18,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     return;
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || 'secret', (err: any, user: any) => {
+  jwt.verify(token, getJwtSecret(), (err: any, user: any) => {
     if (err) {
       res.status(403).json({ error: 'Invalid token' });
       return;

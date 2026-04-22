@@ -183,7 +183,6 @@ async function processIncomingTransfer(db: mongoose.mongo.Db, tx: JettonTransfer
       }, { session });
     });
 
-    console.log(`Deposit confirmed: user=${userId} amount=${Number(receivedRaw)/1e6} USDT tx=${txHash}`);
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
       return;

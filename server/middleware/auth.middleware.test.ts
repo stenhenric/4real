@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 // Mock express NextFunction
 const mockNext = () => {};
 
+process.env.JWT_SECRET = 'test-secret';
+
 // Import the middleware
 import { authenticateToken, requireAdmin } from './auth.middleware.ts';
 
