@@ -78,8 +78,8 @@ const ProfileView: React.FC = () => {
               </div>
               <div className="w-px h-12 bg-black/10"></div>
               <div className="text-center">
-                <p className="text-[10px] uppercase font-bold opacity-40 tracking-tighter mb-1">GLOBAL RANK</p>
-                <p className="text-3xl font-bold italic">#4</p>
+                <p className="text-[10px] uppercase font-bold opacity-40 tracking-tighter mb-1">RECORD (W-L-D)</p>
+                <p className="text-3xl font-bold italic">{profile.stats?.wins || 0}-{profile.stats?.losses || 0}-{profile.stats?.draws || 0}</p>
                 <div className="absolute -bottom-1 left-0 w-full h-1 bg-black/5 rounded"></div>
               </div>
             </div>

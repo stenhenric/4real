@@ -9,7 +9,7 @@ export class UserController {
         res.status(404).json({ error: 'User not found' });
         return;
       }
-      res.json({ id: user._id, username: user.username, elo: user.elo, balance: user.balance });
+      res.json({ id: user._id, username: user.username, elo: user.elo, balance: user.balance, stats: user.stats });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Server error' });
