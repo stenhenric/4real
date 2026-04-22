@@ -14,6 +14,8 @@ import authRoutes from './server/routes/auth.routes';
 import usersRoutes from './server/routes/users.routes';
 import matchesRoutes from './server/routes/matches.routes';
 import ordersRoutes from './server/routes/orders.routes';
+import transactionsRoutes from './server/routes/transactions.routes';
+import { TransactionService } from './server/services/transaction.service';
 import { MatchService } from "./server/services/match.service";
 import { UserService } from "./server/services/user.service";
 import jwt from 'jsonwebtoken';
@@ -114,6 +116,7 @@ async function startServer() {
                 const user = await UserService.findById(userId);
                 if (user && user.balance >= room.wager) {
                     await UserService.updateBalance(userId, -room.wager);
+                    await TransactionService.createTransaction({ userId, type: 'MATCH_WAGER', amount: -room.wager, referenceId: roomId });
                 } else {
                     // P2 doesn't have enough balance, cannot join
                     socket.emit('error', 'Insufficient balance to join this match');
@@ -235,6 +238,7 @@ async function startServer() {
   app.use('/api/users', usersRoutes);
   app.use('/api/matches', matchesRoutes);
   app.use('/api/orders', ordersRoutes);
+  app.use('/api/transactions', transactionsRoutes);
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });

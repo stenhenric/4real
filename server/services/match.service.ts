@@ -1,5 +1,6 @@
 import { Match, IMatch } from '../models/Match';
 import { UserService } from './user.service';
+import { TransactionService } from './transaction.service';
 
 export class MatchService {
   static async createMatch(matchData: Partial<IMatch>): Promise<IMatch> {
@@ -32,14 +33,21 @@ export class MatchService {
         const winAmount = totalPot - commission;
 
         await UserService.updateBalance(winnerId, winAmount);
+        await TransactionService.createTransaction({ userId: winnerId, type: 'MATCH_WIN', amount: winAmount, referenceId: roomId });
+        const loserId = match.player1Id.toString() === winnerId ? match.player2Id?.toString() : match.player1Id.toString();
+        if (loserId) {
+            await TransactionService.createTransaction({ userId: loserId, type: 'MATCH_LOSS', amount: -match.wager, referenceId: roomId });
+        }
         // We might also update ELO here, but MVP logic seems to be sufficient for now
       } else {
         // Refund wagers on draw
         if (match.player1Id) {
           await UserService.updateBalance(match.player1Id.toString(), match.wager);
+          await TransactionService.createTransaction({ userId: match.player1Id.toString(), type: 'MATCH_DRAW', amount: match.wager, referenceId: roomId });
         }
         if (match.player2Id) {
           await UserService.updateBalance(match.player2Id.toString(), match.wager);
+          await TransactionService.createTransaction({ userId: match.player2Id.toString(), type: 'MATCH_DRAW', amount: match.wager, referenceId: roomId });
         }
       }
     }
