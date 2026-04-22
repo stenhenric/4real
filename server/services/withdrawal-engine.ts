@@ -67,8 +67,9 @@ async function pollUntilSeqnoChanges(contract: any, initialSeqno: number, timeou
     try {
       const current = await contract.getSeqno();
       if (current > initialSeqno) return current;
-    } catch {
+    } catch (err: unknown) {
       // API hiccup — keep trying
+      console.warn('API hiccup while polling seqno:', err instanceof Error ? err.message : String(err));
     }
   }
   throw new Error(`Seqno stuck at ${initialSeqno} after ${timeoutMs}ms`);
