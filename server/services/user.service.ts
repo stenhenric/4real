@@ -30,8 +30,17 @@ export class UserService {
     );
   }
 
-  static async updateElo(id: string, eloChange: number): Promise<IUser | null> {
-    return User.findByIdAndUpdate(id, { $inc: { elo: eloChange } }, { returnDocument: 'after' });
+  static async updateStatsAndElo(
+    id: string,
+    eloChange: number,
+    result: 'win' | 'loss' | 'draw'
+  ): Promise<IUser | null> {
+    const incQuery: Record<string, number> = { elo: eloChange };
+    if (result === 'win') incQuery['stats.wins'] = 1;
+    else if (result === 'loss') incQuery['stats.losses'] = 1;
+    else if (result === 'draw') incQuery['stats.draws'] = 1;
+
+    return User.findByIdAndUpdate(id, { $inc: incQuery }, { returnDocument: 'after' });
   }
 
   static async getLeaderboard(limit: number = 10): Promise<IUser[]> {

@@ -25,29 +25,64 @@ export class MatchService {
       { returnDocument: 'after' }
     );
 
-    if (match && match.wager > 0) {
-      if (winnerId !== 'draw') {
-        // Calculate winnings
-        const totalPot = match.wager * 2;
-        const commission = totalPot * 0.1;
-        const winAmount = totalPot - commission;
+    if (match) {
+      const p1IdStr = match.player1Id.toString();
+      const p2IdStr = match.player2Id?.toString();
 
-        await UserService.updateBalance(winnerId, winAmount);
-        await TransactionService.createTransaction({ userId: winnerId, type: 'MATCH_WIN', amount: winAmount, referenceId: roomId });
-        const loserId = match.player1Id.toString() === winnerId ? match.player2Id?.toString() : match.player1Id.toString();
-        if (loserId) {
-            await TransactionService.createTransaction({ userId: loserId, type: 'MATCH_LOSS', amount: -match.wager, referenceId: roomId });
+      let p1 = await UserService.findById(p1IdStr);
+      let p2 = p2IdStr ? await UserService.findById(p2IdStr) : null;
+
+      if (p1 && p2) {
+        const K = 32;
+        const r1 = Math.pow(10, p1.elo / 400);
+        const r2 = Math.pow(10, p2.elo / 400);
+        const e1 = r1 / (r1 + r2);
+        const e2 = r2 / (r1 + r2);
+
+        let s1 = 0.5, s2 = 0.5; // Draw
+        if (winnerId === p1IdStr) { s1 = 1; s2 = 0; }
+        else if (winnerId === p2IdStr) { s1 = 0; s2 = 1; }
+
+        const eloChange1 = Math.round(K * (s1 - e1));
+        const eloChange2 = Math.round(K * (s2 - e2));
+
+        let p1Result: 'win' | 'loss' | 'draw' = 'draw';
+        let p2Result: 'win' | 'loss' | 'draw' = 'draw';
+
+        if (winnerId === p1IdStr) {
+          p1Result = 'win';
+          p2Result = 'loss';
+        } else if (winnerId === p2IdStr) {
+          p1Result = 'loss';
+          p2Result = 'win';
         }
-        // We might also update ELO here, but MVP logic seems to be sufficient for now
-      } else {
-        // Refund wagers on draw
-        if (match.player1Id) {
-          await UserService.updateBalance(match.player1Id.toString(), match.wager);
-          await TransactionService.createTransaction({ userId: match.player1Id.toString(), type: 'MATCH_DRAW', amount: match.wager, referenceId: roomId });
-        }
-        if (match.player2Id) {
-          await UserService.updateBalance(match.player2Id.toString(), match.wager);
-          await TransactionService.createTransaction({ userId: match.player2Id.toString(), type: 'MATCH_DRAW', amount: match.wager, referenceId: roomId });
+
+        await UserService.updateStatsAndElo(p1IdStr, eloChange1, p1Result);
+        await UserService.updateStatsAndElo(p2IdStr!, eloChange2, p2Result);
+      }
+
+      if (match.wager > 0) {
+        if (winnerId !== 'draw') {
+          // Calculate winnings
+          const totalPot = match.wager * 2;
+          const commission = totalPot * 0.1;
+          const winAmount = totalPot - commission;
+
+          await UserService.updateBalance(winnerId, winAmount);
+          await TransactionService.createTransaction({ userId: winnerId, type: 'MATCH_WIN', amount: winAmount, referenceId: roomId });
+          const loserId = p1IdStr === winnerId ? p2IdStr : p1IdStr;
+          if (loserId) {
+              await TransactionService.createTransaction({ userId: loserId, type: 'MATCH_LOSS', amount: -match.wager, referenceId: roomId });
+          }
+        } else {
+          // Refund wagers on draw
+          await UserService.updateBalance(p1IdStr, match.wager);
+          await TransactionService.createTransaction({ userId: p1IdStr, type: 'MATCH_DRAW', amount: match.wager, referenceId: roomId });
+
+          if (p2IdStr) {
+            await UserService.updateBalance(p2IdStr, match.wager);
+            await TransactionService.createTransaction({ userId: p2IdStr, type: 'MATCH_DRAW', amount: match.wager, referenceId: roomId });
+          }
         }
       }
     }
