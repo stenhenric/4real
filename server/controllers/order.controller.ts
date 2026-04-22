@@ -16,6 +16,27 @@ export class OrderController {
   static async createOrder(req: any, res: Response): Promise<void> {
     try {
       const { type, amount, proofImageUrl } = req.body;
+
+      if (!['BUY', 'SELL'].includes(type)) {
+        res.status(400).json({ error: 'Invalid order type' });
+        return;
+      }
+
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+        res.status(400).json({ error: 'Amount must be a positive finite number' });
+        return;
+      }
+
+      if (type === 'BUY' && amount < 1) {
+        res.status(400).json({ error: 'Minimum BUY amount is 1 USDT' });
+        return;
+      }
+
+      if (type === 'SELL' && amount < 2) {
+        res.status(400).json({ error: 'Minimum SELL amount is 2 USDT' });
+        return;
+      }
+
       const user = await UserService.findById(req.user.id);
 
       if (!user) {
