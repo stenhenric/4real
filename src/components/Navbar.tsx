@@ -2,16 +2,15 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { TonConnectButton } from '@tonconnect/ui-react';
 import { useAuth } from '../lib/AuthContext';
-import { auth } from '../lib/firebase';
 import { SketchyButton } from './SketchyButton';
 import { LogOut, Home, Landmark, User, Trophy } from 'lucide-react';
 
 const Navbar: React.FC = () => {
-  const { userData, user } = useAuth();
+  const { userData, user, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await auth.signOut();
+    logout();
     navigate('/auth');
   };
 

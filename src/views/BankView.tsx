@@ -1,53 +1,65 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
-import { Landmark, ArrowUpRight, ArrowDownLeft, StickyNote, History, Upload } from 'lucide-react';
+import { Landmark, Upload, History, StickyNote } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const BankView: React.FC = () => {
-  const { user, userData, isAdmin } = useAuth();
-  const [orders, setOrders] = useState<any[]>([]);
+  const { userData, isAdmin, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!user) return;
-    const q = isAdmin 
-      ? query(collection(db, 'orders'), orderBy('createdAt', 'desc'))
-      : query(collection(db, 'orders'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+    const fetchOrders = async () => {
+      try {
+        const data = await request('/orders');
+        setOrders(data);
+      } catch (error) {
+        console.error('Failed to fetch orders:', error);
+      }
+    };
 
-    const unsub = onSnapshot(q, (snap) => {
-      setOrders(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsub();
-  }, [user, isAdmin]);
+    fetchOrders();
+  }, []);
 
   const handleOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || !proofUrl) return;
-    setLoading(true);
 
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert("Invalid amount");
+      return;
+    }
+
+    if (activeTab === 'sell' && parsedAmount > (userData?.balance || 0)) {
+      alert("Insufficient balance to withdraw.");
+      return;
+    }
+
+    setLoading(true);
     try {
-      await addDoc(collection(db, 'orders'), {
-        userId: user?.uid,
-        username: userData?.username,
-        type: activeTab.toUpperCase(),
-        amount: parseFloat(amount),
-        proofImageUrl: proofUrl,
-        status: 'PENDING',
-        createdAt: serverTimestamp()
+      const order = await request('/orders', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: activeTab.toUpperCase(),
+          amount: parsedAmount,
+          proofImageUrl: proofUrl
+        })
       });
+      setOrders([order, ...orders]);
       setAmount('');
       setProofUrl('');
-      alert('Order submitted! Admin will verify soon.');
-    } catch (err) {
+      alert(`${activeTab.toUpperCase()} Order submitted successfully.`);
+      await refreshUser();
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to submit order.');
+      alert(err.message || 'Transaction failed');
     } finally {
       setLoading(false);
     }
@@ -55,12 +67,13 @@ const BankView: React.FC = () => {
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
-      // In a real app, this would also trigger a balance update in a transaction
-      // but for this MVP we'll just update the status.
-      const { doc, updateDoc } = await import('firebase/firestore');
-      await updateDoc(doc(db, 'orders', orderId), {
-        status: newStatus
+      const updatedOrder = await request(`/orders/${orderId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus })
       });
+
+      setOrders(orders.map(o => o._id === orderId ? updatedOrder : o));
+      await refreshUser();
     } catch (err) {
       console.error(err);
       alert('Failed to update status.');
@@ -179,7 +192,7 @@ const BankView: React.FC = () => {
                 </div>
               ) : (
                 orders.map(order => (
-                  <div key={order.id} className="group relative">
+                  <div key={order._id} className="group relative">
                     <div className="flex items-center justify-between p-4 bg-white hover:bg-black/5 transition-colors border-b-2 border-black/5 relative z-10">
                       <div className="flex items-center gap-4">
                         <div className={cn(
@@ -191,7 +204,7 @@ const BankView: React.FC = () => {
                         <div>
                           <p className="font-bold text-xl tracking-tight">{order.type} {order.amount.toFixed(2)} USDT</p>
                           <p className="text-[10px] opacity-40 font-mono font-bold uppercase">
-                            TX-{order.id.substring(0,12)} | {order.createdAt?.toDate().toLocaleDateString()}
+                            TX-{order._id.substring(0,12)} | {new Date(order.createdAt).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
@@ -207,13 +220,13 @@ const BankView: React.FC = () => {
                         {isAdmin && order.status === 'PENDING' && (
                           <div className="flex gap-2 mt-3 justify-end">
                             <button 
-                              onClick={() => updateOrderStatus(order.id, 'DONE')}
+                              onClick={() => updateOrderStatus(order._id, 'DONE')}
                               className="text-[11px] font-bold text-green-700 hover:scale-110 transition-transform bg-green-100 px-2 rounded"
                             >
                               DONE
                             </button>
                             <button 
-                              onClick={() => updateOrderStatus(order.id, 'REJECTED')}
+                              onClick={() => updateOrderStatus(order._id, 'REJECTED')}
                               className="text-[11px] font-bold text-red-700 hover:scale-110 transition-transform bg-red-100 px-2 rounded"
                             >
                               FAIL

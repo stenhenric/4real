@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  updateProfile
-} from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import request, { setToken } from '../lib/api/apiClient';
+import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
 
@@ -15,6 +10,7 @@ const AuthView: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { refreshUser } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,20 +21,19 @@ const AuthView: React.FC = () => {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        const { user } = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(user, { displayName: username });
-        
-        // Create user document
-        await setDoc(doc(db, 'users', user.uid), {
-          username,
-          balance: 0,
-          elo: 1000,
-          isAdmin: false,
-          createdAt: new Date().toISOString()
+        const data = await request('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
         });
+        setToken(data.token);
+      } else {
+        const data = await request('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ username, email, password })
+        });
+        setToken(data.token);
       }
+      await refreshUser();
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Authentication failed');
