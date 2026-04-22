@@ -19,19 +19,19 @@ export class UserService {
   }
 
   static async updateBalance(id: string, amount: number): Promise<IUser | null> {
-    return User.findByIdAndUpdate(id, { $inc: { balance: amount } }, { new: true });
+    return User.findByIdAndUpdate(id, { $inc: { balance: amount } }, { returnDocument: 'after' });
   }
 
   static async deductBalanceSafely(id: string, amount: number): Promise<IUser | null> {
     return User.findOneAndUpdate(
       { _id: id, balance: { $gte: amount } },
       { $inc: { balance: -amount } },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 
   static async updateElo(id: string, eloChange: number): Promise<IUser | null> {
-    return User.findByIdAndUpdate(id, { $inc: { elo: eloChange } }, { new: true });
+    return User.findByIdAndUpdate(id, { $inc: { elo: eloChange } }, { returnDocument: 'after' });
   }
 
   static async getLeaderboard(limit: number = 10): Promise<IUser[]> {
