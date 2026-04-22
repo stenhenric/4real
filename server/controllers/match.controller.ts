@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { MatchService } from '../services/match.service';
 import { UserService } from '../services/user.service';
+import { TransactionService } from '../services/transaction.service';
 
 export class MatchController {
   static async getActiveMatches(req: Request, res: Response): Promise<void> {
@@ -25,6 +26,7 @@ export class MatchController {
 
       if (wager > 0) {
         const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager);
+        await TransactionService.createTransaction({ userId: user._id.toString(), type: 'MATCH_WAGER', amount: -wager, referenceId: 'roomId_pending' });
         if (!updatedUser) {
           res.status(400).json({ error: 'INSUFFICIENT_BALANCE' });
           return;

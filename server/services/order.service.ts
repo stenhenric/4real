@@ -1,10 +1,19 @@
 import { Order, IOrder } from '../models/Order';
 import { UserService } from './user.service';
+import { TransactionService } from './transaction.service';
 
 export class OrderService {
   static async createOrder(orderData: Partial<IOrder>): Promise<IOrder> {
     const order = new Order(orderData);
-    return order.save();
+    const savedOrder = await order.save();
+    await TransactionService.createTransaction({
+      userId: savedOrder.userId as unknown as string,
+      type: savedOrder.type === 'BUY' ? 'BUY_P2P' : 'SELL_P2P',
+      amount: savedOrder.type === 'BUY' ? savedOrder.amount : -savedOrder.amount,
+      status: 'PENDING',
+      referenceId: savedOrder._id.toString()
+    });
+    return savedOrder;
   }
 
   static async getOrders(): Promise<IOrder[]> {
@@ -33,6 +42,11 @@ export class OrderService {
     }
 
     order.status = status;
-    return order.save();
+    const saved = await order.save();
+
+    // Update the corresponding transaction status
+    await TransactionService.updateTransactionStatusByReference(saved._id.toString(), status === 'DONE' ? 'COMPLETED' : status);
+
+    return saved;
   }
 }
