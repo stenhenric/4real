@@ -39,6 +39,11 @@ const GameView: React.FC = () => {
       token
     });
 
+    s.on('error', (msg: string) => {
+      warning(msg);
+      navigate('/');
+    });
+
     s.on("room-sync", (roomData: any) => {
       setRoom(roomData);
       if (roomData.status === 'completed' && roomData.winnerId) {

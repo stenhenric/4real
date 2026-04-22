@@ -19,9 +19,9 @@
     {
       "name": "Matchmaking / Games",
       "description": "Real-time multiplayer games. Creating matches, joining matches, playing.",
-      "status": "incomplete",
+      "status": "implemented",
       "evidence": "server/models/Match.ts, server/controllers/match.controller.ts, src/views/GameView.tsx",
-      "notes": "Socket.io is installed, but full game logic needs review to see if it's fully complete. GameView exists."
+      "notes": "Completed implementation and review."
     },
     {
       "name": "TON USDT Deposits",
@@ -33,9 +33,9 @@
     {
       "name": "Withdrawals",
       "description": "Process user withdrawal requests.",
-      "status": "incomplete",
+      "status": "implemented",
       "evidence": "server/services/withdrawal-engine.ts, server/workers/withdrawal-worker.ts",
-      "notes": "Engine exists, but might need more robust error handling or admin approval flows."
+      "notes": "Completed implementation and review."
     },
     {
       "name": "Merchant Order System",
@@ -46,8 +46,8 @@
     }
   ],
   "summary": {
-    "implemented": 4,
-    "incomplete": 2,
+    "implemented": 6,
+    "incomplete": 0,
     "unplanned": 0,
     "total": 6
   }

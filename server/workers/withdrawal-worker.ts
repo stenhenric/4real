@@ -43,7 +43,7 @@ export async function runWithdrawalWorker() {
       console.log(`Withdrawal ${doc.withdrawalId} sent (seqno: ${seqno})`);
 
     } catch (sendErr: unknown) {
-      const errorMessage = sendErr instanceof Error ? sendErr.message : String(sendErr);
+      const errorMessage = sendErr instanceof Error ? sendErr instanceof Error ? sendErr.message : String(sendErr) : String(sendErr);
       console.error(`Withdrawal ${doc.withdrawalId} failed:`, errorMessage);
 
       if (errorMessage.includes('Seqno stuck')) {
