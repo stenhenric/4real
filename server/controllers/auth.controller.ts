@@ -20,7 +20,7 @@ export class AuthController {
         return;
       }
 
-      const existingUsername = await User.findOne({ username });
+      const existingUsername = await UserService.findByUsername(username);
       if (existingUsername) {
         res.status(400).json({ error: 'Username already exists' });
         return;

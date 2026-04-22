@@ -24,11 +24,11 @@ export class OrderController {
       }
 
       if (type === 'SELL') {
-        if (user.balance < amount) {
+        const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), amount);
+        if (!updatedUser) {
           res.status(400).json({ error: 'Insufficient balance' });
           return;
         }
-        await UserService.updateBalance(user._id.toString(), -amount);
       }
 
       const order = await OrderService.createOrder({
