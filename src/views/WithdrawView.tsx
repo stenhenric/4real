@@ -5,6 +5,7 @@ import { ArrowUpRight } from 'lucide-react';
 import request from '../lib/api/apiClient';
 import { useToast } from '../lib/ToastContext';
 import { useAuth } from '../lib/AuthContext';
+import { useTonWallet } from '@tonconnect/ui-react';
 
 const WithdrawView: React.FC = () => {
   const { userData, refreshUser } = useAuth();
@@ -12,6 +13,7 @@ const WithdrawView: React.FC = () => {
   const [toAddress, setToAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
+  const wallet = useTonWallet();
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,8 +90,20 @@ const WithdrawView: React.FC = () => {
           </div>
 
           <div>
+
+          <div className="flex justify-between items-end">
             <label className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest">Destination TON Address</label>
-            <input
+            {wallet && (
+              <button
+                type="button"
+                onClick={() => setToAddress(wallet.account.address)}
+                className="text-[10px] font-bold uppercase bg-ink-blue text-white px-2 py-1 rounded hover:bg-blue-600 mb-1"
+              >
+                Auto-fill connected wallet
+              </button>
+            )}
+          </div>
+          <input
               type="text"
               value={toAddress}
               onChange={(e) => setToAddress(e.target.value)}
