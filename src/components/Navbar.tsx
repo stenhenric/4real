@@ -3,14 +3,17 @@ import { Link, useNavigate } from 'react-router-dom';
 import { TonConnectButton } from '@tonconnect/ui-react';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyButton } from './SketchyButton';
+import { useToast } from '../lib/ToastContext';
 import { LogOut, Home, Landmark, User, Trophy } from 'lucide-react';
 
 const Navbar: React.FC = () => {
   const { userData, user, logout } = useAuth();
   const navigate = useNavigate();
+  const { info } = useToast();
 
   const handleLogout = async () => {
     logout();
+    info('Logged out successfully.');
     navigate('/auth');
   };
 

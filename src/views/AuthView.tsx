@@ -3,6 +3,7 @@ import request, { setToken } from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
+import { useToast } from '../lib/ToastContext';
 
 const AuthView: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -11,6 +12,7 @@ const AuthView: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { refreshUser } = useAuth();
+  const { success, error: showError } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,17 +28,20 @@ const AuthView: React.FC = () => {
           body: JSON.stringify({ email, password })
         });
         setToken(data.token);
+        success(`Welcome back!`);
       } else {
         const data = await request('/auth/register', {
           method: 'POST',
           body: JSON.stringify({ username, email, password })
         });
         setToken(data.token);
+        success('Account created! Welcome to the notebook.');
       }
       await refreshUser();
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Authentication failed');
+      showError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }

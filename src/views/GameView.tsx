@@ -6,6 +6,7 @@ import canvasConfetti from 'canvas-confetti';
 import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
+import { useToast } from '../lib/ToastContext';
 import { SketchyButton } from '../components/SketchyButton';
 import { User, Trophy, Medal } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -17,6 +18,7 @@ const GameView: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [room, setRoom] = useState<any>(null);
   const [gameOver, setGameOver] = useState<any>(null);
+  const { success, info, warning } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -161,7 +163,7 @@ const GameView: React.FC = () => {
   const copyInviteLink = () => {
     const link = `${window.location.origin}/game/${roomId}`;
     navigator.clipboard.writeText(link);
-    alert('Invite link scratched to clipboard!');
+    success('Invite link scratched to clipboard!');
   };
 
   if (!room) return <div className="text-center py-20 italic">Finding the table...</div>;
