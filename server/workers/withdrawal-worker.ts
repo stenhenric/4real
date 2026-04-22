@@ -42,14 +42,15 @@ export async function runWithdrawalWorker() {
 
       console.log(`Withdrawal ${doc.withdrawalId} sent (seqno: ${seqno})`);
 
-    } catch (sendErr: any) {
-      console.error(`Withdrawal ${doc.withdrawalId} failed:`, sendErr.message);
+    } catch (sendErr: unknown) {
+      const errorMessage = sendErr instanceof Error ? sendErr.message : String(sendErr);
+      console.error(`Withdrawal ${doc.withdrawalId} failed:`, errorMessage);
 
-      if (sendErr.message.includes('Seqno stuck')) {
+      if (errorMessage.includes('Seqno stuck')) {
         // Timeout -> Tx might be on chain. Leave it in a stuck/processing state or mark as stuck for manual review or the recovery worker.
         await db.collection('withdrawals').updateOne(
           { _id: doc._id },
-          { $set: { status: 'stuck', lastError: sendErr.message, updatedAt: new Date() } }
+          { $set: { status: 'stuck', lastError: errorMessage, updatedAt: new Date() } }
         );
       } else {
         const retries = (doc.retries ?? 0) + 1;
@@ -57,7 +58,7 @@ export async function runWithdrawalWorker() {
 
         await db.collection('withdrawals').updateOne(
           { _id: doc._id },
-          { $set: { status: newStatus, lastError: sendErr.message, updatedAt: new Date() },
+          { $set: { status: newStatus, lastError: errorMessage, updatedAt: new Date() },
             $inc: { retries: 1 } }
         );
 
