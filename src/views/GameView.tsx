@@ -3,8 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import rough from 'roughjs';
 import canvasConfetti from 'canvas-confetti';
-import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
@@ -13,124 +12,81 @@ import { cn } from '../lib/utils';
 
 const GameView: React.FC = () => {
   const { roomId } = useParams();
-  const { user, userData } = useAuth();
+  const { user, userData, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [room, setRoom] = useState<any>(null);
   const [gameOver, setGameOver] = useState<any>(null);
-  const [payoutDone, setPayoutDone] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (!user || !userData) return;
 
-    const s = io();
+    // Connect to Socket.io server
+    const s = io(window.location.origin);
     setSocket(s);
 
-    const checkWagerAndJoin = async () => {
-      try {
-        const matchDoc = await getDoc(doc(db, 'matches', roomId as string));
-        if (!matchDoc.exists()) {
-          alert("Match draft not found.");
-          navigate('/');
-          return;
-        }
+    const token = localStorage.getItem('token');
+    s.emit("join-room", {
+      roomId,
+      userId: user.uid,
+      username: userData.username,
+      elo: userData.elo,
+      wager: 0, // In real app, fetch initial room state first
+      isPrivate: false,
+      token
+    });
 
-        const matchData = matchDoc.data();
-        const wager = matchData.wager || 0;
-        const isPrivate = matchData.isPrivate || false;
-
-        // If I am NOT the creator and room is waiting, I am the joiner (P2)
-        if (matchData.player1Id !== user.uid && matchData.status === 'waiting') {
-           if (wager > (userData.balance || 0)) {
-             alert("Insufficient balance to match the wager.");
-             navigate('/');
-             return;
-           }
-
-           // Lock Joiner's Balance
-           if (wager > 0) {
-             await updateDoc(doc(db, 'users', user.uid), {
-               balance: increment(-wager)
-             });
-           }
-
-           // Update match status to active in Firestore (though socket handles it too)
-           await updateDoc(doc(db, 'matches', roomId as string), {
-             status: 'active',
-             player2Id: user.uid,
-             p2Username: userData.username
-           });
-        }
-
-        s.emit('join-room', { 
-          roomId, 
-          userId: user.uid, 
-          username: userData.username,
-          wager,
-          isPrivate,
-          elo: userData.elo
-        });
-      } catch (error) {
-        console.error("Join failure:", error);
+    s.on("room-sync", (roomData: any) => {
+      setRoom(roomData);
+      if (roomData.status === 'completed' && roomData.winnerId) {
+        setGameOver({ winnerId: roomData.winnerId });
       }
-    };
+    });
 
-    checkWagerAndJoin();
+    s.on("game-started", (roomData: any) => {
+      setRoom(roomData);
+    });
 
-    s.on('room-sync', (r) => setRoom(r));
-    s.on('game-started', (r) => setRoom(r));
-    s.on('move-made', (r) => setRoom(r));
-    s.on('game-over', async ({ room: r, winnerId, winningLine }) => {
-      setRoom(r);
+    s.on("move-made", (roomData: any) => {
+      setRoom(roomData);
+    });
+
+    s.on("game-over", async ({ room: roomData, winnerId, winningLine }: any) => {
+      setRoom(roomData);
       setGameOver({ winnerId, winningLine });
 
       if (winnerId === user.uid) {
-        canvasConfetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-        
-        // Payout Logic
-        const wager = r.wager || 0;
-        if (wager > 0 && !payoutDone) {
-          setPayoutDone(true);
-          const pot = wager * 2;
-          const payout = pot * 0.9; // 10% commission
-          
-          try {
-            await updateDoc(doc(db, 'users', user.uid), {
-              balance: increment(payout),
-              elo: increment(25) // Bonus for winning a wager match
-            });
-            
-            // Mark match as completed with specific winner in Firestore
-            await updateDoc(doc(db, 'matches', roomId as string), {
-              status: 'completed',
-              winnerId: user.uid,
-              payout
-            });
-          } catch (e) {
-            console.error("Payout distribution failed:", e);
+        // Trigger confetti
+        const duration = 3000;
+        const end = Date.now() + duration;
+
+        const frame = () => {
+          canvasConfetti({
+            particleCount: 5,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0 },
+            colors: ['#ef4444', '#3b82f6', '#fef08a']
+          });
+          canvasConfetti({
+            particleCount: 5,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1 },
+            colors: ['#ef4444', '#3b82f6', '#fef08a']
+          });
+
+          if (Date.now() < end) {
+            requestAnimationFrame(frame);
           }
-        }
-      } else if (winnerId === 'draw') {
-        const wager = r.wager || 0;
-        if (wager > 0 && !payoutDone) {
-          setPayoutDone(true);
-          const refundAmount = wager * 0.95; // 5% commission on draw
-          
-          try {
-            await updateDoc(doc(db, 'users', user.uid), {
-              balance: increment(refundAmount)
-            });
-            
-            // Mark match as completed for the draw scenario in Firestore
-            await updateDoc(doc(db, 'matches', roomId as string), {
-              status: 'completed',
-              winnerId: 'draw'
-            }).catch(() => {}); // Catch harmless concurrent updates by the other client
-          } catch (e) {
-            console.error("Draw payout distribution failed:", e);
-          }
-        }
+        };
+        frame();
+      }
+
+      // If we are the winner, or it's a draw, we refresh the user data to get updated balance/elo
+      if (winnerId === user.uid || winnerId === 'draw') {
+         await refreshUser();
       }
     });
 

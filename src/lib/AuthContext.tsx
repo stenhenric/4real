@@ -1,47 +1,56 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import request, { getToken, removeToken } from './api/apiClient';
 
 interface AuthContextType {
-  user: User | null;
+  user: any | null;
   userData: any | null;
   loading: boolean;
   isAdmin: boolean;
+  refreshUser: () => Promise<void>;
+  logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, userData: null, loading: true, isAdmin: false });
+const AuthContext = createContext<AuthContextType>({ user: null, userData: null, loading: true, isAdmin: false, refreshUser: async () => {}, logout: () => {} });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [userData, setUserData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshUser = async () => {
+    try {
+      const data = await request('/auth/me');
+      setUser({ uid: data.user.id, email: data.user.email }); // map id to uid for compatibility
+      setUserData(data.user);
+    } catch (error) {
+      console.error(error);
+      setUser(null);
+      setUserData(null);
+      removeToken();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (!u) {
-        setUserData(null);
-        setLoading(false);
-      } else {
-        // Fetch user data from firestore
-        const userDocRef = doc(db, 'users', u.uid);
-        const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setUserData(docSnap.data());
-          }
-          setLoading(false);
-        });
-        return () => unsubDoc();
-      }
-    });
-    return () => unsubscribe();
+    const token = getToken();
+    if (token) {
+      refreshUser();
+    } else {
+      setLoading(false);
+    }
   }, []);
+
+  const logout = () => {
+    removeToken();
+    setUser(null);
+    setUserData(null);
+  };
 
   const isAdmin = userData?.isAdmin || user?.email === "henricstenson@gmail.com";
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, isAdmin }}>
+    <AuthContext.Provider value={{ user, userData, loading, isAdmin, refreshUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

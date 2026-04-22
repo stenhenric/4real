@@ -1,98 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { collection, query, limit, orderBy, onSnapshot, setDoc, doc, where, runTransaction } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
-import { SketchyContainer } from '../components/SketchyContainer';
+import request from '../lib/api/apiClient';
 import { SketchyButton } from '../components/SketchyButton';
-import { Trophy, Play, Plus, Clock, User as UserIcon } from 'lucide-react';
+import { Play, Trophy, Clock, User as UserIcon, Plus } from 'lucide-react';
 
 const DashboardView: React.FC = () => {
-  const { user, userData } = useAuth();
   const navigate = useNavigate();
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const { userData, user } = useAuth();
+  const [activeTab, setActiveTab] = useState('lobby');
   const [activeMatches, setActiveMatches] = useState<any[]>([]);
-
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [wager, setWager] = useState<string>('0');
   const [isPrivate, setIsPrivate] = useState(false);
-  const [wager, setWager] = useState('0');
-
-  // Tab State
-  const [activeTab, setActiveTab] = useState<'lobby' | 'archives' | 'leaderboard' | 'stats'>('lobby');
 
   useEffect(() => {
-    // Leaderboard
-    const qLeaders = query(collection(db, 'users'), orderBy('elo', 'desc'), limit(5));
-    const unsubLeaders = onSnapshot(qLeaders, (snap) => {
-      setLeaderboard(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    // Active Matches (Waiting for players)
-    const qMatches = query(
-      collection(db, 'matches'),
-      where('status', '==', 'waiting'),
-      where('isPrivate', '==', false),
-      limit(10)
-    );
-    const unsubMatches = onSnapshot(qMatches, (snap) => {
-      setActiveMatches(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    return () => {
-      unsubLeaders();
-      unsubMatches();
+    const fetchMatches = async () => {
+      try {
+        const matches = await request('/matches/active');
+        setActiveMatches(matches);
+      } catch (error) {
+        console.error('Failed to fetch active matches:', error);
+      }
     };
+
+    const fetchLeaderboard = async () => {
+      try {
+        const users = await request('/users/leaderboard');
+        setLeaderboard(users);
+      } catch (error) {
+        console.error('Failed to fetch leaderboard:', error);
+      }
+    };
+
+    fetchMatches();
+    fetchLeaderboard();
   }, []);
 
   const createGame = async () => {
-    if (!user) {
-      alert("You must be signed in to create a match.");
+    if (!user) return;
+
+    const parsedWager = parseFloat(wager);
+    if (isNaN(parsedWager) || parsedWager < 0) {
+      alert("Invalid wager amount.");
       return;
     }
 
-    const amount = parseFloat(wager);
-    if (isPrivate && (isNaN(amount) || amount < 0)) {
-      alert("Please enter a valid wager amount.");
-      return;
-    }
-
-    if (isPrivate && amount > (userData?.balance || 0)) {
+    if (parsedWager > (userData?.balance || 0)) {
       alert("Insufficient balance to lock wager.");
       return;
     }
 
-    const matchRef = doc(collection(db, 'matches'));
-    const roomId = matchRef.id;
-
     try {
-      await runTransaction(db, async (transaction) => {
-        if (isPrivate && amount > 0) {
-          const userRef = doc(db, 'users', user.uid);
-          const userSnap = await transaction.get(userRef);
-          const currentBalance = Number(userSnap.data()?.balance ?? 0);
-
-          if (currentBalance < amount) {
-            throw new Error('INSUFFICIENT_BALANCE');
-          }
-
-          transaction.set(userRef, {
-            balance: currentBalance - amount
-          }, { merge: true });
-        }
-
-        transaction.set(matchRef, {
-          roomId,
-          player1Id: user.uid,
-          p1Username: userData?.username,
-          status: 'waiting',
-          isPrivate,
-          wager: isPrivate ? amount : 0,
-          timestamp: new Date().toISOString()
-        });
+      const match = await request('/matches', {
+        method: 'POST',
+        body: JSON.stringify({ wager: parsedWager, isPrivate })
       });
-
-      navigate(`/game/${roomId}`);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'INSUFFICIENT_BALANCE') {
+      navigate(`/game/${match.roomId}`);
+    } catch (error: any) {
+      if (error.message === 'INSUFFICIENT_BALANCE') {
         alert("Insufficient balance to lock wager.");
         return;
       }
@@ -190,7 +156,7 @@ const DashboardView: React.FC = () => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {activeMatches.map(match => (
-                    <div key={match.id} className="group relative p-6 bg-white rough-border hover:-translate-y-1 hover:shadow-2xl transition-all duration-300">
+                    <div key={match._id || match.roomId} className="group relative p-6 bg-white rough-border hover:-translate-y-1 hover:shadow-2xl transition-all duration-300">
                       <div className="absolute top-2 right-2 flex items-center gap-1 opacity-20">
                          <Clock size={12} /> <span className="text-[10px] font-mono">LIVE</span>
                       </div>

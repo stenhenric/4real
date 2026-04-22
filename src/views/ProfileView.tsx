@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, limit, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
@@ -18,29 +17,22 @@ const ProfileView: React.FC = () => {
   useEffect(() => {
     if (!userId) return;
 
-    const fetchProfile = async () => {
-      const docSnap = await getDoc(doc(db, 'users', userId));
-      if (docSnap.exists()) {
-        setProfile(docSnap.data());
+    const fetchProfileData = async () => {
+      try {
+        const [profileData, historyData] = await Promise.all([
+          request(`/users/${userId}`),
+          request(`/matches/user/${userId}`)
+        ]);
+        setProfile(profileData);
+        setHistory(historyData);
+      } catch (error) {
+        console.error('Failed to fetch profile:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
-    const q = query(
-      collection(db, 'matches'),
-      where('status', '==', 'completed'),
-      limit(5)
-    );
-    // Note: Complex queries in rules might need indexes, 
-    // but for simple where on status it should be fine.
-    const unsub = onSnapshot(q, (snap) => {
-       const m = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-           .filter((match: any) => match.player1Id === userId || match.player2Id === userId);
-       setHistory(m);
-    });
-
-    fetchProfile();
-    return () => unsub();
+    fetchProfileData();
   }, [userId]);
 
   if (loading) return <div className="text-center py-20 animate-pulse font-bold">Sharpening pencils...</div>;
@@ -129,7 +121,7 @@ const ProfileView: React.FC = () => {
                 <p className="italic opacity-30 py-12 text-center font-bold uppercase tracking-widest">No ink logs found.</p>
               ) : (
                 history.map(match => (
-                  <div key={match.id} className="p-6 bg-white sketchy-border flex items-center justify-between hover:bg-black/5 transition-colors">
+                  <div key={match._id || match.roomId} className="p-6 bg-white sketchy-border flex items-center justify-between hover:bg-black/5 transition-colors">
                     <div>
                       <p className="font-bold text-xl flex items-center gap-2 uppercase tracking-tighter">
                         {match.p1Username} <span className="opacity-20 text-sm">VS</span> {match.p2Username || 'GHOST'}
