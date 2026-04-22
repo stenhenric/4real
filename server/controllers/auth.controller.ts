@@ -1,3 +1,4 @@
+import { getJwtSecret } from '../config/config.ts';
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -40,7 +41,7 @@ export class AuthController {
 
       const token = jwt.sign(
         { id: user._id, isAdmin: user.isAdmin },
-        process.env.JWT_SECRET || 'secret',
+        getJwtSecret(),
         { expiresIn: '30d' }
       );
 
@@ -74,7 +75,7 @@ export class AuthController {
 
       const token = jwt.sign(
         { id: user._id, isAdmin: user.isAdmin },
-        process.env.JWT_SECRET || 'secret',
+        getJwtSecret(),
         { expiresIn: '30d' }
       );
 

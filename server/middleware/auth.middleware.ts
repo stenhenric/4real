@@ -1,4 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
+import { getJwtSecret } from '../config/config.ts';
+import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 export interface AuthRequest extends Request {
@@ -14,7 +15,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     return;
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || 'secret', (err: any, user: any) => {
+  jwt.verify(token, getJwtSecret(), (err: any, user: any) => {
     if (err) {
       res.status(403).json({ error: 'Invalid token' });
       return;
