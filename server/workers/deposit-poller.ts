@@ -30,8 +30,34 @@ export async function pollDeposits() {
 
   if (transfers.length === 0) return;
 
-  for (const tx of transfers) {
-    await processIncomingTransfer(db, tx);
+  // 1. Bulk check already seen transactions to avoid N+1 queries
+  const txHashes = transfers.map((tx: any) => tx.transaction_hash);
+  const seenDocs = await db.collection('processed_txs')
+    .find({ txHash: { $in: txHashes } })
+    .project({ txHash: 1 })
+    .toArray();
+  const seenHashes = new Set(seenDocs.map(d => d.txHash));
+
+  const newTransfers = transfers.filter((tx: any) => !seenHashes.has(tx.transaction_hash));
+  if (newTransfers.length === 0) {
+    const latestTime = Math.max(...transfers.map((t: any) => t.transaction_now));
+    await db.collection('poller_state').updateOne(
+      { key: 'deposit_poller' },
+      { $set: { lastProcessedTime: latestTime, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    return;
+  }
+
+  // 2. Bulk fetch memos for the new transfers
+  const comments = [...new Set(newTransfers.map((tx: any) => tx.comment).filter(Boolean))];
+  const memoDocs = await db.collection('deposit_memos')
+    .find({ memo: { $in: comments } })
+    .toArray();
+  const memoMap = new Map(memoDocs.map(m => [m.memo, m]));
+
+  for (const tx of newTransfers) {
+    await processIncomingTransfer(db, tx, memoMap);
   }
 
   const latestTime = Math.max(...transfers.map((t: any) => t.transaction_now));
@@ -70,11 +96,8 @@ async function fetchIncomingTransfers(jettonWalletAddress: string, sinceTime: nu
   }
 }
 
-async function processIncomingTransfer(db: mongoose.mongo.Db, tx: any) {
+async function processIncomingTransfer(db: mongoose.mongo.Db, tx: any, memoMap: Map<string, any>) {
   const txHash = tx.transaction_hash;
-
-  const alreadySeen = await db.collection('processed_txs').findOne({ txHash });
-  if (alreadySeen) return;
 
   if (!tx.jetton_master) return;
 
@@ -88,7 +111,7 @@ async function processIncomingTransfer(db: mongoose.mongo.Db, tx: any) {
   const senderAddress = tx.source_owner ?? null;
   const txTime = tx.transaction_now;
 
-  const memoDoc = await db.collection('deposit_memos').findOne({ memo: comment });
+  const memoDoc = memoMap.get(comment);
   const userId = memoDoc?.userId ?? null;
 
   if (!userId) {
