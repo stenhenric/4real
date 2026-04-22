@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
 import { ArrowUpRight } from 'lucide-react';
@@ -14,6 +14,13 @@ const WithdrawView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
   const wallet = useTonWallet();
+
+  useEffect(() => {
+    if (wallet?.account?.address) {
+      setToAddress(wallet.account.address);
+    }
+  }, [wallet]);
+
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
