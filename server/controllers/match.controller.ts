@@ -23,9 +23,12 @@ export class MatchController {
         return;
       }
 
-      if (wager > user.balance) {
-        res.status(400).json({ error: 'INSUFFICIENT_BALANCE' });
-        return;
+      if (wager > 0) {
+        const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager);
+        if (!updatedUser) {
+          res.status(400).json({ error: 'INSUFFICIENT_BALANCE' });
+          return;
+        }
       }
 
       // We just create a roomId, and let socket handle the rest for now, or insert properly
@@ -40,11 +43,6 @@ export class MatchController {
         status: 'waiting',
         moveHistory: []
       });
-
-      // Deduct wager initially from creator
-      if (wager > 0) {
-        await UserService.updateBalance(user._id.toString(), -wager);
-      }
 
       res.status(201).json(match);
     } catch (error) {

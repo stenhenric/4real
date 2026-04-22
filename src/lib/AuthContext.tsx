@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserData(null);
   };
 
-  const isAdmin = userData?.isAdmin || user?.email === "henricstenson@gmail.com";
+  const isAdmin = userData?.isAdmin === true;
 
   return (
     <AuthContext.Provider value={{ user, userData, loading, isAdmin, refreshUser, logout }}>

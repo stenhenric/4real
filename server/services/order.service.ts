@@ -8,7 +8,7 @@ export class OrderService {
   }
 
   static async getOrders(): Promise<IOrder[]> {
-    return Order.find().sort({ createdAt: -1 }).populate('userId', 'username');
+    return Order.find().sort({ createdAt: -1 }).populate('userId', 'username').select('-__v');
   }
 
   static async updateOrderStatus(orderId: string, status: 'PENDING' | 'DONE' | 'REJECTED'): Promise<IOrder | null> {

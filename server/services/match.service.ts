@@ -10,7 +10,7 @@ export class MatchService {
   static async getActiveMatches(): Promise<IMatch[]> {
     return Match.find({ status: { $in: ['waiting', 'active'] }, isPrivate: false })
       .sort({ createdAt: -1 })
-      .limit(20);
+      .limit(20).select('-__v');
   }
 
   static async getMatchByRoomId(roomId: string): Promise<IMatch | null> {
@@ -53,6 +53,6 @@ export class MatchService {
       status: 'completed'
     })
       .sort({ createdAt: -1 })
-      .limit(limit);
+      .limit(limit).select('-__v');
   }
 }
