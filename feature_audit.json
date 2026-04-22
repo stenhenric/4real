@@ -1,0 +1,54 @@
+{
+  "app_summary": "A real-time multiplayer React (Vite) and Express/Node.js full-stack application written in TypeScript. It features a sketchy, hand-drawn UI style, uses Socket.io for real-time features, and integrates with the TON blockchain for USDT deposits.",
+  "architecture_notes": "React/Vite frontend using Tailwind CSS and roughjs. Express/Node.js backend with MongoDB (Mongoose) and JWT authentication. Uses Toncenter API v3 for blockchain interactions.",
+  "features": [
+    {
+      "name": "Authentication",
+      "description": "User registration and login using JWT. Includes admin roles.",
+      "status": "implemented",
+      "evidence": "server/controllers/auth.controller.ts, server/routes/auth.routes.ts",
+      "notes": "Looks solid, using bcrypt and JWT."
+    },
+    {
+      "name": "User Profile & Balances",
+      "description": "User can view profile, current USDT balance, and see a leaderboard.",
+      "status": "implemented",
+      "evidence": "server/controllers/user.controller.ts, src/views/ProfileView.tsx, src/views/DashboardView.tsx",
+      "notes": "Tracks balance correctly."
+    },
+    {
+      "name": "Matchmaking / Games",
+      "description": "Real-time multiplayer games. Creating matches, joining matches, playing.",
+      "status": "incomplete",
+      "evidence": "server/models/Match.ts, server/controllers/match.controller.ts, src/views/GameView.tsx",
+      "notes": "Socket.io is installed, but full game logic needs review to see if it's fully complete. GameView exists."
+    },
+    {
+      "name": "TON USDT Deposits",
+      "description": "Integration with TON blockchain to accept USDT deposits using unique memos.",
+      "status": "implemented",
+      "evidence": "server/services/deposit-service.ts, server/workers/deposit-poller.ts",
+      "notes": "Poller worker seems set up to fetch transactions."
+    },
+    {
+      "name": "Withdrawals",
+      "description": "Process user withdrawal requests.",
+      "status": "incomplete",
+      "evidence": "server/services/withdrawal-engine.ts, server/workers/withdrawal-worker.ts",
+      "notes": "Engine exists, but might need more robust error handling or admin approval flows."
+    },
+    {
+      "name": "Merchant Order System",
+      "description": "P2P style merchant buy/sell requests with proof images.",
+      "status": "implemented",
+      "evidence": "src/views/MerchantView.tsx, server/models/Order.ts, server/controllers/order.controller.ts",
+      "notes": "Admin approval/rejection is wired up in MerchantView."
+    }
+  ],
+  "summary": {
+    "implemented": 4,
+    "incomplete": 2,
+    "unplanned": 0,
+    "total": 6
+  }
+}
