@@ -2,11 +2,15 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert';
 import jwt from 'jsonwebtoken';
 
-process.env.JWT_SECRET = 'test-secret';
+// Mock express NextFunction
+const mockNext = () => {};
 
+process.env.JWT_SECRET = 'test-secret';
 
 // Import the middleware
 import { authenticateToken, requireAdmin } from './auth.middleware.ts';
+
+
 
 test('authenticateToken - missing token', (t) => {
   const req = { headers: {} } as any;

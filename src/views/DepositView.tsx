@@ -106,6 +106,17 @@ const DepositView: React.FC = () => {
               <CheckCircle size={16} className="text-green-600" />
               Expires in: {memoData.expiresIn}
             </div>
+
+              <div className="mt-6 flex flex-col gap-4">
+                <a
+                  href={memoData.deepLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded text-center transition-colors shadow-md border-2 border-black"
+                >
+                  Pay with Tonkeeper (1-Click)
+                </a>
+              </div>
           </div>
         )}
       </SketchyContainer>

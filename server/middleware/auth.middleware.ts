@@ -1,5 +1,8 @@
+import express from 'express';
 import { getJwtSecret } from '../config/config.ts';
-import type { Request, Response, NextFunction } from 'express';
+type Request = express.Request;
+type Response = express.Response;
+type NextFunction = express.NextFunction;
 import jwt from 'jsonwebtoken';
 
 export interface AuthRequest extends Request {
