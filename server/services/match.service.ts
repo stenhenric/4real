@@ -22,7 +22,7 @@ export class MatchService {
     const match = await Match.findOneAndUpdate(
       { roomId },
       { status: 'completed', winnerId, moveHistory },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (match && match.wager > 0) {

@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../lib/AuthContext';
+import React, { useEffect, useState } from 'react';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
-import { Landmark, ArrowUpRight, ArrowDownRight, Store, History } from 'lucide-react';
 import MerchantView from './MerchantView';
+import { useToast } from '../lib/ToastContext';
+import { Landmark, ArrowUpRight, ArrowDownRight, Store, History } from 'lucide-react';
 import request from '../lib/api/apiClient';
 
 const BankView: React.FC = () => {
-  const { userData } = useAuth();
+  const { error: showError } = useToast();
   const [activeView, setActiveView] = useState<'portal' | 'merchant'>('portal');
   const [transactions, setTransactions] = useState<any[]>([]);
 
@@ -19,11 +19,13 @@ const BankView: React.FC = () => {
           setTransactions(data);
         } catch (error) {
           console.error('Failed to fetch transactions:', error);
+          showError('Failed to fetch transactions.');
         }
       };
+
       fetchTransactions();
     }
-  }, [activeView]);
+  }, [activeView, showError]);
 
   if (activeView === 'merchant') {
     return (

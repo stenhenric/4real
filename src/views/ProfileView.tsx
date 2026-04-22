@@ -4,6 +4,7 @@ import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
+import { useToast } from '../lib/ToastContext';
 import { User, Medal, ArrowLeft, Gamepad2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -13,6 +14,7 @@ const ProfileView: React.FC = () => {
   const [profile, setProfile] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { error: showError } = useToast();
 
   useEffect(() => {
     if (!userId) return;
@@ -27,6 +29,7 @@ const ProfileView: React.FC = () => {
         setHistory(historyData);
       } catch (error) {
         console.error('Failed to fetch profile:', error);
+        showError('Failed to fetch profile details.');
       } finally {
         setLoading(false);
       }

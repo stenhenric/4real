@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import request from '../lib/api/apiClient';
 import { SketchyButton } from '../components/SketchyButton';
+import { useToast } from '../lib/ToastContext';
 import { Play, Trophy, Clock, User as UserIcon, Plus } from 'lucide-react';
 
 const DashboardView: React.FC = () => {
@@ -11,6 +12,7 @@ const DashboardView: React.FC = () => {
   const [activeTab, setActiveTab] = useState('lobby');
   const [activeMatches, setActiveMatches] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const { success, error: showError } = useToast();
   const [wager, setWager] = useState<string>('0');
   const [isPrivate, setIsPrivate] = useState(false);
 
@@ -21,6 +23,7 @@ const DashboardView: React.FC = () => {
         setActiveMatches(matches);
       } catch (error) {
         console.error('Failed to fetch active matches:', error);
+        showError('Failed to fetch active matches.');
       }
     };
 
@@ -30,6 +33,7 @@ const DashboardView: React.FC = () => {
         setLeaderboard(users);
       } catch (error) {
         console.error('Failed to fetch leaderboard:', error);
+        showError('Failed to fetch leaderboard.');
       }
     };
 
@@ -59,11 +63,11 @@ const DashboardView: React.FC = () => {
       navigate(`/game/${match.roomId}`);
     } catch (error: any) {
       if (error.message === 'INSUFFICIENT_BALANCE') {
-        alert("Insufficient balance to lock wager.");
+        showError("Insufficient balance to lock wager.");
         return;
       }
       console.error("Match creation failed:", error);
-      alert("Match creation failed. Please try again.");
+      showError("Match creation failed. Please try again.");
     }
   };
 
