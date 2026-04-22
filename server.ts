@@ -50,7 +50,7 @@ async function startServer() {
     }
   });
 
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Real-time Room State
   const rooms = new Map<string, any>();
