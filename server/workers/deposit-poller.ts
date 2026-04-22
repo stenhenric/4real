@@ -165,7 +165,6 @@ async function processIncomingTransfer(db: mongoose.mongo.Db, tx: any, memoMap: 
       }, { session });
     });
 
-    console.log(`Deposit confirmed: user=${userId} amount=${Number(receivedRaw)/1e6} USDT tx=${txHash}`);
   } catch (err: any) {
     if (err.code === 11000) {
       return;
