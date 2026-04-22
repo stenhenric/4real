@@ -2,6 +2,9 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert';
 import jwt from 'jsonwebtoken';
 
+process.env.JWT_SECRET = 'test-secret';
+
+
 // Import the middleware
 import { authenticateToken, requireAdmin } from './auth.middleware.ts';
 

@@ -1,3 +1,4 @@
+import { getJwtSecret } from './server/config/config.ts';
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -64,7 +65,7 @@ async function startServer() {
         return;
       }
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any;
+        const decoded = jwt.verify(token, getJwtSecret()) as any;
         if (decoded.id !== userId) {
           socket.emit('error', 'Unauthorized access');
           return;
