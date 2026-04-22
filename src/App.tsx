@@ -48,7 +48,6 @@ function AppRoutes() {
 }
 
 export default function App() {
-  // @ts-ignore
   const manifestUrl = import.meta.env.VITE_TON_MANIFEST_URL || `${window.location.origin}/tonconnect-manifest.json`;
 
   return (
