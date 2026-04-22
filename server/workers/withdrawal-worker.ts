@@ -97,10 +97,11 @@ export async function recoverStuckWithdrawals() {
       startedAt: { $lt: tenMinsAgo },
     }).toArray();
 
-    for (const doc of stuck) {
-      console.warn(`Resetting stuck withdrawal ${doc.withdrawalId} → queued`);
-      await db.collection('withdrawals').updateOne(
-        { _id: doc._id },
+    if (stuck.length > 0) {
+      const ids = stuck.map((doc: any) => doc._id);
+      console.warn(`Resetting ${stuck.length} stuck withdrawals → queued`);
+      await db.collection('withdrawals').updateMany(
+        { _id: { $in: ids } },
         { $set: { status: 'queued', updatedAt: new Date() } }
       );
     }
