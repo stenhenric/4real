@@ -6,8 +6,7 @@ export async function generateDepositMemo(userId: string) {
   const db = mongoose.connection.db;
   if (!db) throw new Error("Database not connected");
 
-  const secureRandomStr = crypto.randomBytes(2).toString('hex');
-  const memo = `d-${userId}-${Date.now()}-${secureRandomStr}`;
+  const memo = `d-${userId}-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
 
   await db.collection('deposit_memos').insertOne({
     memo,
