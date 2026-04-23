@@ -207,7 +207,7 @@ const DepositView: React.FC = () => {
                     className={`w-full font-bold py-3 px-4 rounded text-center transition-colors shadow-md border-2 border-black ${
                       !wallet || sendingTransaction
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-ink-blue hover:opacity-90 text-white'
                     }`}
                   >
                     {sendingTransaction ? 'Sending...' : 'Deposit via TonConnect'}
@@ -222,7 +222,7 @@ const DepositView: React.FC = () => {
                   href={memoData.deepLink}
                   target="_blank"
                   rel="noreferrer"
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded text-center transition-colors shadow-md border-2 border-black"
+                  className="bg-ink-blue hover:opacity-90 text-white font-bold py-3 px-4 rounded text-center transition-colors shadow-md border-2 border-black"
                 >
                   Pay with Tonkeeper (1-Click)
                 </a>

@@ -59,8 +59,9 @@ const AuthView: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-bold mb-1 ml-1 uppercase opacity-60">Username (Pseudonym)</label>
+            <label htmlFor="auth-username" className="block text-sm font-bold mb-1 ml-1 uppercase opacity-60">Username (Pseudonym)</label>
             <input
+              id="auth-username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -71,8 +72,9 @@ const AuthView: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-1 ml-1 uppercase opacity-60">Password</label>
+            <label htmlFor="auth-password" className="block text-sm font-bold mb-1 ml-1 uppercase opacity-60">Password</label>
             <input
+              id="auth-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -82,7 +84,7 @@ const AuthView: React.FC = () => {
             />
           </div>
 
-          {error && <p className="text-red-500 text-sm font-bold ml-1">Error: {error}</p>}
+          {error && <p className="text-ink-red text-sm font-bold ml-1">Error: {error}</p>}
 
           <SketchyButton 
             type="submit" 

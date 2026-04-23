@@ -61,7 +61,7 @@ export const SketchyButton: React.FC<SketchyButtonProps> = ({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
-        "relative px-6 py-2 font-bold focus:outline-none transition-transform active:scale-95",
+        "relative px-6 py-2 font-bold transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
       {...props}

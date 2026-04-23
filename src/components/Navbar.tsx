@@ -1,10 +1,9 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { TonConnectButton } from '@tonconnect/ui-react';
 import { useAuth } from '../lib/AuthContext';
-import { SketchyButton } from './SketchyButton';
 import { useToast } from '../lib/ToastContext';
-import { LogOut, Home, Landmark, User, Trophy } from 'lucide-react';
+import { LogOut, Home, Landmark, User } from 'lucide-react';
 
 const Navbar: React.FC = () => {
   const { userData, user, logout } = useAuth();
@@ -28,12 +27,18 @@ const Navbar: React.FC = () => {
             <div className="highlighter w-full bottom-1 left-0 group-hover:scale-x-110 transition-transform"></div>
           </Link>
           <div className="hidden md:flex items-center gap-4">
-            <Link to="/" className="flex items-center gap-1 hover:underline font-bold text-lg">
+            <NavLink
+              to="/"
+              className={({ isActive }) => `flex items-center gap-1 font-bold text-lg ${isActive ? 'underline' : 'hover:underline'}`}
+            >
               <Home size={20} /> Lobby
-            </Link>
-            <Link to="/bank" className="flex items-center gap-1 hover:underline font-bold text-lg">
+            </NavLink>
+            <NavLink
+              to="/bank"
+              className={({ isActive }) => `flex items-center gap-1 font-bold text-lg ${isActive ? 'underline' : 'hover:underline'}`}
+            >
               <Landmark size={20} /> Bank
-            </Link>
+            </NavLink>
           </div>
         </div>
 
@@ -48,11 +53,11 @@ const Navbar: React.FC = () => {
             <TonConnectButton />
           </div>
 
-          <Link to={`/profile/${user?.uid}`} className="p-2 hover:bg-black/5 rounded-full">
+          <Link to={`/profile/${user?.uid}`} className="p-2 hover:bg-black/5 rounded-full" aria-label="Open profile">
             <User size={24} />
           </Link>
           
-          <button onClick={handleLogout} className="p-2 hover:text-red-600 transition-colors">
+          <button onClick={handleLogout} className="p-2 hover:text-red-600 transition-colors" aria-label="Log out">
             <LogOut size={24} />
           </button>
         </div>
