@@ -16,6 +16,7 @@ import DashboardView from './views/DashboardView';
 import BankView from './views/BankView';
 import GameView from './views/GameView';
 import ProfileView from './views/ProfileView';
+import NotFoundView from './views/NotFoundView';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -41,6 +42,7 @@ function AppRoutes() {
           <Route path="/bank" element={<ProtectedRoute><BankView /></ProtectedRoute>} />
           <Route path="/game/:roomId" element={<ProtectedRoute><GameView /></ProtectedRoute>} />
           <Route path="/profile/:userId" element={<ProtectedRoute><ProfileView /></ProtectedRoute>} />
+          <Route path="*" element={<NotFoundView />} />
         </Routes>
       </main>
     </div>

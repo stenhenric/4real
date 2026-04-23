@@ -3,8 +3,9 @@ import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
-import { Landmark, Upload, History, StickyNote } from 'lucide-react';
+import { Upload, History, StickyNote } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useToast } from '../lib/ToastContext';
 import type { OrderDTO } from '../types/api';
 
 const MerchantView: React.FC = () => {
@@ -14,6 +15,7 @@ const MerchantView: React.FC = () => {
   const [proofUrl, setProofUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<OrderDTO[]>([]);
+  const { success, error: showError } = useToast();
   const merchantMpesaNumber = import.meta.env.VITE_MERCHANT_MPESA_NUMBER ?? 'Not configured';
   const merchantWalletAddress = import.meta.env.VITE_MERCHANT_WALLET_ADDRESS ?? 'Not configured';
   const merchantInstructions = import.meta.env.VITE_MERCHANT_INSTRUCTIONS ?? 'Follow merchant instructions provided by support.';
@@ -37,12 +39,12 @@ const MerchantView: React.FC = () => {
 
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      alert("Invalid amount");
+      showError('Invalid amount');
       return;
     }
 
     if (activeTab === 'sell' && parsedAmount > (userData?.balance || 0)) {
-      alert("Insufficient balance to withdraw.");
+      showError('Insufficient balance to withdraw.');
       return;
     }
 
@@ -59,11 +61,11 @@ const MerchantView: React.FC = () => {
       setOrders([order, ...orders]);
       setAmount('');
       setProofUrl('');
-      alert(`${activeTab.toUpperCase()} Order submitted successfully.`);
+      success(`${activeTab.toUpperCase()} order submitted successfully.`);
       await refreshUser();
     } catch (err: unknown) {
       console.error(err);
-      alert(err instanceof Error ? err.message : 'Transaction failed');
+      showError(err instanceof Error ? err.message : 'Transaction failed');
     } finally {
       setLoading(false);
     }
@@ -80,7 +82,7 @@ const MerchantView: React.FC = () => {
       await refreshUser();
     } catch (err) {
       console.error(err);
-      alert('Failed to update status.');
+      showError('Failed to update status.');
     }
   };
 

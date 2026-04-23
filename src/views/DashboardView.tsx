@@ -47,12 +47,12 @@ const DashboardView: React.FC = () => {
 
     const parsedWager = parseFloat(wager);
     if (isNaN(parsedWager) || parsedWager < 0) {
-      alert("Invalid wager amount.");
+      showError('Invalid wager amount.');
       return;
     }
 
     if (parsedWager > (userData?.balance || 0)) {
-      alert("Insufficient balance to lock wager.");
+      showError('Insufficient balance to lock wager.');
       return;
     }
 
