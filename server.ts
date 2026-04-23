@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import connectDB from './server/config/db';
 import { setupIndexes } from './server/lib/setup-db';
 import { pollDeposits } from './server/workers/deposit-poller';
@@ -24,6 +25,32 @@ import jwt from 'jsonwebtoken';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+interface RoomPlayer {
+  userId: string;
+  username: string;
+  socketId: string | null;
+  elo: number;
+}
+
+interface RoomMove {
+  userId: string;
+  col: number;
+  row: number;
+}
+
+interface RoomState {
+  roomId: string;
+  players: RoomPlayer[];
+  board: (string | null)[][];
+  currentTurn: string | null;
+  status: 'waiting' | 'active' | 'completed';
+  moves: RoomMove[];
+  wager: number;
+  isPrivate: boolean;
+  dbMatchId?: string;
+  winnerId?: string;
+}
+
 async function startServer() {
   await connectDB();
 
@@ -40,38 +67,58 @@ async function startServer() {
 
 
   const app = express();
-  app.use(cors());
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? ['http://localhost:5173'];
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Origin not allowed by CORS'));
+    },
+    credentials: true,
+  }));
   app.use(express.json());
+  app.use(cookieParser());
 
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
+      origin: allowedOrigins,
+      methods: ["GET", "POST"],
+      credentials: true,
     }
   });
 
   const PORT = Number(process.env.PORT) || 3000;
 
+  io.use((socket, next) => {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie ?? '';
+      const tokenPair = cookieHeader.split(';').map((p) => p.trim()).find((p) => p.startsWith('token='));
+      const token = tokenPair ? decodeURIComponent(tokenPair.split('=')[1]) : undefined;
+      if (!token) {
+        next(new Error('Authentication required'));
+        return;
+      }
+      const decoded = jwt.verify(token, getJwtSecret()) as { id: string; isAdmin: boolean };
+      socket.data.userId = decoded.id;
+      socket.data.isAdmin = decoded.isAdmin;
+      next();
+    } catch {
+      next(new Error('Invalid token'));
+    }
+  });
+
   // Real-time Room State
-  const rooms = new Map<string, any>();
+  const rooms = new Map<string, RoomState>();
 
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    socket.on("join-room", async ({ roomId, userId, username, wager, isPrivate, elo, token }) => {
-      if (!token) {
-        socket.emit('error', 'Authentication required');
-        return;
-      }
-      try {
-        const decoded = jwt.verify(token, getJwtSecret()) as any;
-        if (decoded.id !== userId) {
-          socket.emit('error', 'Unauthorized access');
-          return;
-        }
-      } catch (err) {
-        socket.emit('error', 'Invalid token');
+    socket.on("join-room", async ({ roomId, userId, username, wager, isPrivate, elo }) => {
+      if (socket.data.userId !== userId) {
+        socket.emit('error', 'Unauthorized access');
         return;
       }
 
@@ -91,7 +138,7 @@ async function startServer() {
                 moves: dbMatch.moveHistory || [],
                 wager: dbMatch.wager || 0,
                 isPrivate: dbMatch.isPrivate || false,
-                dbMatchId: dbMatch._id
+                dbMatchId: dbMatch._id.toString()
               });
         } else {
             rooms.set(roomId, {
@@ -108,15 +155,14 @@ async function startServer() {
       }
 
       const room = rooms.get(roomId);
-      const isNewPlayer = !room.players.find((p: any) => p.userId === userId);
+      const isNewPlayer = !room.players.find((p) => p.userId === userId);
 
       if (isNewPlayer && room.players.length < 2) {
         // Handle P2 Wager Deduction
         if (room.players.length === 1 && room.wager > 0 && userId !== room.players[0].userId) {
             try {
-                const user = await UserService.findById(userId);
-                if (user && user.balance >= room.wager) {
-                    await UserService.updateBalance(userId, -room.wager);
+                const updatedUser = await UserService.deductBalanceSafely(userId, room.wager);
+                if (updatedUser) {
                     await TransactionService.createTransaction({ userId, type: 'MATCH_WAGER', amount: -room.wager, referenceId: roomId });
                 } else {
                     // P2 doesn't have enough balance, cannot join
@@ -166,7 +212,7 @@ async function startServer() {
       }
 
       if (row !== -1) {
-        const playerIndex = room.players.findIndex((p: any) => p.userId === userId);
+        const playerIndex = room.players.findIndex((p) => p.userId === userId);
         const symbol = playerIndex === 0 ? 'R' : 'B'; // Red or Blue
         room.board[row][col] = symbol;
         room.moves.push({ userId, col, row });
@@ -185,7 +231,7 @@ async function startServer() {
           await MatchService.completeMatch(roomId, 'draw', room.moves);
           io.to(roomId).emit("game-over", { room, winnerId: 'draw' });
         } else {
-          room.currentTurn = room.players.find((p: any) => p.userId !== userId).userId;
+          room.currentTurn = room.players.find((p) => p.userId !== userId)?.userId ?? null;
           io.to(roomId).emit("move-made", room);
         }
       }
@@ -197,7 +243,7 @@ async function startServer() {
     });
   });
 
-  function checkWin(board: any[][], row: number, col: number, symbol: string) {
+  function checkWin(board: (string | null)[][], row: number, col: number, symbol: string) {
     const directions = [
       [0, 1],  // horizontal
       [1, 0],  // vertical

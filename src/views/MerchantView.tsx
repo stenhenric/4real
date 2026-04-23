@@ -5,6 +5,7 @@ import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
 import { Landmark, Upload, History, StickyNote } from 'lucide-react';
 import { cn } from '../lib/utils';
+import type { OrderDTO } from '../types/api';
 
 const MerchantView: React.FC = () => {
   const { userData, isAdmin, refreshUser } = useAuth();
@@ -12,7 +13,10 @@ const MerchantView: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<OrderDTO[]>([]);
+  const merchantMpesaNumber = import.meta.env.VITE_MERCHANT_MPESA_NUMBER ?? 'Not configured';
+  const merchantWalletAddress = import.meta.env.VITE_MERCHANT_WALLET_ADDRESS ?? 'Not configured';
+  const merchantInstructions = import.meta.env.VITE_MERCHANT_INSTRUCTIONS ?? 'Follow merchant instructions provided by support.';
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -57,9 +61,9 @@ const MerchantView: React.FC = () => {
       setProofUrl('');
       alert(`${activeTab.toUpperCase()} Order submitted successfully.`);
       await refreshUser();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      alert(err.message || 'Transaction failed');
+      alert(err instanceof Error ? err.message : 'Transaction failed');
     } finally {
       setLoading(false);
     }
@@ -97,15 +101,14 @@ const MerchantView: React.FC = () => {
               <div className="space-y-4 font-mono text-sm leading-relaxed">
                 <div className="p-3 bg-white/40 border-l-4 border-yellow-500">
                   <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">M-Pesa Till / Merchant ID</p>
-                  <p className="font-bold text-xl tracking-tight italic">900 800 700</p>
+                  <p className="font-bold text-xl tracking-tight italic">{merchantMpesaNumber}</p>
                 </div>
                 <div className="p-3 bg-white/40 border-l-4 border-yellow-500">
                   <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">TON Wallet Address</p>
-                  <p className="font-bold break-all text-xs">UQAz...8jX2 (Merchant Wallet)</p>
+                  <p className="font-bold break-all text-xs">{merchantWalletAddress}</p>
                 </div>
                 <p className="italic text-xs opacity-70 font-bold bg-white/20 p-2">
-                  * Send exact amount and upload screenshot below.
-                  Merchant release takes 5-30 mins.
+                  {merchantInstructions}
                 </p>
               </div>
             </div>

@@ -50,8 +50,8 @@ const WithdrawView: React.FC = () => {
       setAmount('');
       setToAddress('');
       await refreshUser();
-    } catch (error: any) {
-      addToast(error.message || 'Withdrawal failed', 'error');
+    } catch (error: unknown) {
+      addToast(error instanceof Error ? error.message : 'Withdrawal failed', 'error');
     } finally {
       setLoading(false);
     }

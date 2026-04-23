@@ -13,7 +13,7 @@ import { authenticateToken, requireAdmin } from './auth.middleware.ts';
 
 
 test('authenticateToken - missing token', (t) => {
-  const req = { headers: {} } as any;
+  const req = { cookies: {} } as any;
   const res = {
     status: mock.fn((code) => res),
     json: mock.fn((data) => res)
@@ -28,7 +28,7 @@ test('authenticateToken - missing token', (t) => {
 });
 
 test('authenticateToken - valid token', (t) => {
-  const req = { headers: { authorization: 'Bearer valid-token' } } as any;
+  const req = { cookies: { token: 'valid-token' } } as any;
   const res = {
     status: mock.fn((code) => res),
     json: mock.fn((data) => res)
@@ -48,7 +48,7 @@ test('authenticateToken - valid token', (t) => {
 });
 
 test('authenticateToken - invalid token', (t) => {
-  const req = { headers: { authorization: 'Bearer invalid-token' } } as any;
+  const req = { cookies: { token: 'invalid-token' } } as any;
   const res = {
     status: mock.fn((code) => res),
     json: mock.fn((data) => res)

@@ -4,8 +4,20 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { UserService } from '../services/user.service';
+import type { AuthRequest } from '../middleware/auth.middleware';
 
 export class AuthController {
+  private static setAuthCookie(res: Response, token: string) {
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+  }
+
   static async register(req: Request, res: Response): Promise<void> {
     try {
       const { username, email, password } = req.body;
@@ -45,7 +57,8 @@ export class AuthController {
         { expiresIn: '30d' }
       );
 
-      res.status(201).json({ token, user: { id: user._id, username: user.username, email: user.email, balance: user.balance, elo: user.elo, isAdmin: user.isAdmin } });
+      this.setAuthCookie(res, token);
+      res.status(201).json({ user: { id: user._id, username: user.username, email: user.email, balance: user.balance, elo: user.elo, isAdmin: user.isAdmin } });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Server error' });
@@ -79,15 +92,20 @@ export class AuthController {
         { expiresIn: '30d' }
       );
 
-      res.status(200).json({ token, user: { id: user._id, username: user.username, email: user.email, balance: user.balance, elo: user.elo, isAdmin: user.isAdmin } });
+      this.setAuthCookie(res, token);
+      res.status(200).json({ user: { id: user._id, username: user.username, email: user.email, balance: user.balance, elo: user.elo, isAdmin: user.isAdmin } });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Server error' });
     }
   }
 
-  static async me(req: any, res: Response): Promise<void> {
+  static async me(req: AuthRequest, res: Response): Promise<void> {
     try {
+      if (!req.user?.id) {
+        res.status(401).json({ error: 'Unauthenticated' });
+        return;
+      }
       const user = await UserService.findById(req.user.id);
       if (!user) {
         res.status(404).json({ error: 'User not found' });
@@ -98,5 +116,16 @@ export class AuthController {
       console.error(error);
       res.status(500).json({ error: 'Server error' });
     }
+  }
+
+  static logout(_req: Request, res: Response): void {
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+      path: '/',
+    });
+    res.status(204).send();
   }
 }

@@ -7,12 +7,13 @@ import { SketchyButton } from '../components/SketchyButton';
 import { useToast } from '../lib/ToastContext';
 import { User, Medal, ArrowLeft, Gamepad2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import type { MatchDTO, UserDTO } from '../types/api';
 
 const ProfileView: React.FC = () => {
   const { userId } = useParams();
   const { user: currentUser } = useAuth();
-  const [profile, setProfile] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [profile, setProfile] = useState<UserDTO | null>(null);
+  const [history, setHistory] = useState<MatchDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const { error: showError } = useToast();
 

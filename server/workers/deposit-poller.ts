@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { USDT_MASTER, addressesEqual } from '../lib/jetton';
 import dotenv from 'dotenv';
-import { User } from '../models/User';
+import { UserService } from '../services/user.service';
 
 dotenv.config();
 
@@ -16,7 +16,7 @@ interface JettonTransfer {
 }
 
 interface DepositMemo {
-  _id?: any;
+  _id?: unknown;
   userId: string;
   memo: string;
   used?: boolean;
@@ -176,11 +176,7 @@ async function processIncomingTransfer(db: mongoose.mongo.Db, tx: JettonTransfer
         { upsert: true, session }
       );
 
-      // Sync the user model balance too to be consistent with main app
-      const currentUsdt = Number(receivedRaw) / 1e6;
-      await User.findByIdAndUpdate(userId, {
-          $inc: { balance: currentUsdt }
-      }, { session });
+      await UserService.syncUserDisplayBalance(userId, session);
     });
 
   } catch (err: unknown) {

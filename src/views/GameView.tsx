@@ -3,22 +3,40 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import rough from 'roughjs';
 import canvasConfetti from 'canvas-confetti';
-import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { useToast } from '../lib/ToastContext';
 import { SketchyButton } from '../components/SketchyButton';
 import { User, Trophy, Medal } from 'lucide-react';
 import { cn } from '../lib/utils';
+import type { MatchMoveDTO } from '../types/api';
+
+interface RoomPlayer {
+  userId: string;
+  username: string;
+  socketId: string | null;
+  elo: number;
+}
+
+interface RoomState {
+  roomId: string;
+  players: RoomPlayer[];
+  board: (string | null)[][];
+  currentTurn: string | null;
+  status: 'waiting' | 'active' | 'completed';
+  moves: MatchMoveDTO[];
+  wager: number;
+  winnerId?: string;
+}
 
 const GameView: React.FC = () => {
   const { roomId } = useParams();
   const { user, userData, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [room, setRoom] = useState<any>(null);
-  const [gameOver, setGameOver] = useState<any>(null);
-  const { success, info, warning } = useToast();
+  const [room, setRoom] = useState<RoomState | null>(null);
+  const [gameOver, setGameOver] = useState<{ winnerId: string; winningLine?: [number, number][] } | null>(null);
+  const { success, warning } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -28,15 +46,13 @@ const GameView: React.FC = () => {
     const s = io(window.location.origin);
     setSocket(s);
 
-    const token = localStorage.getItem('token');
     s.emit("join-room", {
       roomId,
       userId: user.uid,
       username: userData.username,
       elo: userData.elo,
       wager: 0, // In real app, fetch initial room state first
-      isPrivate: false,
-      token
+      isPrivate: false
     });
 
     s.on('error', (msg: string) => {
@@ -44,22 +60,22 @@ const GameView: React.FC = () => {
       navigate('/');
     });
 
-    s.on("room-sync", (roomData: any) => {
+    s.on("room-sync", (roomData: RoomState) => {
       setRoom(roomData);
       if (roomData.status === 'completed' && roomData.winnerId) {
         setGameOver({ winnerId: roomData.winnerId });
       }
     });
 
-    s.on("game-started", (roomData: any) => {
+    s.on("game-started", (roomData: RoomState) => {
       setRoom(roomData);
     });
 
-    s.on("move-made", (roomData: any) => {
+    s.on("move-made", (roomData: RoomState) => {
       setRoom(roomData);
     });
 
-    s.on("game-over", async ({ room: roomData, winnerId, winningLine }: any) => {
+    s.on("game-over", async ({ room: roomData, winnerId, winningLine }: { room: RoomState; winnerId: string; winningLine?: [number, number][] }) => {
       setRoom(roomData);
       setGameOver({ winnerId, winningLine });
 
@@ -100,7 +116,7 @@ const GameView: React.FC = () => {
     return () => {
       s.disconnect();
     };
-  }, [roomId, user, userData]);
+  }, [roomId, user, userData, navigate, refreshUser, warning]);
 
   useEffect(() => {
     if (canvasRef.current && room?.board) {
@@ -126,7 +142,7 @@ const GameView: React.FC = () => {
     }
 
     // Draw Discs
-    room.board.forEach((row: any[], r: number) => {
+    room.board.forEach((row, r: number) => {
       row.forEach((cell, c: number) => {
         if (cell) {
           const centerX = c * cellWidth + cellWidth / 2;
@@ -174,9 +190,9 @@ const GameView: React.FC = () => {
   if (!room) return <div className="text-center py-20 italic">Finding the table...</div>;
 
   const isMyTurn = room.currentTurn === user?.uid;
-  const opponent = room.players.find((p: any) => p.userId !== user?.uid);
-  const myIndex = room.players.findIndex((p: any) => p.userId === user?.uid);
-  const oppIndex = room.players.findIndex((p: any) => p.userId !== user?.uid);
+  const opponent = room.players.find((p) => p.userId !== user?.uid);
+  const myIndex = room.players.findIndex((p) => p.userId === user?.uid);
+  const oppIndex = room.players.findIndex((p) => p.userId !== user?.uid);
   
   const myColorClass = myIndex === 0 ? "bg-[#ef4444]" : "bg-[#3b82f6]";
   const oppColorClass = oppIndex === 0 ? "bg-[#ef4444]" : "bg-[#3b82f6]";
@@ -283,7 +299,7 @@ const GameView: React.FC = () => {
           <h2 className="text-xl font-bold flex items-center gap-2 mb-4"><Trophy size={18} /> Match Log</h2>
           <div className="space-y-2 h-48 overflow-y-auto font-mono text-xs">
             {room.moves.length === 0 && <p className="opacity-40 italic">Waiting for first strike...</p>}
-            {room.moves.map((move: any, i: number) => (
+            {room.moves.map((move, i: number) => (
               <div key={i} className="border-b border-black/5 flex justify-between py-1">
                 <span>Move {i+1}</span>
                 <span className="font-bold">{move.userId === user?.uid ? 'You' : 'Opp'} dropped @ col {move.col + 1}</span>

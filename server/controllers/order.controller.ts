@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { OrderService } from '../services/order.service';
 import { UserService } from '../services/user.service';
+import type { AuthRequest } from '../middleware/auth.middleware';
 
 export class OrderController {
   static async getOrders(req: Request, res: Response): Promise<void> {
@@ -13,8 +14,12 @@ export class OrderController {
     }
   }
 
-  static async createOrder(req: any, res: Response): Promise<void> {
+  static async createOrder(req: AuthRequest & Request, res: Response): Promise<void> {
     try {
+      if (!req.user?.id) {
+        res.status(401).json({ error: 'Unauthenticated' });
+        return;
+      }
       const { type, amount, proofImageUrl } = req.body;
 
       if (!['BUY', 'SELL'].includes(type)) {
