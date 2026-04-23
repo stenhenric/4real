@@ -293,14 +293,31 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.error('Vite initialization failed. Falling back to static dist files.', e);
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath, { index: false }));
+      app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+    }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+
+    // Explicitly serve assets folder with correct MIME types to prevent the catch-all from sending index.html for missing assets
+    app.use('/assets', express.static(path.join(distPath, 'assets'), {
+      fallthrough: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
+        if (filePath.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript');
+      }
+    }));
+
+    app.use(express.static(distPath, { index: false }));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
