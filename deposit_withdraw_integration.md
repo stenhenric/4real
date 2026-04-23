@@ -1,5 +1,9 @@
 # Deposit and Withdraw Integration
 
+> Status (April 23, 2026): Historical implementation note. The deposit/withdraw
+> stack is now live in the active code paths under `server/services/*`,
+> `server/workers/*`, and `src/views/*`.
+
 ## Summary of Findings
 The deposit and withdraw logic handles interacting with TON on the backend, checking constraints, managing balances, and scheduling off-chain jobs (pollers and workers) to resolve those transactions asynchronously. The backend endpoints and business logic to support standard REST calls for initiating these flows, as well as the frontend views connecting them, were missing.
 

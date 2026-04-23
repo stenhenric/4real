@@ -5,6 +5,7 @@ import { User } from './models/User';
 import { Match } from './models/Match';
 import { Order } from './models/Order';
 import connectDB from './config/db';
+import { UserService } from './services/user.service';
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ const seedDB = async () => {
   await User.deleteMany({});
   await Match.deleteMany({});
   await Order.deleteMany({});
+  await mongoose.connection.db?.collection('user_balances').deleteMany({});
 
   console.log('Seeding users...');
   const salt = await bcrypt.genSalt(10);
@@ -46,6 +48,17 @@ const seedDB = async () => {
       isAdmin: false
     }
   ]);
+
+  const userBalances = users.map((u) => ({
+    userId: u._id.toString(),
+    balanceRaw: BigInt(Math.round(u.balance * 1_000_000)).toString(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }));
+  await mongoose.connection.db?.collection('user_balances').insertMany(userBalances);
+  for (const user of users) {
+    await UserService.syncUserDisplayBalance(user._id.toString());
+  }
 
   console.log('Seeding matches...');
   await Match.insertMany([

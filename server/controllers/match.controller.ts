@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { MatchService } from '../services/match.service';
 import { UserService } from '../services/user.service';
 import { TransactionService } from '../services/transaction.service';
+import type { AuthRequest } from '../middleware/auth.middleware';
 
 export class MatchController {
   static async getActiveMatches(req: Request, res: Response): Promise<void> {
@@ -15,8 +16,12 @@ export class MatchController {
     }
   }
 
-  static async createMatch(req: any, res: Response): Promise<void> {
+  static async createMatch(req: AuthRequest & Request, res: Response): Promise<void> {
     try {
+      if (!req.user?.id) {
+        res.status(401).json({ error: 'Unauthenticated' });
+        return;
+      }
       const { wager, isPrivate } = req.body;
       const user = await UserService.findById(req.user.id);
 
@@ -27,11 +32,11 @@ export class MatchController {
 
       if (wager > 0) {
         const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager);
-        await TransactionService.createTransaction({ userId: user._id.toString(), type: 'MATCH_WAGER', amount: -wager, referenceId: 'roomId_pending' });
         if (!updatedUser) {
           res.status(400).json({ error: 'INSUFFICIENT_BALANCE' });
           return;
         }
+        await TransactionService.createTransaction({ userId: user._id.toString(), type: 'MATCH_WAGER', amount: -wager, referenceId: 'roomId_pending' });
       }
 
       // We just create a roomId, and let socket handle the rest for now, or insert properly

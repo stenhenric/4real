@@ -60,7 +60,11 @@ export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, h
   return seqno;
 }
 
-async function pollUntilSeqnoChanges(contract: any, initialSeqno: number, timeoutMs = 90_000) {
+interface SeqnoContract {
+  getSeqno: () => Promise<number>;
+}
+
+async function pollUntilSeqnoChanges(contract: SeqnoContract, initialSeqno: number, timeoutMs = 90_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await sleep(2500);

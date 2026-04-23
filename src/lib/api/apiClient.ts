@@ -1,27 +1,43 @@
-export const getToken = () => localStorage.getItem('token');
-export const setToken = (token: string) => localStorage.setItem('token', token);
-export const removeToken = () => localStorage.removeItem('token');
-
-const request = async (endpoint: string, options: RequestInit = {}) => {
-  const token = getToken();
+const request = async <T = unknown>(endpoint: string, options: RequestInit = {}): Promise<T> => {
   const headers = new Headers(options.headers || {});
 
-  headers.set('Content-Type', 'application/json');
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
+  if (!(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
   }
 
   const response = await fetch(`/api${endpoint}`, {
     ...options,
-    headers
+    headers,
+    credentials: 'include',
   });
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || 'API Error');
+  if (response.status === 204) {
+    return null as T;
   }
 
-  return data;
+  let data: unknown = null;
+  try {
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    if (typeof data === 'object' && data !== null && 'error' in data) {
+      throw new Error(String((data as { error: unknown }).error));
+    }
+    if (typeof data === 'string' && data.trim().length > 0) {
+      throw new Error(data);
+    }
+    throw new Error('API Error');
+  }
+
+  return data as T;
 };
 
 export default request;

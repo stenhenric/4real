@@ -8,11 +8,12 @@ import MerchantView from './MerchantView';
 import request from '../lib/api/apiClient';
 import DepositView from './DepositView';
 import WithdrawView from './WithdrawView';
+import type { TransactionDTO } from '../types/api';
 
 const BankView: React.FC = () => {
   const { userData } = useAuth();
   const [activeView, setActiveView] = useState<'portal' | 'merchant' | 'deposit' | 'withdraw'>('portal');
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
 
   useEffect(() => {
     if (activeView === 'portal') {
@@ -130,14 +131,14 @@ const BankView: React.FC = () => {
         </div>
 
         <div className="space-y-4">
-          {transactions.length === 0 ? (
+              {transactions.length === 0 ? (
             <div className="py-12 text-center border-2 border-dashed border-black/10 rounded">
               <p className="italic opacity-30 font-bold uppercase tracking-widest">
                 No ink has been spilled yet.
               </p>
             </div>
           ) : (
-            transactions.map(tx => (
+            transactions.map((tx) => (
               <div key={tx._id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border-b-2 border-black/5 hover:bg-black/5 transition-colors">
                 <div className="flex items-center gap-4 mb-2 sm:mb-0">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg

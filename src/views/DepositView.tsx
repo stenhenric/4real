@@ -6,10 +6,11 @@ import request from '../lib/api/apiClient';
 import { useToast } from '../lib/ToastContext';
 import { useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { beginCell, Address, toNano } from '@ton/ton';
+import type { DepositMemoDTO } from '../types/api';
 
 
 const DepositView: React.FC = () => {
-  const [memoData, setMemoData] = useState<any>(null);
+  const [memoData, setMemoData] = useState<(DepositMemoDTO & { deepLink?: string }) | null>(null);
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
   const [tonConnectUI] = useTonConnectUI();
@@ -81,9 +82,9 @@ const DepositView: React.FC = () => {
 
       await tonConnectUI.sendTransaction(transaction);
       addToast('Transaction sent successfully! Waiting for confirmation...', 'success');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      addToast(error.message || 'Transaction failed', 'error');
+      addToast(error instanceof Error ? error.message : 'Transaction failed', 'error');
     } finally {
       setSendingTransaction(false);
     }
@@ -96,8 +97,8 @@ const DepositView: React.FC = () => {
       const data = await request('/transactions/deposit/memo', { method: 'POST' });
       setMemoData(data);
       addToast('Deposit memo generated successfully!', 'success');
-    } catch (error: any) {
-      addToast(error.message || 'Failed to generate memo', 'error');
+    } catch (error: unknown) {
+      addToast(error instanceof Error ? error.message : 'Failed to generate memo', 'error');
     } finally {
       setLoading(false);
     }

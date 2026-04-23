@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { sendUsdtWithdrawal } from '../services/withdrawal-engine';
 import { getOrDeriveJettonWallet } from '../lib/jetton';
 import { getHotWallet } from '../lib/ton-client';
+import { UserService } from '../services/user.service';
 
 let isSending = false;
 let hotJettonWallet: string | null = null;
@@ -43,7 +44,7 @@ export async function runWithdrawalWorker() {
       console.log(`Withdrawal ${doc.withdrawalId} sent (seqno: ${seqno})`);
 
     } catch (sendErr: unknown) {
-      const errorMessage = sendErr instanceof Error ? sendErr instanceof Error ? sendErr.message : String(sendErr) : String(sendErr);
+      const errorMessage = sendErr instanceof Error ? sendErr.message : String(sendErr);
       console.error(`Withdrawal ${doc.withdrawalId} failed:`, errorMessage);
 
       if (errorMessage.includes('Seqno stuck')) {
@@ -72,12 +73,7 @@ export async function runWithdrawalWorker() {
             { $set: { balanceRaw: newBalanceRaw, updatedAt: new Date() } }
           );
 
-          // Also refund the User model balance
-          const mongoose = (await import('mongoose')).default;
-          const User = (await import('../models/User')).User;
-          await User.findByIdAndUpdate(doc.userId, {
-            $inc: { balance: Number(doc.amountRaw) / 1e6 }
-          });
+          await UserService.syncUserDisplayBalance(doc.userId);
 
           console.warn(`Withdrawal ${doc.withdrawalId} permanently failed — balance refunded`);
         }
@@ -99,7 +95,7 @@ export async function recoverStuckWithdrawals() {
     }).toArray();
 
     if (stuck.length > 0) {
-      const ids = stuck.map((doc: any) => doc._id);
+      const ids = stuck.map((doc) => doc._id);
       console.warn(`Resetting ${stuck.length} stuck withdrawals → queued`);
       await db.collection('withdrawals').updateMany(
         { _id: { $in: ids } },

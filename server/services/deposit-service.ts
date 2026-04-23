@@ -15,10 +15,18 @@ export async function generateDepositMemo(userId: string) {
     used: false,
   });
 
+  const hotWalletAddress = process.env.HOT_WALLET_ADDRESS;
+  if (!hotWalletAddress) {
+    throw new Error('HOT_WALLET_ADDRESS is not configured');
+  }
+
+  const deepLink = `ton://transfer/${hotWalletAddress}?text=${encodeURIComponent(memo)}`;
+
   return {
     memo,
-    address: process.env.HOT_WALLET_ADDRESS,
-    instructions: `Send USDT to ${process.env.HOT_WALLET_ADDRESS} with comment: ${memo}`,
+    address: hotWalletAddress,
+    deepLink,
+    instructions: `Send USDT to ${hotWalletAddress} with comment: ${memo}`,
     expiresIn: '24 hours',
   };
 }

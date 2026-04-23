@@ -1,6 +1,7 @@
 import { Match, IMatch } from '../models/Match';
 import { UserService } from './user.service';
 import { TransactionService } from './transaction.service';
+import type { MatchMoveDTO } from '../types/api';
 
 export class MatchService {
   static async createMatch(matchData: Partial<IMatch>): Promise<IMatch> {
@@ -18,7 +19,7 @@ export class MatchService {
     return Match.findOne({ roomId });
   }
 
-  static async completeMatch(roomId: string, winnerId: string, moveHistory: any[]): Promise<IMatch | null> {
+  static async completeMatch(roomId: string, winnerId: string, moveHistory: MatchMoveDTO[]): Promise<IMatch | null> {
     const match = await Match.findOneAndUpdate(
       { roomId },
       { status: 'completed', winnerId, moveHistory },

@@ -5,13 +5,14 @@ import request from '../lib/api/apiClient';
 import { SketchyButton } from '../components/SketchyButton';
 import { useToast } from '../lib/ToastContext';
 import { Play, Trophy, Clock, User as UserIcon, Plus } from 'lucide-react';
+import type { MatchDTO, UserDTO } from '../types/api';
 
 const DashboardView: React.FC = () => {
   const navigate = useNavigate();
   const { userData, user } = useAuth();
   const [activeTab, setActiveTab] = useState('lobby');
-  const [activeMatches, setActiveMatches] = useState<any[]>([]);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [activeMatches, setActiveMatches] = useState<MatchDTO[]>([]);
+  const [leaderboard, setLeaderboard] = useState<UserDTO[]>([]);
   const { success, error: showError } = useToast();
   const [wager, setWager] = useState<string>('0');
   const [isPrivate, setIsPrivate] = useState(false);
@@ -56,13 +57,14 @@ const DashboardView: React.FC = () => {
     }
 
     try {
-      const match = await request('/matches', {
+      const match = await request<MatchDTO>('/matches', {
         method: 'POST',
         body: JSON.stringify({ wager: parsedWager, isPrivate })
       });
       navigate(`/game/${match.roomId}`);
-    } catch (error: any) {
-      if (error.message === 'INSUFFICIENT_BALANCE') {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Match creation failed. Please try again.';
+      if (message === 'INSUFFICIENT_BALANCE') {
         showError("Insufficient balance to lock wager.");
         return;
       }

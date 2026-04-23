@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import request, { setToken } from '../lib/api/apiClient';
+import request from '../lib/api/apiClient';
 import { useAuth } from '../lib/AuthContext';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { SketchyButton } from '../components/SketchyButton';
@@ -23,25 +23,24 @@ const AuthView: React.FC = () => {
 
     try {
       if (isLogin) {
-        const data = await request('/auth/login', {
+        await request('/auth/login', {
           method: 'POST',
           body: JSON.stringify({ email, password })
         });
-        setToken(data.token);
         success(`Welcome back!`);
       } else {
-        const data = await request('/auth/register', {
+        await request('/auth/register', {
           method: 'POST',
           body: JSON.stringify({ username, email, password })
         });
-        setToken(data.token);
         success('Account created! Welcome to the notebook.');
       }
       await refreshUser();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.message || 'Authentication failed');
-      showError(err.message || 'Authentication failed');
+      const message = err instanceof Error ? err.message : 'Authentication failed';
+      setError(message);
+      showError(message);
     } finally {
       setLoading(false);
     }
