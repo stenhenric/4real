@@ -72,9 +72,9 @@ async function startServer() {
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
-        return;
+      } else {
+        callback(null, false);
       }
-      callback(new Error('Origin not allowed by CORS'));
     },
     credentials: true,
   }));
