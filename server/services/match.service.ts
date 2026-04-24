@@ -15,7 +15,7 @@ export class MatchService {
   }
 
   static async getActiveMatches(): Promise<IMatch[]> {
-    return Match.find({ status: { $in: ['waiting', 'active'] }, isPrivate: false })
+    return Match.find({ status: 'waiting', isPrivate: false })
       .sort({ createdAt: -1 })
       .limit(20).select('-__v');
   }
