@@ -1,21 +1,30 @@
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
 
-dotenv.config();
+import { getEnv } from './env.ts';
+import { logger } from '../utils/logger.ts';
 
-const connectDB = async () => {
-  try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/4real';
-    if (!mongoURI) {
-      throw new Error('MONGODB_URI is not defined in the environment variables');
-    }
+mongoose.set('strictQuery', true);
+mongoose.set('sanitizeFilter', true);
 
-    const conn = await mongoose.connect(mongoURI);
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.error('Error connecting to MongoDB:', error);
-    process.exit(1);
+export async function connectDB() {
+  const { MONGODB_URI } = getEnv();
+  const connection = await mongoose.connect(MONGODB_URI);
+
+  logger.info('database.connected', {
+    host: connection.connection.host,
+    name: connection.connection.name,
+  });
+
+  return connection;
+}
+
+export async function disconnectDB(): Promise<void> {
+  if (mongoose.connection.readyState === 0) {
+    return;
   }
-};
+
+  await mongoose.disconnect();
+  logger.info('database.disconnected');
+}
 
 export default connectDB;

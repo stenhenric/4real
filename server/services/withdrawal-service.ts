@@ -1,5 +1,8 @@
 import mongoose from 'mongoose';
-import { UserService } from './user.service';
+
+import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { UserService } from './user.service.ts';
 
 const MAX_TRANSACTION_RETRIES = 3;
 
@@ -20,41 +23,27 @@ export async function requestWithdrawal({
   amountUsdt: number;
   withdrawalId: string;
 }) {
-  const db = mongoose.connection.db;
-  if (!db) throw new Error('Database not connected');
-
   const amountRaw = BigInt(Math.round(amountUsdt * 1_000_000)).toString();
 
   for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt++) {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        const balanceDoc = await db.collection('user_balances').findOne({ userId }, { session });
+        const balanceDoc = await UserBalanceRepository.findByUserId(userId, session);
         const currentRaw = BigInt(balanceDoc?.balanceRaw ?? '0');
         const requestedRaw = BigInt(amountRaw);
         if (currentRaw < requestedRaw) {
           throw new Error('Insufficient balance');
         }
         const nextRaw = (currentRaw - requestedRaw).toString();
-        await db.collection('user_balances').updateOne(
-          { userId },
-          { $set: { balanceRaw: nextRaw, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
-          { upsert: true, session }
-        );
-
-        await db.collection('withdrawals').insertOne(
-          {
-            withdrawalId,
-            userId,
-            toAddress,
-            amountRaw,
-            amountDisplay: amountUsdt.toString(),
-            status: 'queued',
-            createdAt: new Date(),
-            retries: 0,
-          },
-          { session }
-        );
+        await UserBalanceRepository.setBalanceRaw(userId, nextRaw, session);
+        await WithdrawalRepository.createQueued({
+          withdrawalId,
+          userId,
+          toAddress,
+          amountRaw,
+          amountDisplay: amountUsdt.toFixed(6),
+        }, session);
 
         await UserService.syncUserDisplayBalance(userId, session);
       });

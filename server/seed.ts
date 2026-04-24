@@ -1,11 +1,12 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { User } from './models/User';
-import { Match } from './models/Match';
-import { Order } from './models/Order';
-import connectDB from './config/db';
-import { UserService } from './services/user.service';
+import { User } from './models/User.ts';
+import { Match } from './models/Match.ts';
+import { Order } from './models/Order.ts';
+import connectDB from './config/db.ts';
+import { UserBalanceRepository } from './repositories/user-balance.repository.ts';
+import { UserService } from './services/user.service.ts';
 
 dotenv.config();
 
@@ -16,7 +17,7 @@ const seedDB = async () => {
   await User.deleteMany({});
   await Match.deleteMany({});
   await Order.deleteMany({});
-  await mongoose.connection.db?.collection('user_balances').deleteMany({});
+  await UserBalanceRepository.deleteAll();
 
   console.log('Seeding users...');
   const salt = await bcrypt.genSalt(10);
@@ -52,10 +53,12 @@ const seedDB = async () => {
   const userBalances = users.map((u) => ({
     userId: u._id.toString(),
     balanceRaw: BigInt(Math.round(u.balance * 1_000_000)).toString(),
+    totalDepositedRaw: '0',
+    totalWithdrawnRaw: '0',
     createdAt: new Date(),
     updatedAt: new Date(),
   }));
-  await mongoose.connection.db?.collection('user_balances').insertMany(userBalances);
+  await UserBalanceRepository.insertMany(userBalances);
   for (const user of users) {
     await UserService.syncUserDisplayBalance(user._id.toString());
   }

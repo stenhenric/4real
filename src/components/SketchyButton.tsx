@@ -1,75 +1,64 @@
-import React, { useEffect, useRef, useState } from 'react';
-import rough from 'roughjs';
-import { cn } from '../lib/utils';
+import type * as React from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { drawRoughRectangle } from '../canvas/drawRoughRectangle';
+import { useElementSize } from '../hooks/useElementSize';
+import { cn } from '../utils/cn';
 
-interface SketchyButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+type SketchyButtonProps = React.ComponentProps<'button'> & {
   fill?: string;
   stroke?: string;
   activeColor?: string;
-}
+};
 
-export const SketchyButton: React.FC<SketchyButtonProps> = ({ 
+export const SketchyButton = ({ 
   children, 
   className,
   fill = 'transparent',
   stroke = '#1a1a1a',
   activeColor = '#e5e7eb',
+  type = 'button',
   ...props 
-}) => {
-  const containerRef = useRef<HTMLButtonElement>(null);
+}: SketchyButtonProps) => {
+  const { elementRef, size } = useElementSize<HTMLButtonElement>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
-    if (containerRef.current) {
-      const resizeObserver = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          setDimensions({
-            width: entry.contentRect.width,
-            height: entry.contentRect.height
-          });
-        }
-      });
-      resizeObserver.observe(containerRef.current);
-      return () => resizeObserver.disconnect();
+    const canvas = canvasRef.current;
+    if (!canvas || size.width <= 0 || size.height <= 0) {
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    if (canvasRef.current && dimensions.width > 0 && dimensions.height > 0) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const rc = rough.canvas(canvas);
-        rc.rectangle(4, 4, dimensions.width - 8, dimensions.height - 8, {
-          stroke,
-          strokeWidth: 2,
-          roughness: 1.2,
-          fill: hovered ? activeColor : fill,
-          fillStyle: 'hachure',
-          hachureGap: 8
-        });
-      }
-    }
-  }, [dimensions, hovered, fill, stroke, activeColor]);
+    drawRoughRectangle(canvas, {
+      x: 4,
+      y: 4,
+      width: size.width - 8,
+      height: size.height - 8,
+      fill: hovered ? activeColor : fill,
+      fillStyle: 'hachure',
+      hachureGap: 8,
+      roughness: 1.2,
+      stroke,
+      strokeWidth: 2,
+    });
+  }, [activeColor, fill, hovered, size.height, size.width, stroke]);
 
   return (
     <button
-      ref={containerRef}
+      ref={elementRef}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
         "relative px-6 py-2 font-bold transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
+      type={type}
       {...props}
     >
       <canvas 
         ref={canvasRef} 
-        width={dimensions.width} 
-        height={dimensions.height} 
+        width={size.width} 
+        height={size.height} 
         className="absolute top-0 left-0 pointer-events-none z-0"
       />
       <span className="relative z-10">{children}</span>

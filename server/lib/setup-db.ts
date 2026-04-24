@@ -1,40 +1,32 @@
-import mongoose from 'mongoose';
+import { Match } from '../models/Match.ts';
+import { Order } from '../models/Order.ts';
+import { Transaction } from '../models/Transaction.ts';
+import { User } from '../models/User.ts';
+import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
+import { DepositRepository } from '../repositories/deposit.repository.ts';
+import { JettonWalletCacheRepository } from '../repositories/jetton-wallet-cache.repository.ts';
+import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
+import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
+import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.repository.ts';
+import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { logger } from '../utils/logger.ts';
 
 export async function setupIndexes() {
-  const db = mongoose.connection.db;
-  if (!db) {
-      console.error("Database connection not ready for index setup.");
-      return;
-  }
+  await Promise.all([
+    DepositRepository.ensureIndexes(),
+    WithdrawalRepository.ensureIndexes(),
+    UserBalanceRepository.ensureIndexes(),
+    ProcessedTransactionRepository.ensureIndexes(),
+    DepositMemoRepository.ensureIndexes(),
+    PollerStateRepository.ensureIndexes(),
+    JettonWalletCacheRepository.ensureIndexes(),
+    UnmatchedDepositRepository.ensureIndexes(),
+    User.createIndexes(),
+    Match.createIndexes(),
+    Order.createIndexes(),
+    Transaction.createIndexes(),
+  ]);
 
-  try {
-      await db.collection('deposits').createIndexes([
-        { key: { txHash: 1 }, unique: true },
-        { key: { userId: 1, createdAt: -1 } },
-      ]);
-
-      await db.collection('withdrawals').createIndexes([
-        { key: { withdrawalId: 1 }, unique: true },
-        { key: { status: 1, createdAt: 1 } },
-        { key: { userId: 1, createdAt: -1 } },
-      ]);
-
-      await db.collection('user_balances').createIndexes([
-        { key: { userId: 1 }, unique: true },
-      ]);
-
-      await db.collection('processed_txs').createIndexes([
-        { key: { txHash: 1 }, unique: true },
-        { key: { processedAt: 1 }, expireAfterSeconds: 7_776_000 }, // 90d TTL
-      ]);
-
-      await db.collection('deposit_memos').createIndexes([
-        { key: { memo: 1 }, unique: true },
-        { key: { expiresAt: 1 }, expireAfterSeconds: 0 }, // TTL auto-delete
-      ]);
-
-      console.log('All indexes created successfully.');
-  } catch (error) {
-      console.error('Error creating indexes:', error);
-  }
+  logger.info('database.indexes_ready');
 }

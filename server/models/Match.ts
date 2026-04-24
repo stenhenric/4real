@@ -23,7 +23,7 @@ const MatchSchema: Schema = new Schema({
   p2Username: { type: String },
   status: { type: String, enum: ['waiting', 'active', 'completed'], default: 'waiting', index: true },
   winnerId: { type: String },
-  wager: { type: Number, default: 0 },
+  wager: { type: Number, default: 0, min: 0 },
   isPrivate: { type: Boolean, default: false },
   moveHistory: [{
     userId: { type: String, required: true },
@@ -33,5 +33,9 @@ const MatchSchema: Schema = new Schema({
 }, {
   timestamps: true
 });
+
+MatchSchema.index({ status: 1, isPrivate: 1, createdAt: -1 });
+MatchSchema.index({ player1Id: 1, status: 1, createdAt: -1 });
+MatchSchema.index({ player2Id: 1, status: 1, createdAt: -1 });
 
 export const Match = mongoose.model<IMatch>('Match', MatchSchema);

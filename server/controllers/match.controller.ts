@@ -1,72 +1,82 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { Request, Response } from 'express';
-import { MatchService } from '../services/match.service';
-import { UserService } from '../services/user.service';
-import { TransactionService } from '../services/transaction.service';
-import type { AuthRequest } from '../middleware/auth.middleware';
+import mongoose from 'mongoose';
+
+import type { AuthRequest } from '../middleware/auth.middleware.ts';
+import type { IMatch } from '../models/Match.ts';
+import { MatchService } from '../services/match.service.ts';
+import { calculateProjectedWinnerAmount } from '../services/match-payout.service.ts';
+import { TransactionService } from '../services/transaction.service.ts';
+import { UserService } from '../services/user.service.ts';
+import { notFound, unauthorized, badRequest } from '../utils/http-error.ts';
+import type { CreateMatchRequest } from '../validation/request-schemas.ts';
+
+const serializeMatch = (match: IMatch) => ({
+  ...match.toObject(),
+  projectedWinnerAmount: calculateProjectedWinnerAmount(match.wager),
+});
 
 export class MatchController {
-  static async getActiveMatches(req: Request, res: Response): Promise<void> {
-    try {
-      const matches = await MatchService.getActiveMatches();
-      res.json(matches);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Server error' });
-    }
+  static async getActiveMatches(_req: Request, res: Response): Promise<void> {
+    const matches = await MatchService.getActiveMatches();
+    res.json(matches.map((match) => serializeMatch(match)));
   }
 
-  static async createMatch(req: AuthRequest & Request, res: Response): Promise<void> {
-    try {
-      if (!req.user?.id) {
-        res.status(401).json({ error: 'Unauthenticated' });
-        return;
-      }
-      const { wager, isPrivate } = req.body;
-      const user = await UserService.findById(req.user.id);
-
-      if (!user) {
-        res.status(404).json({ error: 'User not found' });
-        return;
-      }
-
-      if (wager > 0) {
-        const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager);
-        if (!updatedUser) {
-          res.status(400).json({ error: 'INSUFFICIENT_BALANCE' });
-          return;
-        }
-        await TransactionService.createTransaction({ userId: user._id.toString(), type: 'MATCH_WAGER', amount: -wager, referenceId: 'roomId_pending' });
-      }
-
-      // We just create a roomId, and let socket handle the rest for now, or insert properly
-      const roomId = crypto.randomBytes(3).toString('hex');
-
-      const match = await MatchService.createMatch({
-        roomId,
-        player1Id: user._id,
-        p1Username: user.username,
-        wager: wager || 0,
-        isPrivate: isPrivate || false,
-        status: 'waiting',
-        moveHistory: []
-      });
-
-      res.status(201).json(match);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Server error' });
+  static async createMatch(req: AuthRequest, res: Response): Promise<void> {
+    if (!req.user?.id) {
+      throw unauthorized('Unauthenticated');
     }
+
+    const { wager, isPrivate } = req.body as CreateMatchRequest;
+    const roomId = crypto.randomBytes(3).toString('hex');
+    const session = await mongoose.startSession();
+    let match: IMatch | null = null;
+
+    try {
+      await session.withTransaction(async () => {
+        const user = await UserService.findById(req.user!.id, session);
+        if (!user) {
+          throw notFound('User not found');
+        }
+
+        if (wager > 0) {
+          const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager, session);
+          if (!updatedUser) {
+            throw badRequest('INSUFFICIENT_BALANCE');
+          }
+
+          await TransactionService.createTransaction({
+            userId: user._id.toString(),
+            type: 'MATCH_WAGER',
+            amount: -wager,
+            referenceId: roomId,
+            session,
+          });
+        }
+
+        match = await MatchService.createMatch({
+          roomId,
+          player1Id: user._id,
+          p1Username: user.username,
+          wager: wager || 0,
+          isPrivate: isPrivate || false,
+          status: 'waiting',
+          moveHistory: [],
+        }, session);
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    if (!match) {
+      throw new Error('Unable to create match');
+    }
+
+    res.status(201).json(serializeMatch(match));
   }
 
   static async getUserHistory(req: Request, res: Response): Promise<void> {
-    try {
-      const { userId } = req.params;
-      const matches = await MatchService.getUserHistory(userId);
-      res.json(matches);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Server error' });
-    }
+    const matches = await MatchService.getUserHistory(req.params.userId);
+    res.json(matches.map((match) => serializeMatch(match)));
   }
 }

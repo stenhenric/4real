@@ -1,9 +1,16 @@
 import mongoose from 'mongoose';
-import { USDT_MASTER, addressesEqual } from '../lib/jetton';
-import dotenv from 'dotenv';
-import { UserService } from '../services/user.service';
-
-dotenv.config();
+import { extractJettonTransferComment, USDT_MASTER, addressesEqual } from '../lib/jetton.ts';
+import { getEnv } from '../config/env.ts';
+import { getToncenterBaseUrl } from '../lib/ton-client.ts';
+import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
+import { DepositRepository } from '../repositories/deposit.repository.ts';
+import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
+import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
+import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.repository.ts';
+import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { UserService } from '../services/user.service.ts';
+import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
+import { logger } from '../utils/logger.ts';
 
 interface JettonTransfer {
   transaction_hash: string;
@@ -13,6 +20,7 @@ interface JettonTransfer {
   amount: string | number;
   source: string;
   source_owner?: string | null;
+  decoded_forward_payload?: { comment?: string } | Array<{ comment?: string }> | null;
 }
 
 interface DepositMemo {
@@ -23,26 +31,16 @@ interface DepositMemo {
   usedAt?: Date;
 }
 
-const TONCENTER_BASE = (process.env.NETWORK === 'testnet')
-  ? 'https://testnet.toncenter.com'
-  : 'https://toncenter.com';
+const TONCENTER_BASE = getToncenterBaseUrl();
 
 export async function pollDeposits() {
-  const db = mongoose.connection.db;
-  if (!db) {
-      console.error("Database not ready for polling.");
-      return;
-  }
-  if (!process.env.HOT_JETTON_WALLET) {
-      console.error("HOT_JETTON_WALLET is not defined.");
-      return;
-  }
-
-  const state = await db.collection('poller_state').findOne({ key: 'deposit_poller' });
+  const env = getEnv();
+  const { hotJettonWallet } = getHotWalletRuntime();
+  const state = await PollerStateRepository.findByKey('deposit_poller');
   const sinceTime = state?.lastProcessedTime ?? Math.floor(Date.now() / 1000) - 3600;
 
   const transfers = await fetchIncomingTransfers(
-    process.env.HOT_JETTON_WALLET,
+    hotJettonWallet,
     sinceTime
   );
 
@@ -50,40 +48,27 @@ export async function pollDeposits() {
 
   // 1. Bulk check already seen transactions to avoid N+1 queries
   const txHashes = transfers.map((tx: JettonTransfer) => tx.transaction_hash);
-  const seenDocs = await db.collection('processed_txs')
-    .find({ txHash: { $in: txHashes } })
-    .project({ txHash: 1 })
-    .toArray();
+  const seenDocs = await ProcessedTransactionRepository.findSeenHashes(txHashes);
   const seenHashes = new Set(seenDocs.map(d => d.txHash));
 
   const newTransfers = transfers.filter((tx: JettonTransfer) => !seenHashes.has(tx.transaction_hash));
   if (newTransfers.length === 0) {
     const latestTime = Math.max(...transfers.map((t: JettonTransfer) => t.transaction_now));
-    await db.collection('poller_state').updateOne(
-      { key: 'deposit_poller' },
-      { $set: { lastProcessedTime: latestTime, updatedAt: new Date() } },
-      { upsert: true }
-    );
+    await PollerStateRepository.setLastProcessedTime('deposit_poller', latestTime);
     return;
   }
 
   // 2. Bulk fetch memos for the new transfers
   const comments = [...new Set(newTransfers.map((tx: JettonTransfer) => tx.comment).filter(Boolean))];
-  const memoDocs = await db.collection('deposit_memos')
-    .find({ memo: { $in: comments } })
-    .toArray() as unknown as DepositMemo[];
+  const memoDocs = await DepositMemoRepository.findByMemos(comments) as DepositMemo[];
   const memoMap = new Map<string, DepositMemo>(memoDocs.map(m => [m.memo, m]));
 
   for (const tx of newTransfers) {
-    await processIncomingTransfer(db, tx, memoMap);
+    await processIncomingTransfer(tx, memoMap);
   }
 
   const latestTime = Math.max(...transfers.map((t: JettonTransfer) => t.transaction_now));
-  await db.collection('poller_state').updateOne(
-    { key: 'deposit_poller' },
-    { $set: { lastProcessedTime: latestTime, updatedAt: new Date() } },
-    { upsert: true }
-  );
+  await PollerStateRepository.setLastProcessedTime('deposit_poller', latestTime);
 }
 
 async function fetchIncomingTransfers(jettonWalletAddress: string, sinceTime: number): Promise<JettonTransfer[]> {
@@ -96,12 +81,14 @@ async function fetchIncomingTransfers(jettonWalletAddress: string, sinceTime: nu
   url.searchParams.set('sort', 'asc');
 
   try {
+      const env = getEnv();
       const res = await fetch(url.toString(), {
-        headers: { 'X-API-Key': process.env.TONCENTER_API_KEY || '' },
+        headers: { 'X-API-Key': env.TONCENTER_API_KEY ?? '' },
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (res.status === 429) {
-        console.warn('Toncenter rate limited — backing off');
+        logger.warn('deposit_poller.rate_limited');
         return [];
       }
       if (!res.ok) throw new Error(`Toncenter error ${res.status}`);
@@ -109,12 +96,12 @@ async function fetchIncomingTransfers(jettonWalletAddress: string, sinceTime: nu
       const data = await res.json();
       return data.jetton_transfers ?? [];
   } catch (error) {
-      console.error('Error fetching incoming transfers:', error);
+      logger.error('deposit_poller.fetch_failed', { error });
       return [];
   }
 }
 
-async function processIncomingTransfer(db: mongoose.mongo.Db, tx: JettonTransfer, memoMap: Map<string, DepositMemo>) {
+async function processIncomingTransfer(tx: JettonTransfer, memoMap: Map<string, DepositMemo>) {
   const txHash = tx.transaction_hash;
 
   if (!tx.jetton_master) return;
@@ -124,35 +111,47 @@ async function processIncomingTransfer(db: mongoose.mongo.Db, tx: JettonTransfer
   }
 
   const receivedRaw = String(tx.amount);
-  const comment = tx.comment ?? '';
+  const comment = extractJettonTransferComment(tx);
   const senderJettonWallet = tx.source;
   const senderAddress = tx.source_owner ?? null;
   const txTime = tx.transaction_now;
 
   const memoDoc = memoMap.get(comment);
-  const userId = memoDoc?.userId ?? null;
-
-  if (!userId) {
-    await db.collection('unmatched_deposits').insertOne({
-      txHash, receivedRaw, comment, senderJettonWallet, txTime, recordedAt: new Date(),
-    });
-    await db.collection('processed_txs').insertOne({ txHash, processedAt: new Date(), type: 'deposit_unmatched' });
-    return;
-  }
-
-  const client = mongoose.connection.getClient();
-  const session = client.startSession();
+  const session = await mongoose.startSession();
 
   try {
     await session.withTransaction(async () => {
-      await db.collection('processed_txs').insertOne(
-        { txHash, processedAt: new Date(), type: 'deposit' },
-        { session }
-      );
+      if (!memoDoc?.userId) {
+        await UnmatchedDepositRepository.create({
+          txHash,
+          receivedRaw,
+          comment,
+          senderJettonWallet,
+          txTime,
+          recordedAt: new Date(),
+        }, session);
+        await ProcessedTransactionRepository.create({ txHash, processedAt: new Date(), type: 'deposit_unmatched' }, session);
+        return;
+      }
 
-      await db.collection('deposits').insertOne({
+      const claimedMemo = await DepositMemoRepository.claimActiveMemo(comment, session);
+      if (!claimedMemo?.userId) {
+        await UnmatchedDepositRepository.create({
+          txHash,
+          receivedRaw,
+          comment,
+          senderJettonWallet,
+          txTime,
+          recordedAt: new Date(),
+        }, session);
+        await ProcessedTransactionRepository.create({ txHash, processedAt: new Date(), type: 'deposit_unmatched' }, session);
+        return;
+      }
+
+      await ProcessedTransactionRepository.create({ txHash, processedAt: new Date(), type: 'deposit' }, session);
+      await DepositRepository.create({
         txHash,
-        userId,
+        userId: claimedMemo.userId,
         amountRaw: receivedRaw,
         amountDisplay: (Number(receivedRaw) / 1e6).toFixed(6),
         comment,
@@ -161,22 +160,11 @@ async function processIncomingTransfer(db: mongoose.mongo.Db, tx: JettonTransfer
         txTime: new Date(txTime * 1000),
         status: 'confirmed',
         createdAt: new Date(),
-      }, { session });
+      }, session);
 
-      const userBalanceDoc = await db.collection('user_balances').findOne({ userId }, { session });
-      const currentBalance = BigInt(userBalanceDoc?.balanceRaw ?? '0');
-      const newBalanceRaw = (currentBalance + BigInt(receivedRaw)).toString();
+      await UserBalanceRepository.creditDeposit(claimedMemo.userId, receivedRaw, session);
 
-      await db.collection('user_balances').updateOne(
-        { userId },
-        {
-          $set: { balanceRaw: newBalanceRaw, updatedAt: new Date() },
-          $setOnInsert: { createdAt: new Date() },
-        },
-        { upsert: true, session }
-      );
-
-      await UserService.syncUserDisplayBalance(userId, session);
+      await UserService.syncUserDisplayBalance(claimedMemo.userId, session);
     });
 
   } catch (err: unknown) {
@@ -187,9 +175,4 @@ async function processIncomingTransfer(db: mongoose.mongo.Db, tx: JettonTransfer
   } finally {
     await session.endSession();
   }
-
-  await db.collection('deposit_memos').updateOne(
-    { memo: comment },
-    { $set: { used: true, usedAt: new Date() } }
-  );
 }

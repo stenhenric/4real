@@ -1,89 +1,71 @@
 import { Request, Response } from 'express';
-import { OrderService } from '../services/order.service';
-import { UserService } from '../services/user.service';
-import type { AuthRequest } from '../middleware/auth.middleware';
+
+import type { AuthRequest } from '../middleware/auth.middleware.ts';
+import { OrderService } from '../services/order.service.ts';
+import { getMerchantConfig } from '../services/merchant-config.service.ts';
+import { UserService } from '../services/user.service.ts';
+import { badRequest, notFound, unauthorized } from '../utils/http-error.ts';
+import type { CreateOrderRequest, UpdateOrderStatusRequest } from '../validation/request-schemas.ts';
 
 export class OrderController {
-  static async getOrders(req: Request, res: Response): Promise<void> {
-    try {
-      const orders = await OrderService.getOrders();
-      res.json(orders);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Server error' });
+  static async getOrders(req: AuthRequest, res: Response): Promise<void> {
+    if (!req.user?.id) {
+      throw unauthorized('Unauthenticated');
     }
+
+    const orders = await OrderService.getOrders(req.user.id, req.user.isAdmin);
+    res.json(orders);
   }
 
-  static async createOrder(req: AuthRequest & Request, res: Response): Promise<void> {
-    try {
-      if (!req.user?.id) {
-        res.status(401).json({ error: 'Unauthenticated' });
-        return;
-      }
-      const { type, amount, proofImageUrl } = req.body;
+  static getMerchantConfig(_req: Request, res: Response): void {
+    res.json(getMerchantConfig());
+  }
 
-      if (!['BUY', 'SELL'].includes(type)) {
-        res.status(400).json({ error: 'Invalid order type' });
-        return;
-      }
-
-      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
-        res.status(400).json({ error: 'Amount must be a positive finite number' });
-        return;
-      }
-
-      if (type === 'BUY' && amount < 1) {
-        res.status(400).json({ error: 'Minimum BUY amount is 1 USDT' });
-        return;
-      }
-
-      if (type === 'SELL' && amount < 2) {
-        res.status(400).json({ error: 'Minimum SELL amount is 2 USDT' });
-        return;
-      }
-
-      const user = await UserService.findById(req.user.id);
-
-      if (!user) {
-        res.status(404).json({ error: 'User not found' });
-        return;
-      }
-
-      if (type === 'SELL') {
-        const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), amount);
-        if (!updatedUser) {
-          res.status(400).json({ error: 'Insufficient balance' });
-          return;
-        }
-      }
-
-      const order = await OrderService.createOrder({
-        userId: req.user.id,
-        type,
-        amount,
-        proofImageUrl,
-        status: 'PENDING'
-      });
-      res.status(201).json(order);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Server error' });
+  static async createOrder(req: AuthRequest, res: Response): Promise<void> {
+    if (!req.user?.id) {
+      throw unauthorized('Unauthenticated');
     }
+
+    const { type, amount, proofImageUrl } = req.body as CreateOrderRequest;
+
+    if (type === 'BUY' && amount < 1) {
+      throw badRequest('Minimum BUY amount is 1 USDT');
+    }
+
+    if (type === 'SELL' && amount < 2) {
+      throw badRequest('Minimum SELL amount is 2 USDT');
+    }
+
+    const user = await UserService.findById(req.user.id);
+    if (!user) {
+      throw notFound('User not found');
+    }
+
+    if (type === 'SELL') {
+      const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), amount);
+      if (!updatedUser) {
+        throw badRequest('Insufficient balance');
+      }
+    }
+
+    const order = await OrderService.createOrder({
+      userId: user._id,
+      type,
+      amount,
+      proofImageUrl,
+      status: 'PENDING',
+    });
+    res.status(201).json(order);
   }
 
   static async updateOrder(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const { status } = req.body;
-      const order = await OrderService.updateOrderStatus(id, status);
-      if (!order) {
-        res.status(404).json({ error: 'Order not found' });
-        return;
-      }
-      res.json(order);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Server error' });
+    const { status } = req.body as UpdateOrderStatusRequest;
+    const order = await OrderService.updateOrderStatus(req.params.id, status);
+
+    if (!order) {
+      throw notFound('Order not found');
     }
+
+    res.json(order);
   }
 }

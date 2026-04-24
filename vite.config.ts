@@ -5,6 +5,39 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return undefined;
+            }
+
+            if (id.includes('@tonconnect')) {
+              return 'tonconnect';
+            }
+
+            if (id.includes('socket.io-client')) {
+              return 'socket';
+            }
+
+            if (id.includes('roughjs') || id.includes('canvas-confetti')) {
+              return 'canvas';
+            }
+
+            if (
+              id.includes('react-router-dom') ||
+              id.includes('react-dom') ||
+              id.includes(`${path.sep}react${path.sep}`)
+            ) {
+              return 'react-vendor';
+            }
+
+            return undefined;
+          },
+        },
+      },
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

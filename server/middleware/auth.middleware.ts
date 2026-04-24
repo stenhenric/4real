@@ -1,33 +1,32 @@
 import type { Request, Response, NextFunction } from 'express';
-import { getJwtSecret } from '../config/config.ts';
-import type { JwtUser } from '../types/api';
-import jwt from 'jsonwebtoken';
+
+import { AUTH_COOKIE_NAME } from '../config/cookies.ts';
+import { verifyAuthToken } from '../services/auth-token.service.ts';
+import type { JwtUser } from '../types/api.ts';
 
 export interface AuthRequest extends Request {
   user?: JwtUser;
-  cookies?: { token?: string };
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction): void => {
-  const token = req.cookies?.token;
+  const token = req.cookies?.[AUTH_COOKIE_NAME];
 
   if (!token) {
     res.status(401).json({ error: 'Access token required' });
     return;
   }
 
-  jwt.verify(token, getJwtSecret(), (err: jwt.VerifyErrors | null, user: string | jwt.JwtPayload | undefined) => {
-    if (err) {
-      res.status(403).json({ error: 'Invalid token' });
-      return;
-    }
-    if (!user || typeof user === 'string' || !('id' in user) || !('isAdmin' in user)) {
-      res.status(403).json({ error: 'Invalid token payload' });
-      return;
-    }
-    req.user = { id: String(user.id), isAdmin: Boolean(user.isAdmin) };
-    next();
-  });
+  void verifyAuthToken(token)
+    .then((user) => {
+      req.user = user;
+      next();
+    })
+    .catch((error) => {
+      const message = error instanceof Error && error.message === 'Invalid token payload'
+        ? 'Invalid token payload'
+        : 'Invalid token';
+      res.status(403).json({ error: message });
+    });
 };
 
 export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {
@@ -35,5 +34,6 @@ export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction
     res.status(403).json({ error: 'Admin access required' });
     return;
   }
+
   next();
 };

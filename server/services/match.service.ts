@@ -1,12 +1,16 @@
-import { Match, IMatch } from '../models/Match';
-import { UserService } from './user.service';
-import { TransactionService } from './transaction.service';
-import type { MatchMoveDTO } from '../types/api';
+import mongoose from 'mongoose';
+
+import { Match } from '../models/Match.ts';
+import type { IMatch } from '../models/Match.ts';
+import { calculateMatchPayout } from './match-payout.service.ts';
+import { UserService } from './user.service.ts';
+import { TransactionService } from './transaction.service.ts';
+import type { MatchMoveDTO } from '../types/api.ts';
 
 export class MatchService {
-  static async createMatch(matchData: Partial<IMatch>): Promise<IMatch> {
+  static async createMatch(matchData: Partial<IMatch>, session?: mongoose.ClientSession): Promise<IMatch> {
     const match = new Match(matchData);
-    return match.save();
+    return match.save(session ? { session } : undefined);
   }
 
   static async getActiveMatches(): Promise<IMatch[]> {
@@ -15,36 +19,64 @@ export class MatchService {
       .limit(20).select('-__v');
   }
 
-  static async getMatchByRoomId(roomId: string): Promise<IMatch | null> {
-    return Match.findOne({ roomId });
+  static async getMatchByRoomId(roomId: string, session?: mongoose.ClientSession): Promise<IMatch | null> {
+    const query = Match.findOne({ roomId });
+    return session ? query.session(session) : query;
+  }
+
+  static async persistMoveHistory(roomId: string, moveHistory: MatchMoveDTO[]): Promise<void> {
+    await Match.updateOne(
+      { roomId, status: 'active' },
+      { $set: { moveHistory } }
+    );
   }
 
   static async completeMatch(roomId: string, winnerId: string, moveHistory: MatchMoveDTO[]): Promise<IMatch | null> {
-    const match = await Match.findOneAndUpdate(
-      { roomId },
-      { status: 'completed', winnerId, moveHistory },
-      { returnDocument: 'after' }
-    );
+    const session = await mongoose.startSession();
+    let settledMatch: IMatch | null = null;
 
-    if (!match) {
-      return null;
+    try {
+      await session.withTransaction(async () => {
+        const match = await this.getMatchByRoomId(roomId, session);
+        if (!match) {
+          settledMatch = null;
+          return;
+        }
+
+        if (match.status === 'completed') {
+          settledMatch = match;
+          return;
+        }
+
+        const p1IdStr = match.player1Id.toString();
+        const p2IdStr = match.player2Id?.toString();
+
+        await this.handleEloUpdate(p1IdStr, p2IdStr, winnerId, session);
+
+        if (match.wager > 0) {
+          await this.handleWagerPayout(roomId, match.wager, p1IdStr, p2IdStr, winnerId, session);
+        }
+
+        match.status = 'completed';
+        match.winnerId = winnerId;
+        match.moveHistory = moveHistory;
+        settledMatch = await match.save({ session });
+      });
+
+      return settledMatch;
+    } finally {
+      await session.endSession();
     }
-
-    const p1IdStr = match.player1Id.toString();
-    const p2IdStr = match.player2Id?.toString();
-
-    await this.handleEloUpdate(p1IdStr, p2IdStr, winnerId);
-
-    if (match.wager > 0) {
-      await this.handleWagerPayout(roomId, match.wager, p1IdStr, p2IdStr, winnerId);
-    }
-
-    return match;
   }
 
-  private static async handleEloUpdate(p1IdStr: string, p2IdStr: string | undefined, winnerId: string): Promise<void> {
-    let p1 = await UserService.findById(p1IdStr);
-    let p2 = p2IdStr ? await UserService.findById(p2IdStr) : null;
+  private static async handleEloUpdate(
+    p1IdStr: string,
+    p2IdStr: string | undefined,
+    winnerId: string,
+    session: mongoose.ClientSession,
+  ): Promise<void> {
+    const p1 = await UserService.findById(p1IdStr, session);
+    const p2 = p2IdStr ? await UserService.findById(p2IdStr, session) : null;
 
     if (!p1 || !p2 || !p2IdStr) {
       return;
@@ -74,31 +106,49 @@ export class MatchService {
       p2Result = 'win';
     }
 
-    await UserService.updateStatsAndElo(p1IdStr, eloChange1, p1Result);
-    await UserService.updateStatsAndElo(p2IdStr, eloChange2, p2Result);
+    await UserService.updateStatsAndElo(p1IdStr, eloChange1, p1Result, session);
+    await UserService.updateStatsAndElo(p2IdStr, eloChange2, p2Result, session);
   }
 
-  private static async handleWagerPayout(roomId: string, wager: number, p1IdStr: string, p2IdStr: string | undefined, winnerId: string): Promise<void> {
+  private static async handleWagerPayout(
+    roomId: string,
+    wager: number,
+    p1IdStr: string,
+    p2IdStr: string | undefined,
+    winnerId: string,
+    session: mongoose.ClientSession,
+  ): Promise<void> {
     if (winnerId !== 'draw') {
-      // Calculate winnings
-      const totalPot = wager * 2;
-      const commission = totalPot * 0.1;
-      const winAmount = totalPot - commission;
+      const { projectedWinnerAmount } = calculateMatchPayout(wager);
 
-      await UserService.updateBalance(winnerId, winAmount);
-      await TransactionService.createTransaction({ userId: winnerId, type: 'MATCH_WIN', amount: winAmount, referenceId: roomId });
-      const loserId = p1IdStr === winnerId ? p2IdStr : p1IdStr;
-      if (loserId) {
-          await TransactionService.createTransaction({ userId: loserId, type: 'MATCH_LOSS', amount: -wager, referenceId: roomId });
-      }
+      await UserService.updateBalance(winnerId, projectedWinnerAmount, session);
+      await TransactionService.createTransaction({
+        userId: winnerId,
+        type: 'MATCH_WIN',
+        amount: projectedWinnerAmount,
+        referenceId: roomId,
+        session,
+      });
     } else {
       // Refund wagers on draw
-      await UserService.updateBalance(p1IdStr, wager);
-      await TransactionService.createTransaction({ userId: p1IdStr, type: 'MATCH_DRAW', amount: wager, referenceId: roomId });
+      await UserService.updateBalance(p1IdStr, wager, session);
+      await TransactionService.createTransaction({
+        userId: p1IdStr,
+        type: 'MATCH_DRAW',
+        amount: wager,
+        referenceId: roomId,
+        session,
+      });
 
       if (p2IdStr) {
-        await UserService.updateBalance(p2IdStr, wager);
-        await TransactionService.createTransaction({ userId: p2IdStr, type: 'MATCH_DRAW', amount: wager, referenceId: roomId });
+        await UserService.updateBalance(p2IdStr, wager, session);
+        await TransactionService.createTransaction({
+          userId: p2IdStr,
+          type: 'MATCH_DRAW',
+          amount: wager,
+          referenceId: roomId,
+          session,
+        });
       }
     }
   }

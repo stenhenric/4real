@@ -1,81 +1,105 @@
 import mongoose from 'mongoose';
-import { sendUsdtWithdrawal } from '../services/withdrawal-engine';
-import { getOrDeriveJettonWallet } from '../lib/jetton';
-import { getHotWallet } from '../lib/ton-client';
-import { UserService } from '../services/user.service';
+
+import { getEnv } from '../config/env.ts';
+import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
+import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
+import {
+  findWithdrawalTransferOnChain,
+  getHotWalletTonBalance,
+  getHotWalletUsdtBalanceRaw,
+  sendUsdtWithdrawal,
+  SeqnoTimeoutError,
+} from '../services/withdrawal-engine.ts';
+import { UserService } from '../services/user.service.ts';
+import { logger } from '../utils/logger.ts';
 
 let isSending = false;
+let isConfirming = false;
+let isMonitoring = false;
 let hotJettonWallet: string | null = null;
 
+const defaultWorkerDependencies = {
+  sendUsdtWithdrawal,
+  findWithdrawalTransferOnChain,
+  getHotWalletTonBalance,
+  getHotWalletUsdtBalanceRaw,
+};
+
+const workerDependencies = {
+  ...defaultWorkerDependencies,
+};
+
+function formatUsdtRaw(raw: bigint): string {
+  const negative = raw < 0n ? '-' : '';
+  const absolute = raw < 0n ? -raw : raw;
+  const whole = absolute / 1_000_000n;
+  const fractional = (absolute % 1_000_000n).toString().padStart(6, '0');
+  return `${negative}${whole}.${fractional}`;
+}
+
+function isDuplicateKeyError(error: unknown): error is { code: number } {
+  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 11000);
+}
+
 export async function initWorker() {
-  const { wallet } = await getHotWallet();
-  hotJettonWallet = await getOrDeriveJettonWallet(wallet.address.toString());
-  console.log(`Hot jetton wallet: ${hotJettonWallet}`);
+  const runtime = getHotWalletRuntime();
+  hotJettonWallet = runtime.hotJettonWallet;
+  logger.info('withdrawal_worker.initialized', {
+    hotJettonWallet,
+    hotWalletAddress: runtime.hotWalletAddress,
+  });
 }
 
 export async function runWithdrawalWorker() {
-  const db = mongoose.connection.db;
-  if (!db || !hotJettonWallet) return;
+  if (!hotJettonWallet) return;
   if (isSending) return;
   isSending = true;
 
   try {
-    const doc = await db.collection('withdrawals').findOneAndUpdate(
-      { status: 'queued', retries: { $lt: 3 } },
-      { $set: { status: 'processing', startedAt: new Date() } },
-      { sort: { createdAt: 1 }, returnDocument: 'after' }
-    );
+    const doc = await WithdrawalRepository.claimNextQueued(3);
 
     if (!doc) return;
 
     try {
-      const seqno = await sendUsdtWithdrawal({
+      const seqno = await workerDependencies.sendUsdtWithdrawal({
         toAddress: doc.toAddress,
         amountRaw: doc.amountRaw,
         withdrawalId: doc.withdrawalId,
         hotJettonWallet,
       });
 
-      await db.collection('withdrawals').updateOne(
-        { _id: doc._id },
-        { $set: { status: 'sent', sentAt: new Date(), seqno } }
-      );
+      await WithdrawalRepository.markSent(doc._id, seqno);
 
-      console.log(`Withdrawal ${doc.withdrawalId} sent (seqno: ${seqno})`);
+      logger.info('withdrawal.sent', { withdrawalId: doc.withdrawalId, seqno });
 
     } catch (sendErr: unknown) {
       const errorMessage = sendErr instanceof Error ? sendErr.message : String(sendErr);
-      console.error(`Withdrawal ${doc.withdrawalId} failed:`, errorMessage);
+      logger.error('withdrawal.failed', { withdrawalId: doc.withdrawalId, errorMessage });
 
-      if (errorMessage.includes('Seqno stuck')) {
-        // Timeout -> Tx might be on chain. Leave it in a stuck/processing state or mark as stuck for manual review or the recovery worker.
-        await db.collection('withdrawals').updateOne(
-          { _id: doc._id },
-          { $set: { status: 'stuck', lastError: errorMessage, updatedAt: new Date() } }
-        );
+      if (sendErr instanceof SeqnoTimeoutError) {
+        await WithdrawalRepository.markStuck(doc._id, errorMessage, sendErr.seqno, sendErr.sentAt);
       } else {
         const retries = (doc.retries ?? 0) + 1;
         const newStatus = retries >= 3 ? 'failed' : 'queued';
+        const session = await mongoose.startSession();
 
-        await db.collection('withdrawals').updateOne(
-          { _id: doc._id },
-          { $set: { status: newStatus, lastError: errorMessage, updatedAt: new Date() },
-            $inc: { retries: 1 } }
-        );
+        try {
+          await session.withTransaction(async () => {
+            await WithdrawalRepository.markRetryState(doc._id, newStatus, errorMessage, session);
+
+            if (newStatus === 'failed') {
+              await UserBalanceRepository.refundWithdrawal(doc.userId, doc.amountRaw, session);
+              await UserService.syncUserDisplayBalance(doc.userId, session);
+            }
+          });
+        } finally {
+          await session.endSession();
+        }
 
         if (newStatus === 'failed') {
-          const userBalanceDoc = await db.collection('user_balances').findOne({ userId: doc.userId });
-          const currentBalance = BigInt(userBalanceDoc?.balanceRaw ?? '0');
-          const newBalanceRaw = (currentBalance + BigInt(doc.amountRaw)).toString();
-
-          await db.collection('user_balances').updateOne(
-            { userId: doc.userId },
-            { $set: { balanceRaw: newBalanceRaw, updatedAt: new Date() } }
-          );
-
-          await UserService.syncUserDisplayBalance(doc.userId);
-
-          console.warn(`Withdrawal ${doc.withdrawalId} permanently failed — balance refunded`);
+          logger.warn('withdrawal.refunded', { withdrawalId: doc.withdrawalId });
         }
       }
     }
@@ -85,21 +109,156 @@ export async function runWithdrawalWorker() {
   }
 }
 
-export async function recoverStuckWithdrawals() {
-    const db = mongoose.connection.db;
-    if (!db) return;
-    const tenMinsAgo = new Date(Date.now() - 10 * 60_000);
-    const stuck = await db.collection('withdrawals').find({
-      status: 'processing',
-      startedAt: { $lt: tenMinsAgo },
-    }).toArray();
+export async function confirmSentWithdrawals() {
+  if (!hotJettonWallet) return;
+  if (isConfirming) return;
+  isConfirming = true;
 
-    if (stuck.length > 0) {
-      const ids = stuck.map((doc) => doc._id);
-      console.warn(`Resetting ${stuck.length} stuck withdrawals → queued`);
-      await db.collection('withdrawals').updateMany(
-        { _id: { $in: ids } },
-        { $set: { status: 'queued', updatedAt: new Date() } }
-      );
+  try {
+    const pending = await WithdrawalRepository.findPendingConfirmation(25);
+
+    for (const withdrawal of pending) {
+      if (!withdrawal.sentAt) {
+        continue;
+      }
+
+      const confirmed = await workerDependencies.findWithdrawalTransferOnChain({
+        hotJettonWallet,
+        sentAt: withdrawal.sentAt,
+        withdrawalId: withdrawal.withdrawalId,
+        amountRaw: withdrawal.amountRaw,
+        toAddress: withdrawal.toAddress,
+      });
+
+      if (!confirmed) {
+        continue;
+      }
+
+      const session = await mongoose.startSession();
+
+      try {
+        await session.withTransaction(async () => {
+          await ProcessedTransactionRepository.create({
+            txHash: confirmed.txHash,
+            processedAt: new Date(),
+            type: 'withdrawal_confirm',
+          }, session);
+
+          await WithdrawalRepository.markConfirmed(
+            withdrawal._id,
+            confirmed.txHash,
+            confirmed.confirmedAt,
+            session,
+          );
+
+          await UserBalanceRepository.recordWithdrawalConfirmed(
+            withdrawal.userId,
+            withdrawal.amountRaw,
+            session,
+          );
+        });
+
+        logger.info('withdrawal.confirmed', {
+          withdrawalId: withdrawal.withdrawalId,
+          txHash: confirmed.txHash,
+          confirmedAt: confirmed.confirmedAt.toISOString(),
+        });
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) {
+          throw error;
+        }
+      } finally {
+        await session.endSession();
+      }
     }
+  } finally {
+    isConfirming = false;
+  }
+}
+
+export async function monitorHotWalletBalances() {
+  if (isMonitoring) return;
+  isMonitoring = true;
+
+  try {
+    const env = getEnv();
+    const runtime = getHotWalletRuntime();
+    const tonBalanceRaw = await workerDependencies.getHotWalletTonBalance(runtime.hotWalletAddress);
+    const onChainUsdtRaw = await workerDependencies.getHotWalletUsdtBalanceRaw(runtime.hotWalletAddress);
+    const ledgerUsdtRaw = await UserBalanceRepository.sumBalanceRaw();
+    const tonBalance = Number(tonBalanceRaw) / 1_000_000_000;
+    const minimumUsdtBalanceRaw = BigInt(Math.round(env.HOT_WALLET_MIN_USDT_BALANCE * 1_000_000));
+    const mismatchToleranceRaw = BigInt(Math.round(env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT * 1_000_000));
+
+    logger.info('wallet_monitor.snapshot', {
+      tonBalance,
+      onChainUsdt: onChainUsdtRaw === null ? null : formatUsdtRaw(onChainUsdtRaw),
+      ledgerUsdt: formatUsdtRaw(ledgerUsdtRaw),
+      deltaUsdt: onChainUsdtRaw === null
+        ? null
+        : formatUsdtRaw(onChainUsdtRaw >= ledgerUsdtRaw ? onChainUsdtRaw - ledgerUsdtRaw : ledgerUsdtRaw - onChainUsdtRaw),
+    });
+
+    if (tonBalance < env.HOT_WALLET_MIN_TON_BALANCE) {
+      logger.warn('wallet_monitor.low_ton_balance', {
+        tonBalance,
+        minimumTonBalance: env.HOT_WALLET_MIN_TON_BALANCE,
+      });
+    }
+
+    if (onChainUsdtRaw === null) {
+      return;
+    }
+
+    if (onChainUsdtRaw < minimumUsdtBalanceRaw) {
+      logger.warn('wallet_monitor.low_usdt_balance', {
+        onChainUsdt: formatUsdtRaw(onChainUsdtRaw),
+        minimumUsdtBalance: env.HOT_WALLET_MIN_USDT_BALANCE,
+      });
+    }
+
+    const deltaUsdtRaw = onChainUsdtRaw >= ledgerUsdtRaw
+      ? onChainUsdtRaw - ledgerUsdtRaw
+      : ledgerUsdtRaw - onChainUsdtRaw;
+
+    if (onChainUsdtRaw < ledgerUsdtRaw) {
+      logger.error('wallet_monitor.ledger_shortfall', {
+        onChainUsdt: formatUsdtRaw(onChainUsdtRaw),
+        ledgerUsdt: formatUsdtRaw(ledgerUsdtRaw),
+        deltaUsdt: formatUsdtRaw(ledgerUsdtRaw - onChainUsdtRaw),
+      });
+    } else if (deltaUsdtRaw > mismatchToleranceRaw) {
+      logger.warn('wallet_monitor.ledger_mismatch', {
+        onChainUsdt: formatUsdtRaw(onChainUsdtRaw),
+        ledgerUsdt: formatUsdtRaw(ledgerUsdtRaw),
+        deltaUsdt: formatUsdtRaw(deltaUsdtRaw),
+        toleranceUsdt: env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT,
+      });
+    }
+  } finally {
+    isMonitoring = false;
+  }
+}
+
+export async function recoverStuckWithdrawals() {
+  const tenMinsAgo = new Date(Date.now() - 10 * 60_000);
+  const stuck = await WithdrawalRepository.findStaleProcessing(tenMinsAgo);
+
+  if (stuck.length > 0) {
+    const ids = stuck.map((doc) => doc._id);
+    logger.warn('withdrawal.reset_stuck', { count: stuck.length });
+    await WithdrawalRepository.requeueByIds(ids);
+  }
+}
+
+export function resetWithdrawalWorkerStateForTests(): void {
+  isSending = false;
+  isConfirming = false;
+  isMonitoring = false;
+  hotJettonWallet = null;
+  Object.assign(workerDependencies, defaultWorkerDependencies);
+}
+
+export function setWithdrawalWorkerDependenciesForTests(overrides: Partial<typeof defaultWorkerDependencies>): void {
+  Object.assign(workerDependencies, overrides);
 }

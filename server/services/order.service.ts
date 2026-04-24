@@ -1,6 +1,8 @@
-import { Order, IOrder } from '../models/Order';
-import { UserService } from './user.service';
-import { TransactionService } from './transaction.service';
+import { Order } from '../models/Order.ts';
+import type { IOrder } from '../models/Order.ts';
+import mongoose from 'mongoose';
+import { UserService } from './user.service.ts';
+import { TransactionService } from './transaction.service.ts';
 
 export class OrderService {
   static async createOrder(orderData: Partial<IOrder>): Promise<IOrder> {
@@ -16,8 +18,9 @@ export class OrderService {
     return savedOrder;
   }
 
-  static async getOrders(): Promise<IOrder[]> {
-    return Order.find().sort({ createdAt: -1 }).populate('userId', 'username').select('-__v');
+  static async getOrders(userId: string, isAdmin: boolean): Promise<IOrder[]> {
+    const filter = isAdmin ? {} : { userId: new mongoose.Types.ObjectId(userId) };
+    return Order.find(filter).sort({ createdAt: -1 }).populate('userId', 'username').select('-__v');
   }
 
   static async updateOrderStatus(orderId: string, status: 'PENDING' | 'DONE' | 'REJECTED'): Promise<IOrder | null> {
