@@ -11,6 +11,7 @@ import { logger } from './utils/logger.ts';
 import { GameRoomRegistry } from './services/game-room-registry.service.ts';
 import { RealtimeMatchService } from './services/realtime-match.service.ts';
 import { registerGameSocketHandlers } from './sockets/game.socket.ts';
+import { registerPublicMatchEvents } from './sockets/public-match-events.ts';
 import { startBackgroundJobs } from './services/background-jobs.service.ts';
 
 export async function startServer() {
@@ -42,11 +43,16 @@ export async function startServer() {
 
   const io = new SocketIOServer(httpServer, {
     cors: getSocketCorsOptions(),
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000,
+    },
   });
   io.engine.use(helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
   }));
+
+  registerPublicMatchEvents(io);
 
   const realtimeMatchService = new RealtimeMatchService(roomRegistry);
   registerGameSocketHandlers(io, realtimeMatchService);

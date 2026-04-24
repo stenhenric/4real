@@ -6,6 +6,7 @@ import { calculateMatchPayout } from './match-payout.service.ts';
 import { UserService } from './user.service.ts';
 import { TransactionService } from './transaction.service.ts';
 import type { MatchMoveDTO } from '../types/api.ts';
+import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 
 export class MatchService {
   static async createMatch(matchData: Partial<IMatch>, session?: mongoose.ClientSession): Promise<IMatch> {
@@ -62,6 +63,14 @@ export class MatchService {
         match.moveHistory = moveHistory;
         settledMatch = await match.save({ session });
       });
+
+      if (settledMatch) {
+        emitPublicMatchUpdatedEvent({
+          roomId: settledMatch.roomId,
+          status: settledMatch.status,
+          isPrivate: settledMatch.isPrivate,
+        });
+      }
 
       return settledMatch;
     } finally {

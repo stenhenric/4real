@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Clock, Play, Plus, Trophy, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
@@ -6,6 +6,8 @@ import { useToast } from '../app/ToastProvider';
 import { SketchyButton } from '../components/SketchyButton';
 import { createMatch, getActiveMatches } from '../services/matches.service';
 import { getLeaderboard } from '../services/users.service';
+import { createGameSocket } from '../sockets/gameSocket';
+import { PUBLIC_MATCHES_UPDATED_EVENT } from '../../shared/socket-events';
 import { isAbortError } from '../utils/isAbortError';
 import type { LeaderboardUserDTO, MatchDTO } from '../types/api';
 
@@ -25,34 +27,75 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   const [wager, setWager] = useState('0');
   const [isPrivate, setIsPrivate] = useState(false);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const refreshActiveMatches = useEffectEvent(async (signal?: AbortSignal) => {
+    try {
+      const matches = await getActiveMatches(signal);
 
-    const fetchDashboardData = async () => {
-      const [matchesResult, leaderboardResult] = await Promise.allSettled([
-        getActiveMatches(controller.signal),
-        getLeaderboard(controller.signal),
-      ]);
-
-      if (matchesResult.status === 'fulfilled') {
-        setActiveMatches(matchesResult.value);
-      } else if (!isAbortError(matchesResult.reason)) {
+      if (!signal?.aborted) {
+        setActiveMatches(matches);
+      }
+    } catch (error) {
+      if (!isAbortError(error)) {
         showError('Failed to fetch active matches.');
       }
+    }
+  });
 
-      if (leaderboardResult.status === 'fulfilled') {
-        setLeaderboard(leaderboardResult.value);
-      } else if (!isAbortError(leaderboardResult.reason)) {
+  const refreshLeaderboard = useEffectEvent(async (signal?: AbortSignal) => {
+    try {
+      const leaderboardEntries = await getLeaderboard(signal);
+
+      if (!signal?.aborted) {
+        setLeaderboard(leaderboardEntries);
+      }
+    } catch (error) {
+      if (!isAbortError(error)) {
         showError('Failed to fetch leaderboard.');
       }
-    };
+    }
+  });
 
-    void fetchDashboardData();
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.all([
+      refreshActiveMatches(controller.signal),
+      refreshLeaderboard(controller.signal),
+    ]);
 
     return () => {
       controller.abort();
     };
-  }, [showError]);
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    let hasConnectedOnce = false;
+    const socket = createGameSocket();
+
+    const refetchActiveMatches = () => {
+      void refreshActiveMatches();
+    };
+
+    const handleConnect = () => {
+      if (hasConnectedOnce && !socket.recovered) {
+        void refreshActiveMatches();
+      }
+
+      hasConnectedOnce = true;
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on(PUBLIC_MATCHES_UPDATED_EVENT, refetchActiveMatches);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off(PUBLIC_MATCHES_UPDATED_EVENT, refetchActiveMatches);
+      socket.disconnect();
+    };
+  }, [user?.id]);
 
   const createGameHandler = async () => {
     if (!user) {

@@ -5,6 +5,7 @@ import { createRoomStateFromMatch, checkWin, type RoomState } from './game-room.
 import { GameRoomRegistry } from './game-room-registry.service.ts';
 import { TransactionService } from './transaction.service.ts';
 import { UserService } from './user.service.ts';
+import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 
 export interface JoinRoomResult {
   room: RoomState;
@@ -115,6 +116,12 @@ export class RealtimeMatchService {
           if (!refreshedMatch) {
             throw new Error('Match not found');
           }
+
+          emitPublicMatchUpdatedEvent({
+            roomId: refreshedMatch.roomId,
+            status: refreshedMatch.status,
+            isPrivate: refreshedMatch.isPrivate,
+          });
 
           room = await createRoomStateFromMatch(refreshedMatch);
           room.players = room.players.map((entry) => ({

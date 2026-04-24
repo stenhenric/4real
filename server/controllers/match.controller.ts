@@ -8,6 +8,7 @@ import { MatchService } from '../services/match.service.ts';
 import { calculateProjectedWinnerAmount } from '../services/match-payout.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { UserService } from '../services/user.service.ts';
+import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 import { notFound, unauthorized, badRequest } from '../utils/http-error.ts';
 import type { CreateMatchRequest } from '../validation/request-schemas.ts';
 
@@ -71,6 +72,12 @@ export class MatchController {
     if (!match) {
       throw new Error('Unable to create match');
     }
+
+    emitPublicMatchUpdatedEvent({
+      roomId: match.roomId,
+      status: match.status,
+      isPrivate: match.isPrivate,
+    });
 
     res.status(201).json(serializeMatch(match));
   }
