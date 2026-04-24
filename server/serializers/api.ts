@@ -2,6 +2,9 @@ import type { ITransaction } from '../models/Transaction.ts';
 import type {
   AuthResponseDTO,
   LeaderboardUserDTO,
+  MatchDTO,
+  OrderDTO,
+  OrderUserDTO,
   TransactionDTO,
   UserDTO,
   UserProfileDTO,
@@ -9,8 +12,11 @@ import type {
   WithdrawalStatusDTO,
 } from '../types/api.ts';
 import type { IUser } from '../models/User.ts';
+import type { IMatch } from '../models/Match.ts';
+import type { IOrder } from '../models/Order.ts';
 import type { DepositDocument } from '../repositories/deposit.repository.ts';
 import type { WithdrawalDocument } from '../repositories/withdrawal.repository.ts';
+import { calculateMatchPayout } from '../services/match-payout.service.ts';
 
 function serializeStats(stats?: IUser['stats']): UserStatsDTO {
   return {
@@ -18,6 +24,26 @@ function serializeStats(stats?: IUser['stats']): UserStatsDTO {
     losses: stats?.losses ?? 0,
     draws: stats?.draws ?? 0,
   };
+}
+
+function serializeId(value: unknown): string {
+  if (value && typeof value === 'object' && 'toString' in value && typeof value.toString === 'function') {
+    return value.toString();
+  }
+
+  return String(value ?? '');
+}
+
+function serializeOrderUser(user: unknown): string | OrderUserDTO {
+  if (user && typeof user === 'object' && 'username' in user) {
+    const candidate = user as { _id?: unknown; username: unknown };
+    return {
+      id: serializeId(candidate._id),
+      username: String(candidate.username),
+    };
+  }
+
+  return serializeId(user);
 }
 
 export function serializeAuthUser(user: IUser): AuthResponseDTO {
@@ -49,6 +75,39 @@ export function serializeLeaderboardUser(user: IUser): LeaderboardUserDTO {
     id: user._id.toString(),
     username: user.username,
     elo: user.elo,
+  };
+}
+
+export function serializeMatch(match: IMatch): MatchDTO {
+  const payout = calculateMatchPayout(match.wager ?? 0);
+
+  return {
+    _id: serializeId(match._id),
+    roomId: match.roomId,
+    p1Username: match.p1Username,
+    p2Username: match.p2Username,
+    player1Id: serializeId(match.player1Id),
+    player2Id: match.player2Id ? serializeId(match.player2Id) : undefined,
+    status: match.status,
+    winnerId: match.winnerId,
+    wager: match.wager ?? 0,
+    isPrivate: match.isPrivate ?? false,
+    moveHistory: match.moveHistory ?? [],
+    projectedWinnerAmount: payout.projectedWinnerAmount,
+    commissionRate: payout.commissionRate,
+    createdAt: match.createdAt?.toISOString(),
+  };
+}
+
+export function serializeOrder(order: IOrder): OrderDTO {
+  return {
+    _id: serializeId(order._id),
+    userId: serializeOrderUser(order.userId),
+    type: order.type,
+    amount: order.amount,
+    status: order.status,
+    proofImageUrl: order.proofImageUrl,
+    createdAt: order.createdAt.toISOString(),
   };
 }
 

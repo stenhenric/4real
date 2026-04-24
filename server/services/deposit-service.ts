@@ -21,7 +21,6 @@ export async function generateDepositMemo(userId: string) {
   return {
     memo,
     address: hotWalletAddress,
-    deepLink: `ton://transfer/${hotWalletAddress}?text=${encodeURIComponent(memo)}`,
     instructions: `Send USDT to ${hotWalletAddress} with comment: ${memo}`,
     expiresIn: '24 hours',
   };

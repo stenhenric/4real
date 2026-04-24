@@ -81,7 +81,7 @@ test('generateDepositMemo returns the existing shape and stores memo ownership',
   assert.match(result.memo, /^d-user-123-/);
   assert.equal(result.address, HOT_WALLET_ADDRESS);
   assert.equal(result.instructions, `Send USDT to ${HOT_WALLET_ADDRESS} with comment: ${result.memo}`);
-  assert.equal(result.deepLink, `ton://transfer/${HOT_WALLET_ADDRESS}?text=${encodeURIComponent(result.memo)}`);
+  assert.equal('deepLink' in result, false);
   assert.equal(storedDocument?.userId, 'user-123');
   assert.equal(storedDocument?.memo, result.memo);
 });
@@ -221,6 +221,57 @@ test('pollDeposits credits the correct user for a valid memo', async (t) => {
   assert.equal(creditMock.mock.calls[0].arguments[1], '2500000');
   assert.equal(claimMemoMock.mock.callCount(), 1);
   assert.equal(claimMemoMock.mock.calls[0].arguments[0], 'memo-3');
+});
+
+test('pollDeposits resolves memos from decoded forward payload comments', async (t) => {
+  registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'deposit-hash-forward-payload',
+      transaction_now: 1_700_000_031,
+      jetton_master: USDT_MASTER,
+      amount: '3300000',
+      source: ZERO_ADDRESS,
+      source_owner: ZERO_ADDRESS,
+      decoded_forward_payload: { comment: 'memo-forward' },
+    },
+  ]) as Response);
+  const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({ key: 'deposit_poller', lastProcessedTime: 1_700_000_000, updatedAt: new Date() }));
+  const seenMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => [{ memo: 'memo-forward', userId: 'user-forward' }]);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const claimMemoMock = mock.method(DepositMemoRepository, 'claimActiveMemo', async () => ({ memo: 'memo-forward', userId: 'user-forward' }));
+  const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const depositCreateMock = mock.method(DepositRepository, 'create', async () => {});
+  const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
+  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 3.3);
+  const markStateMock = mock.method(PollerStateRepository, 'setLastProcessedTime', async () => {});
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => findStateMock.mock.restore());
+  t.after(() => seenMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => claimMemoMock.mock.restore());
+  t.after(() => processedCreateMock.mock.restore());
+  t.after(() => depositCreateMock.mock.restore());
+  t.after(() => creditMock.mock.restore());
+  t.after(() => syncMock.mock.restore());
+  t.after(() => markStateMock.mock.restore());
+
+  await pollDeposits();
+
+  assert.equal(memoLookupMock.mock.callCount(), 1);
+  assert.deepEqual(memoLookupMock.mock.calls[0].arguments[0], ['memo-forward']);
+  assert.equal(claimMemoMock.mock.callCount(), 1);
+  assert.equal(claimMemoMock.mock.calls[0].arguments[0], 'memo-forward');
+  assert.equal(depositCreateMock.mock.callCount(), 1);
 });
 
 test('pollDeposits rejects expired or reused memos during execution', async (t) => {

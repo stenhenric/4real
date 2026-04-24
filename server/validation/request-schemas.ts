@@ -5,6 +5,15 @@ const positiveMoneySchema = z.coerce
   .finite()
   .positive('Amount must be greater than 0');
 
+const httpUrlSchema = z.string().trim().url().refine((value) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}, 'Proof URL must use http or https');
+
 export const registerRequestSchema = z.object({
   username: z.string().trim().min(3).max(32),
   email: z.string().trim().email().optional(),
@@ -36,7 +45,7 @@ export const createMatchRequestSchema = z.object({
 export const createOrderRequestSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
   amount: positiveMoneySchema,
-  proofImageUrl: z.string().trim().url(),
+  proofImageUrl: httpUrlSchema,
 });
 
 export const updateOrderStatusRequestSchema = z.object({

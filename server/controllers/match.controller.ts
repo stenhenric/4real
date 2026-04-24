@@ -4,18 +4,13 @@ import mongoose from 'mongoose';
 
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import type { IMatch } from '../models/Match.ts';
+import { serializeMatch } from '../serializers/api.ts';
 import { MatchService } from '../services/match.service.ts';
-import { calculateProjectedWinnerAmount } from '../services/match-payout.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 import { notFound, unauthorized, badRequest } from '../utils/http-error.ts';
 import type { CreateMatchRequest } from '../validation/request-schemas.ts';
-
-const serializeMatch = (match: IMatch) => ({
-  ...match.toObject(),
-  projectedWinnerAmount: calculateProjectedWinnerAmount(match.wager),
-});
 
 export class MatchController {
   static async getActiveMatches(_req: Request, res: Response): Promise<void> {

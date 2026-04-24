@@ -60,8 +60,8 @@ const WithdrawPanel = () => {
             <ArrowUpRight size={32} className="text-red-700" />
           </div>
           <div>
-            <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Withdraw TON</h2>
-            <p className="text-sm font-mono opacity-60">Send funds from your balance to a TON wallet</p>
+            <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Withdraw USDT</h2>
+            <p className="text-sm font-mono opacity-60">Send USDT from your balance to a TON wallet address</p>
           </div>
         </div>
 

@@ -61,9 +61,14 @@ export interface MatchDTO {
   createdAt?: string;
 }
 
+export interface OrderUserDTO {
+  id: string;
+  username: string;
+}
+
 export interface OrderDTO {
   _id: string;
-  userId: string | { username: string };
+  userId: string | OrderUserDTO;
   type: 'BUY' | 'SELL';
   amount: number;
   status: 'PENDING' | 'DONE' | 'REJECTED';

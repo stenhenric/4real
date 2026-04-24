@@ -88,9 +88,9 @@ const BankPage = () => {
             <ArrowDownRight size={40} className="text-green-700" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Deposit</h2>
-          <p className="text-xs font-mono font-bold opacity-50 mb-6">Automated TON Deposit</p>
+          <p className="text-xs font-mono font-bold opacity-50 mb-6">Automated USDT on TON</p>
           <SketchyButton className="w-full" onClick={() => setActiveView('deposit')}>
-            Deposit TON
+            Deposit USDT
           </SketchyButton>
         </SketchyContainer>
 
@@ -99,9 +99,9 @@ const BankPage = () => {
             <ArrowUpRight size={40} className="text-red-700" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Withdraw</h2>
-          <p className="text-xs font-mono font-bold opacity-50 mb-6">Automated TON Withdraw</p>
+          <p className="text-xs font-mono font-bold opacity-50 mb-6">USDT to a TON wallet</p>
           <SketchyButton className="w-full" onClick={() => setActiveView('withdraw')}>
-            Withdraw TON
+            Withdraw USDT
           </SketchyButton>
         </SketchyContainer>
 

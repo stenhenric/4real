@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
+import { serializeOrder } from '../serializers/api.ts';
 import { OrderService } from '../services/order.service.ts';
 import { getMerchantConfig } from '../services/merchant-config.service.ts';
 import { UserService } from '../services/user.service.ts';
@@ -14,7 +15,7 @@ export class OrderController {
     }
 
     const orders = await OrderService.getOrders(req.user.id, req.user.isAdmin);
-    res.json(orders);
+    res.json(orders.map((order) => serializeOrder(order)));
   }
 
   static getMerchantConfig(_req: Request, res: Response): void {
@@ -41,13 +42,6 @@ export class OrderController {
       throw notFound('User not found');
     }
 
-    if (type === 'SELL') {
-      const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), amount);
-      if (!updatedUser) {
-        throw badRequest('Insufficient balance');
-      }
-    }
-
     const order = await OrderService.createOrder({
       userId: user._id,
       type,
@@ -55,7 +49,7 @@ export class OrderController {
       proofImageUrl,
       status: 'PENDING',
     });
-    res.status(201).json(order);
+    res.status(201).json(serializeOrder(order));
   }
 
   static async updateOrder(req: Request, res: Response): Promise<void> {
@@ -66,6 +60,6 @@ export class OrderController {
       throw notFound('Order not found');
     }
 
-    res.json(order);
+    res.json(serializeOrder(order));
   }
 }

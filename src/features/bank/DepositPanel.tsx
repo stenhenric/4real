@@ -78,15 +78,15 @@ const DepositPanel = () => {
             <ArrowDownRight size={32} className="text-green-700" />
           </div>
           <div>
-            <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Deposit TON</h2>
-            <p className="text-sm font-mono opacity-60">Generate a unique memo for automated deposit</p>
+            <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Deposit USDT</h2>
+            <p className="text-sm font-mono opacity-60">Use TonConnect or a wallet that supports USDT jetton comments</p>
           </div>
         </div>
 
         {!memoData ? (
           <div className="text-center py-8">
             <p className="mb-6 opacity-70 italic">
-              Generate a unique memo. Send TON to the provided address with the memo to automatically fund your account.
+              Generate a unique memo, then send USDT on TON with that memo to automatically fund your account.
             </p>
             <SketchyButton
               className="w-full text-xl py-4"
@@ -170,6 +170,9 @@ const DepositPanel = () => {
                 <h4 className="font-bold uppercase tracking-widest text-xs opacity-60 mb-2">
                   TonConnect Deposit
                 </h4>
+                <p className="text-xs font-mono opacity-60 mb-3">
+                  Recommended. Native TON transfer deep links are disabled because they do not safely represent a USDT jetton deposit.
+                </p>
                 <div className="flex gap-2 mb-4">
                   <input
                     aria-label="USDT Amount"
@@ -197,21 +200,10 @@ const DepositPanel = () => {
                 </button>
                 {!wallet && (
                   <p className="text-xs text-red-500 mt-2 text-center" id="wallet-connect-required">
-                    Please connect your wallet first
-                  </p>
-                )}
-              </div>
-
-              {memoData.deepLink && (
-                <a
-                  href={memoData.deepLink}
-                  rel="noreferrer"
-                  target="_blank"
-                  className="bg-ink-blue hover:opacity-90 text-white font-bold py-3 px-4 rounded text-center transition-colors shadow-md border-2 border-black"
-                >
-                  Pay with Tonkeeper (1-Click)
-                </a>
+                  Please connect your wallet first
+                </p>
               )}
+              </div>
             </div>
           </div>
         )}

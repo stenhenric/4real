@@ -59,7 +59,13 @@ export async function pollDeposits() {
   }
 
   // 2. Bulk fetch memos for the new transfers
-  const comments = [...new Set(newTransfers.map((tx: JettonTransfer) => tx.comment).filter(Boolean))];
+  const comments = [
+    ...new Set(
+      newTransfers
+        .map((tx: JettonTransfer) => extractJettonTransferComment(tx))
+        .filter((comment) => comment.length > 0),
+    ),
+  ];
   const memoDocs = await DepositMemoRepository.findByMemos(comments) as DepositMemo[];
   const memoMap = new Map<string, DepositMemo>(memoDocs.map(m => [m.memo, m]));
 

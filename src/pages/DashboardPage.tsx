@@ -19,7 +19,7 @@ interface DashboardPageProps {
 
 const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   const navigate = useNavigate();
-  const { user, userData } = useAuth();
+  const { user, userData, refreshUser } = useAuth();
   const { error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
   const [activeMatches, setActiveMatches] = useState<MatchDTO[]>([]);
@@ -110,6 +110,9 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
 
     try {
       const match = await createMatch({ wager: isPrivate ? parsedWager : 0, isPrivate });
+      if (isPrivate && parsedWager > 0) {
+        await refreshUser();
+      }
       navigate(`/game/${match.roomId}`);
     } catch (error) {
       const message =
@@ -359,7 +362,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
               </div>
               <div className="flex justify-between items-end border-b border-black/10 pb-2">
                 <span className="opacity-50 font-bold uppercase text-[10px] tracking-widest">VICTORIES</span>
-                <span className="font-bold text-3xl italic text-green-700">0</span>
+                <span className="font-bold text-3xl italic text-green-700">{userData?.stats.wins ?? 0}</span>
               </div>
               <div className="aspect-square rough-border mt-8 flex flex-col items-center justify-center p-6 bg-paper relative overflow-hidden">
                 <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle,black_1px,transparent_1px)] bg-[size:10px_10px]"></div>

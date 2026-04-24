@@ -54,7 +54,15 @@ export class TransactionService {
     ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }
 
-  static async updateTransactionStatusByReference(referenceId: string, status: string): Promise<void> {
-    await Transaction.updateMany({ referenceId }, { $set: { status } });
+  static async updateTransactionStatusByReference(
+    referenceId: string,
+    status: string,
+    session?: mongoose.ClientSession,
+  ): Promise<void> {
+    await Transaction.updateMany(
+      { referenceId },
+      { $set: { status } },
+      session ? { session } : undefined,
+    );
   }
 }

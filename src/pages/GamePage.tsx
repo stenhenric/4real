@@ -20,6 +20,7 @@ const GamePage = () => {
   const { warning } = useToast();
   const copyToClipboard = useCopyToClipboard();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previousRoomStatusRef = useRef<string | null>(null);
   const [selectedColumn, setSelectedColumn] = useState(0);
 
   const { gameOver, makeMove, room } = useGameRoom({
@@ -33,10 +34,6 @@ const GamePage = () => {
       if (nextGameOver.winnerId === user?.id) {
         runVictoryConfetti();
       }
-
-      if (nextGameOver.winnerId === user?.id || nextGameOver.winnerId === 'draw') {
-        await refreshUser();
-      }
     },
   });
 
@@ -48,6 +45,23 @@ const GamePage = () => {
 
     drawConnectFourBoard(canvas, room?.board, gameOver?.winningLine);
   }, [gameOver?.winningLine, room?.board]);
+
+  useEffect(() => {
+    if (!room || !user?.id) {
+      previousRoomStatusRef.current = null;
+      return;
+    }
+
+    const previousStatus = previousRoomStatusRef.current;
+    const justActivated = room.wager > 0 && room.status === 'active' && previousStatus !== 'active';
+    const justCompleted = room.status === 'completed' && previousStatus !== 'completed';
+
+    if (justActivated || justCompleted) {
+      void refreshUser();
+    }
+
+    previousRoomStatusRef.current = room.status;
+  }, [refreshUser, room, user?.id]);
 
   if (!roomId) {
     return <div className="text-center py-20 font-bold">Game room not found.</div>;
