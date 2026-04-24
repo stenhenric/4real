@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "npm run build && node --import tsx/esm ./scripts/start-production.mjs",
+    "start": "node --import tsx/esm ./scripts/start-production.mjs",
     "build": "vite build",
+    "postinstall": "npm run build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test server/middleware/*.test.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",

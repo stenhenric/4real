@@ -19,7 +19,7 @@ const TransactionSchema: Schema = new Schema({
   },
   amount: { type: Number, required: true },
   status: { type: String, enum: ['PENDING', 'COMPLETED', 'REJECTED', 'DONE'], default: 'COMPLETED', index: true },
-  referenceId: { type: String, index: true }
+  referenceId: { type: String }
 }, {
   timestamps: true
 });

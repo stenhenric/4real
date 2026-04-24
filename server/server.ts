@@ -15,6 +15,8 @@ import { startBackgroundJobs } from './services/background-jobs.service.ts';
 
 export async function startServer() {
   const env = getEnv();
+  const port = Number(process.env.PORT) || env.PORT || 3000;
+  const host = '0.0.0.0';
   let isShuttingDown = false;
 
   await connectDB();
@@ -50,11 +52,11 @@ export async function startServer() {
   registerGameSocketHandlers(io, realtimeMatchService);
 
   await new Promise<void>((resolve) => {
-    httpServer.listen(env.PORT, '0.0.0.0', () => resolve());
+    httpServer.listen(port, host, () => resolve());
   });
 
   logger.info('server.started', {
-    port: env.PORT,
+    port,
     nodeEnv: env.NODE_ENV,
   });
 

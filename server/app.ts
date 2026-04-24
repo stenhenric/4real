@@ -24,7 +24,9 @@ export async function createApp(statusProvider: AppStatusProvider) {
   const trustProxy = getTrustProxySetting();
   const app = express();
 
-  if (trustProxy !== undefined) {
+  if (env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  } else if (trustProxy !== undefined) {
     app.set('trust proxy', trustProxy);
   }
 
