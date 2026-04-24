@@ -2,7 +2,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { TonConnectButton } from '@tonconnect/ui-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
-import { LogOut, Home, Landmark, User } from 'lucide-react';
+import { LogOut, Home, Landmark, ShieldCheck, User } from 'lucide-react';
 
 const Navbar = () => {
   const { userData, user, logout } = useAuth();
@@ -46,6 +46,16 @@ const Navbar = () => {
             <span className="text-[10px] uppercase font-bold opacity-50 tracking-tighter">Liquid Balance</span>
             <span className="font-bold text-xl">${userData?.balance?.toFixed(2) || '0.00'}</span>
           </div>
+
+          {userData?.isAdmin && (
+            <Link
+              to="/merchant"
+              className="flex items-center gap-2 rounded-full border-2 border-ink-blue px-3 py-1 text-sm font-bold text-ink-blue transition-colors hover:bg-ink-blue/10"
+            >
+              <ShieldCheck size={18} />
+              Ops
+            </Link>
+          )}
           
           <div className="relative">
             <div className="tape"></div>

@@ -31,6 +31,7 @@ export async function createApp(statusProvider: AppStatusProvider) {
   }
 
   app.disable('x-powered-by');
+  app.locals.statusProvider = statusProvider;
   app.use(requestContextMiddleware);
   app.use(helmet({
     contentSecurityPolicy: false,

@@ -76,6 +76,57 @@ export interface OrderDTO {
   createdAt: string;
 }
 
+export type MerchantRiskLevel = 'low' | 'medium' | 'high';
+export type MerchantAlertSeverity = 'critical' | 'warning' | 'info';
+export type MerchantAlertCategory = 'orders' | 'liquidity' | 'operations' | 'deposits' | 'withdrawals';
+export type MerchantJobKey =
+  | 'depositPoller'
+  | 'withdrawalWorker'
+  | 'withdrawalConfirmation'
+  | 'hotWalletMonitor';
+
+export interface MerchantVolumePointDTO {
+  bucketStart: string;
+  bucketLabel: string;
+  completedVolumeUsdt: number;
+  completedCount: number;
+}
+
+export interface MerchantOrderDeskItemDTO {
+  id: string;
+  user: OrderUserDTO;
+  type: 'BUY' | 'SELL';
+  amount: number;
+  status: OrderDTO['status'];
+  createdAt: string;
+  waitMinutes: number;
+  proofImageUrl?: string;
+  riskLevel: MerchantRiskLevel;
+  riskFlags: string[];
+}
+
+export interface MerchantOverviewDTO {
+  pendingOrderCount: number;
+  highRiskPendingOrderCount: number;
+  pendingBuyVolumeUsdt: number;
+  pendingSellVolumeUsdt: number;
+  completedVolume24hUsdt: number;
+  completedTrades24h: number;
+  oldestPendingMinutes: number | null;
+  volumeSeries: MerchantVolumePointDTO[];
+}
+
+export interface MerchantJobStatusDTO {
+  key: MerchantJobKey;
+  label: string;
+  enabled: boolean;
+  state: 'healthy' | 'warning' | 'critical';
+  lastStartedAt?: string;
+  lastSucceededAt?: string;
+  lastFailedAt?: string;
+  lastError?: string;
+}
+
 export type TransactionType =
   | 'DEPOSIT'
   | 'WITHDRAW'
@@ -143,6 +194,60 @@ export interface MerchantConfigDTO {
   mpesaNumber: string;
   walletAddress: string;
   instructions: string;
+}
+
+export interface MerchantLiquidityDTO {
+  hotWalletAddress: string;
+  hotJettonWallet: string;
+  merchantConfig: MerchantConfigDTO;
+  tonBalanceTon: number | null;
+  onChainUsdtBalanceUsdt: number | null;
+  ledgerUsdtBalanceUsdt: number;
+  usdtDeltaUsdt: number | null;
+  depositFlow24hUsdt: number;
+  withdrawalFlow24hUsdt: number;
+  queuedWithdrawalCount: number;
+  processingWithdrawalCount: number;
+  stuckWithdrawalCount: number;
+  failedWithdrawalCount: number;
+  unresolvedDepositCount: number;
+  jobs: MerchantJobStatusDTO[];
+  balanceError?: string;
+}
+
+export interface MerchantAlertDTO {
+  id: string;
+  severity: MerchantAlertSeverity;
+  category: MerchantAlertCategory;
+  title: string;
+  description: string;
+  createdAt?: string;
+  targetPath?: string;
+  metric?: string;
+}
+
+export interface MerchantDashboardDTO {
+  generatedAt: string;
+  overview: MerchantOverviewDTO;
+  actionQueue: MerchantOrderDeskItemDTO[];
+  liquidity: MerchantLiquidityDTO;
+  alerts: MerchantAlertDTO[];
+}
+
+export interface MerchantOrderDeskResponseDTO {
+  filters: {
+    type: 'ALL' | 'BUY' | 'SELL';
+    status: 'ALL' | OrderDTO['status'];
+    page: number;
+    pageSize: number;
+  };
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  orders: MerchantOrderDeskItemDTO[];
 }
 
 export interface PreparedTonConnectDepositDTO {

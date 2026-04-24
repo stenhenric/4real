@@ -11,6 +11,13 @@ const DashboardPage = lazy(() => import('../pages/DashboardPage'));
 const GamePage = lazy(() => import('../pages/GamePage'));
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
+const MerchantLayout = lazy(() => import('../components/merchant/MerchantLayout').then((module) => ({
+  default: module.MerchantLayout,
+})));
+const MerchantDashboardPage = lazy(() => import('../pages/merchant/MerchantDashboardPage'));
+const MerchantOrderDeskPage = lazy(() => import('../pages/merchant/OrderDeskPage'));
+const MerchantLiquidityPage = lazy(() => import('../pages/merchant/LiquidityPage'));
+const MerchantAlertsPage = lazy(() => import('../pages/merchant/AlertsPage'));
 
 function AuthRoute() {
   const { user } = useAuth();
@@ -22,6 +29,16 @@ export default function App() {
     <AppProviders>
       <BrowserRouter>
         <Routes>
+          <Route path="/merchant" element={<ProtectedRoute requireAdmin={true} redirectTo="/bank" />}>
+            <Route element={<MerchantLayout />}>
+              <Route index element={<MerchantDashboardPage />} />
+              <Route path="orders" element={<MerchantOrderDeskPage />} />
+              <Route path="liquidity" element={<MerchantLiquidityPage />} />
+              <Route path="alerts" element={<MerchantAlertsPage />} />
+              <Route path="*" element={<Navigate replace to="/merchant" />} />
+            </Route>
+          </Route>
+
           <Route element={<AppLayout />}>
             <Route path="/auth" element={<AuthRoute />} />
 

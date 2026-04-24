@@ -9,7 +9,7 @@ import {
 } from '../workers/withdrawal-worker.ts';
 import { logger } from '../utils/logger.ts';
 
-interface JobSnapshot {
+export interface JobSnapshot {
   enabled: boolean;
   lastStartedAt?: string;
   lastSucceededAt?: string;
@@ -17,7 +17,7 @@ interface JobSnapshot {
   lastError?: string;
 }
 
-interface BackgroundJobState {
+export interface BackgroundJobState {
   depositPoller: JobSnapshot;
   withdrawalWorker: JobSnapshot;
   withdrawalConfirmation: JobSnapshot;
