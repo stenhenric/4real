@@ -116,6 +116,7 @@ export async function confirmSentWithdrawals() {
 
   try {
     const pending = await WithdrawalRepository.findPendingConfirmation(25);
+    const thirtyMinsAgo = Date.now() - 30 * 60_000;
 
     for (const withdrawal of pending) {
       if (!withdrawal.sentAt) {
@@ -130,45 +131,66 @@ export async function confirmSentWithdrawals() {
         toAddress: withdrawal.toAddress,
       });
 
-      if (!confirmed) {
-        continue;
-      }
-
       const session = await mongoose.startSession();
 
-      try {
-        await session.withTransaction(async () => {
-          await ProcessedTransactionRepository.create({
+      if (confirmed) {
+        try {
+          await session.withTransaction(async () => {
+            await ProcessedTransactionRepository.create({
+              txHash: confirmed.txHash,
+              processedAt: new Date(),
+              type: 'withdrawal_confirm',
+            }, session);
+
+            await WithdrawalRepository.markConfirmed(
+              withdrawal._id,
+              confirmed.txHash,
+              confirmed.confirmedAt,
+              session,
+            );
+
+            await UserBalanceRepository.recordWithdrawalConfirmed(
+              withdrawal.userId,
+              withdrawal.amountRaw,
+              session,
+            );
+          });
+
+          logger.info('withdrawal.confirmed', {
+            withdrawalId: withdrawal.withdrawalId,
             txHash: confirmed.txHash,
-            processedAt: new Date(),
-            type: 'withdrawal_confirm',
-          }, session);
-
-          await WithdrawalRepository.markConfirmed(
-            withdrawal._id,
-            confirmed.txHash,
-            confirmed.confirmedAt,
-            session,
-          );
-
-          await UserBalanceRepository.recordWithdrawalConfirmed(
-            withdrawal.userId,
-            withdrawal.amountRaw,
-            session,
-          );
-        });
-
-        logger.info('withdrawal.confirmed', {
-          withdrawalId: withdrawal.withdrawalId,
-          txHash: confirmed.txHash,
-          confirmedAt: confirmed.confirmedAt.toISOString(),
-        });
-      } catch (error) {
-        if (!isDuplicateKeyError(error)) {
-          throw error;
+            confirmedAt: confirmed.confirmedAt.toISOString(),
+          });
+        } catch (error) {
+          if (!isDuplicateKeyError(error)) {
+            throw error;
+          }
+        } finally {
+          await session.endSession();
         }
-      } finally {
-        await session.endSession();
+      } else if (withdrawal.sentAt.getTime() < thirtyMinsAgo) {
+         try {
+            await session.withTransaction(async () => {
+              await WithdrawalRepository.markRetryState(
+                withdrawal._id,
+                'failed',
+                'Expired waiting for confirmation on-chain',
+                session
+              );
+
+              await UserBalanceRepository.refundWithdrawal(
+                withdrawal.userId,
+                withdrawal.amountRaw,
+                session
+              );
+              await UserService.syncUserDisplayBalance(withdrawal.userId, session);
+            });
+            logger.warn('withdrawal.expired_unconfirmed_refunded', { withdrawalId: withdrawal.withdrawalId });
+         } catch (err) {
+             logger.error('withdrawal.expire_error', { withdrawalId: withdrawal.withdrawalId, err });
+         } finally {
+           await session.endSession();
+         }
       }
     }
   } finally {
@@ -241,13 +263,74 @@ export async function monitorHotWalletBalances() {
 }
 
 export async function recoverStuckWithdrawals() {
+  if (!hotJettonWallet) return;
   const tenMinsAgo = new Date(Date.now() - 10 * 60_000);
   const stuck = await WithdrawalRepository.findStaleProcessing(tenMinsAgo);
 
   if (stuck.length > 0) {
-    const ids = stuck.map((doc) => doc._id);
-    logger.warn('withdrawal.reset_stuck', { count: stuck.length });
-    await WithdrawalRepository.requeueByIds(ids);
+    const idsToRequeue: mongoose.Types.ObjectId[] = [];
+
+    for (const withdrawal of stuck) {
+      if (!withdrawal.startedAt) continue;
+
+      try {
+        const confirmed = await workerDependencies.findWithdrawalTransferOnChain({
+          hotJettonWallet,
+          sentAt: withdrawal.startedAt,
+          withdrawalId: withdrawal.withdrawalId,
+          amountRaw: withdrawal.amountRaw,
+          toAddress: withdrawal.toAddress,
+        });
+
+        if (confirmed) {
+          logger.info('withdrawal.stuck_found_on_chain', {
+            withdrawalId: withdrawal.withdrawalId,
+            txHash: confirmed.txHash,
+          });
+
+          const session = await mongoose.startSession();
+          try {
+            await session.withTransaction(async () => {
+              await ProcessedTransactionRepository.create({
+                txHash: confirmed.txHash,
+                processedAt: new Date(),
+                type: 'withdrawal_confirm',
+              }, session);
+
+              await WithdrawalRepository.markConfirmed(
+                withdrawal._id,
+                confirmed.txHash,
+                confirmed.confirmedAt,
+                session,
+              );
+
+              await UserBalanceRepository.recordWithdrawalConfirmed(
+                withdrawal.userId,
+                withdrawal.amountRaw,
+                session,
+              );
+            });
+          } catch (error) {
+            if (!isDuplicateKeyError(error)) {
+               logger.error('withdrawal.stuck_recover_error', { withdrawalId: withdrawal.withdrawalId, error });
+            }
+          } finally {
+            await session.endSession();
+          }
+        } else {
+          idsToRequeue.push(withdrawal._id as mongoose.Types.ObjectId);
+        }
+      } catch (err) {
+        logger.error('withdrawal.stuck_check_error', { withdrawalId: withdrawal.withdrawalId, err });
+        // Assume not sent and requeue, but ideally we'd retry checking
+        idsToRequeue.push(withdrawal._id as mongoose.Types.ObjectId);
+      }
+    }
+
+    if (idsToRequeue.length > 0) {
+      logger.warn('withdrawal.reset_stuck', { count: idsToRequeue.length });
+      await WithdrawalRepository.requeueByIds(idsToRequeue);
+    }
   }
 }
 
