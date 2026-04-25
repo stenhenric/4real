@@ -78,15 +78,21 @@ export async function pollDeposits() {
 }
 
 async function fetchIncomingTransfers(jettonWalletAddress: string, sinceTime: number): Promise<JettonTransfer[]> {
-  const url = new URL(`${TONCENTER_BASE}/api/v3/jetton/transfers`);
-  url.searchParams.set('owner_address', jettonWalletAddress);
-  url.searchParams.set('direction', 'in');
-  url.searchParams.set('jetton_master', USDT_MASTER);
-  url.searchParams.set('start_utime', String(sinceTime));
-  url.searchParams.set('limit', '50');
-  url.searchParams.set('sort', 'asc');
+  let allTransfers: JettonTransfer[] = [];
+  let offset = 0;
+  const limit = 50;
 
-  try {
+  while (true) {
+    const url = new URL(`${TONCENTER_BASE}/api/v3/jetton/transfers`);
+    url.searchParams.set('owner_address', jettonWalletAddress);
+    url.searchParams.set('direction', 'in');
+    url.searchParams.set('jetton_master', USDT_MASTER);
+    url.searchParams.set('start_utime', String(sinceTime));
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+    url.searchParams.set('sort', 'asc');
+
+    try {
       const env = getEnv();
       const res = await fetch(url.toString(), {
         headers: { 'X-API-Key': env.TONCENTER_API_KEY ?? '' },
@@ -95,16 +101,27 @@ async function fetchIncomingTransfers(jettonWalletAddress: string, sinceTime: nu
 
       if (res.status === 429) {
         logger.warn('deposit_poller.rate_limited');
-        return [];
+        break; // Return what we have so far
       }
       if (!res.ok) throw new Error(`Toncenter error ${res.status}`);
 
       const data = await res.json();
-      return data.jetton_transfers ?? [];
-  } catch (error) {
+      const transfers = data.jetton_transfers ?? [];
+
+      allTransfers = allTransfers.concat(transfers);
+
+      if (transfers.length < limit) {
+        break;
+      }
+
+      offset += limit;
+    } catch (error) {
       logger.error('deposit_poller.fetch_failed', { error });
-      return [];
+      break; // Return what we have so far
+    }
   }
+
+  return allTransfers;
 }
 
 async function processIncomingTransfer(tx: JettonTransfer, memoMap: Map<string, DepositMemo>) {

@@ -49,11 +49,13 @@ export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, h
   );
 
   const seqno = await contract.getSeqno();
+  const validUntil = Math.floor(Date.now() / 1000) + 300; // 5 minutes expiration
 
   await contract.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
     sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+    timeout: validUntil,
     messages: [
       internal({
         to: Address.parse(hotJettonWallet),
@@ -98,30 +100,46 @@ async function fetchJettonTransfers({
   startUtime: number;
   limit: number;
 }): Promise<ToncenterJettonTransfer[]> {
-  const url = new URL(`${getToncenterBaseUrl()}/api/v3/jetton/transfers`);
-  url.searchParams.set('owner_address', ownerAddress);
-  url.searchParams.set('direction', direction);
-  url.searchParams.set('jetton_master', USDT_MASTER);
-  url.searchParams.set('start_utime', String(startUtime));
-  url.searchParams.set('limit', String(limit));
-  url.searchParams.set('sort', 'asc');
+  let allTransfers: ToncenterJettonTransfer[] = [];
+  let offset = 0;
 
-  const response = await fetch(url.toString(), {
-    headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
-    signal: AbortSignal.timeout(10_000),
-  });
+  while (true) {
+    const url = new URL(`${getToncenterBaseUrl()}/api/v3/jetton/transfers`);
+    url.searchParams.set('owner_address', ownerAddress);
+    url.searchParams.set('direction', direction);
+    url.searchParams.set('jetton_master', USDT_MASTER);
+    url.searchParams.set('start_utime', String(startUtime));
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+    url.searchParams.set('sort', 'asc');
 
-  if (response.status === 429) {
-    logger.warn('withdrawal.confirmation_rate_limited');
-    return [];
+    const response = await fetch(url.toString(), {
+      headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (response.status === 429) {
+      logger.warn('withdrawal.confirmation_rate_limited');
+      break; // Return what we have so far
+    }
+
+    if (!response.ok) {
+      throw new Error(`Toncenter error ${response.status}`);
+    }
+
+    const data = await response.json() as { jetton_transfers?: ToncenterJettonTransfer[] };
+    const transfers = data.jetton_transfers ?? [];
+
+    allTransfers = allTransfers.concat(transfers);
+
+    if (transfers.length < limit) {
+      break;
+    }
+
+    offset += limit;
   }
 
-  if (!response.ok) {
-    throw new Error(`Toncenter error ${response.status}`);
-  }
-
-  const data = await response.json() as { jetton_transfers?: ToncenterJettonTransfer[] };
-  return data.jetton_transfers ?? [];
+  return allTransfers;
 }
 
 export async function findWithdrawalTransferOnChain({
