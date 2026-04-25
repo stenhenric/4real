@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { getEnv } from '../config/env.ts';
+import { User } from "../models/User.ts";
 import { Order } from '../models/Order.ts';
 import { getMongoCollection } from '../repositories/mongo.repository.ts';
 import type { DepositDocument } from '../repositories/deposit.repository.ts';
