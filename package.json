@@ -7,7 +7,6 @@
     "dev": "tsx server.ts",
     "start": "node --import tsx/esm ./scripts/start-production.mjs",
     "build": "vite build",
-    "postinstall": "npm run build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test server/middleware/*.test.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
@@ -38,9 +37,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "uuid": "^14.0.0",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
+    "zod": "^4.3.6",
     "@tailwindcss/vite": "^4.2.4",
     "@types/canvas-confetti": "^1.9.0",
     "@types/cookie-parser": "^1.4.10",
