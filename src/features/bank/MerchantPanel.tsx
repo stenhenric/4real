@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { History, StickyNote, Upload } from 'lucide-react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { ArrowDown, History, StickyNote, Upload } from 'lucide-react';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
@@ -18,13 +18,28 @@ type MerchantTab = 'buy' | 'sell';
 
 const MERCHANT_AMOUNT_ID = 'merchant-amount';
 const MERCHANT_PROOF_ID = 'merchant-proof';
+const MERCHANT_TRANSACTION_CODE_ID = 'merchant-transaction-code';
+
+function roundMoney(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function formatMoney(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '0.00';
+  }
+
+  return value.toFixed(2);
+}
 
 const MerchantPanel = () => {
   const { isAdmin, refreshUser } = useAuth();
   const { success, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<MerchantTab>('buy');
   const [amount, setAmount] = useState('');
-  const [proofUrl, setProofUrl] = useState('');
+  const [proofImage, setProofImage] = useState<File | null>(null);
+  const [transactionCode, setTransactionCode] = useState('');
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<OrderDTO[]>([]);
   const [merchantConfig, setMerchantConfig] = useState<MerchantConfigDTO | null>(null);
@@ -57,32 +72,102 @@ const MerchantPanel = () => {
     };
   }, [showError]);
 
+  const resetTradeForm = () => {
+    setAmount('');
+    setProofImage(null);
+    setTransactionCode('');
+    setPaymentConfirmed(false);
+  };
+
+  const handleTabChange = (nextTab: MerchantTab) => {
+    setActiveTab(nextTab);
+    resetTradeForm();
+  };
+
+  const handleAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setAmount(event.target.value);
+    setProofImage(null);
+    setTransactionCode('');
+    setPaymentConfirmed(false);
+  };
+
+  const amountValue = Number(amount);
+  const hasValidAmount = Number.isFinite(amountValue) && amountValue > 0;
+  const activeRate = activeTab === 'buy'
+    ? merchantConfig?.buyRateKesPerUsdt ?? 0
+    : merchantConfig?.sellRateKesPerUsdt ?? 0;
+  const rateConfigured = Number.isFinite(activeRate) && activeRate > 0;
+  const fiatTotal = hasValidAmount && rateConfigured
+    ? roundMoney(amountValue * activeRate)
+    : null;
+  const fiatCurrency = merchantConfig?.fiatCurrency ?? 'KES';
+  const buyReadyForSubmit = Boolean(
+    hasValidAmount
+    && rateConfigured
+    && paymentConfirmed
+    && transactionCode.trim().length > 0
+    && proofImage,
+  );
+
+  const buyInstructionTitle = useMemo(() => {
+    if (!hasValidAmount || !rateConfigured) {
+      return `Enter the amount of USDT you want to buy.`;
+    }
+
+    return `Pay ${formatMoney(fiatTotal)} ${fiatCurrency} to buy ${formatMoney(amountValue)} USDT.`;
+  }, [amountValue, fiatCurrency, fiatTotal, hasValidAmount, rateConfigured]);
+
   const handleOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!amount || !proofUrl) {
+    if (!hasValidAmount) {
+      showError('Enter a valid USDT amount.');
       return;
     }
 
-    const parsedAmount = parseFloat(amount);
-    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-      showError('Invalid amount');
+    if (!rateConfigured) {
+      showError('Merchant exchange rate is not configured yet.');
       return;
     }
 
     setLoading(true);
 
     try {
-      const order = await createOrder({
-        type: activeTab.toUpperCase() as 'BUY' | 'SELL',
-        amount: parsedAmount,
-        proofImageUrl: proofUrl,
-      });
+      const parsedAmount = roundMoney(amountValue);
 
-      setOrders((currentOrders) => [order, ...currentOrders]);
-      setAmount('');
-      setProofUrl('');
-      success(`${activeTab.toUpperCase()} order submitted successfully.`);
+      if (activeTab === 'buy') {
+        if (!paymentConfirmed) {
+          throw new Error('Confirm payment after paying before you submit the order.');
+        }
+
+        if (!transactionCode.trim()) {
+          throw new Error('Enter your M-Pesa transaction code.');
+        }
+
+        if (!proofImage) {
+          throw new Error('Upload your payment screenshot before submitting.');
+        }
+
+        const order = await createOrder({
+          type: 'BUY',
+          amount: parsedAmount,
+          transactionCode: transactionCode.trim(),
+          proofImage,
+        });
+
+        setOrders((currentOrders) => [order, ...currentOrders]);
+        success('Buy order submitted. Merchant is reviewing your payment proof.');
+      } else {
+        const order = await createOrder({
+          type: 'SELL',
+          amount: parsedAmount,
+        });
+
+        setOrders((currentOrders) => [order, ...currentOrders]);
+        success('Sell order placed. Merchant will review your payout.');
+      }
+
+      resetTradeForm();
       await refreshUser();
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Transaction failed');
@@ -115,7 +200,7 @@ const MerchantPanel = () => {
               <div className="flex items-center gap-2 mb-4">
                 <StickyNote className="text-yellow-700" />
                 <h2 className="text-2xl font-bold uppercase tracking-tighter underline">
-                  Merchant Instructions
+                  Fiat Merchant Instructions
                 </h2>
               </div>
               <div className="space-y-4 font-mono text-sm leading-relaxed">
@@ -133,18 +218,73 @@ const MerchantPanel = () => {
                     {merchantConfig?.walletAddress ?? 'Loading...'}
                   </p>
                 </div>
-                <p className="italic text-xs opacity-70 font-bold bg-white/20 p-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-white/40 border-l-4 border-green-600">
+                    <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Buy Rate</p>
+                    <p className="font-bold text-lg tracking-tight">
+                      {merchantConfig ? `${formatMoney(merchantConfig.buyRateKesPerUsdt)} ${fiatCurrency}` : 'Loading...'}
+                    </p>
+                    <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
+                  </div>
+                  <div className="p-3 bg-white/40 border-l-4 border-red-600">
+                    <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Sell Rate</p>
+                    <p className="font-bold text-lg tracking-tight">
+                      {merchantConfig ? `${formatMoney(merchantConfig.sellRateKesPerUsdt)} ${fiatCurrency}` : 'Loading...'}
+                    </p>
+                    <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
+                  </div>
+                </div>
+                <p className="italic text-xs opacity-70 font-bold bg-white/20 p-2 whitespace-pre-wrap">
                   {merchantConfig?.instructions ?? 'Loading merchant instructions...'}
                 </p>
               </div>
             </div>
 
-            <div className="rough-border border-dashed border-black/30 bg-black/5 flex flex-col items-center justify-center text-center p-6 flex-1 min-h-[200px]">
-              <Upload className="opacity-20 mb-2" size={48} />
-              <p className="text-sm italic opacity-40 font-bold uppercase tracking-widest">
-                Drop payment screenshot here...
-              </p>
-              <div className="mt-4 text-3xl animate-bounce">📸</div>
+            <div className="flex-1">
+              <div className="relative min-h-[240px]">
+                {activeTab === 'buy' && paymentConfirmed ? (
+                  <div className="absolute -top-12 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center text-green-700 animate-bounce">
+                    <span className="rounded-full border-2 border-green-700 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-center whitespace-nowrap">
+                      Upload your payment screenshot here
+                    </span>
+                    <ArrowDown className="mt-1" size={28} />
+                  </div>
+                ) : null}
+
+                <label
+                  className={cn(
+                    'rough-border border-dashed border-black/30 flex min-h-[240px] w-full flex-col items-center justify-center text-center p-6 transition-colors',
+                    activeTab === 'buy' && paymentConfirmed
+                      ? 'bg-white hover:bg-yellow-50 cursor-pointer shadow-lg'
+                      : 'bg-black/5 opacity-70',
+                  )}
+                  htmlFor={MERCHANT_PROOF_ID}
+                >
+                  <Upload className="opacity-30 mb-3" size={48} />
+                  <p className="text-sm italic opacity-70 font-bold uppercase tracking-widest">
+                    Drop payment screenshot here
+                  </p>
+                  <p className="mt-3 text-xs font-mono opacity-60 max-w-xs">
+                    {activeTab === 'buy'
+                      ? paymentConfirmed
+                        ? 'This box is for your own M-Pesa payment proof upload.'
+                        : 'Pay first, then confirm payment to unlock proof upload.'
+                      : 'Screenshot upload is only required for Buy USDT orders.'}
+                  </p>
+                  <p className="mt-4 text-sm font-bold text-ink-blue">
+                    {proofImage ? `Selected: ${proofImage.name}` : activeTab === 'buy' && paymentConfirmed ? 'PNG, JPG, or WEBP only.' : 'Waiting for payment confirmation.'}
+                  </p>
+                </label>
+                <input
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  disabled={activeTab !== 'buy' || !paymentConfirmed}
+                  id={MERCHANT_PROOF_ID}
+                  key={`${activeTab}-${paymentConfirmed}-${proofImage?.name ?? 'empty'}`}
+                  onChange={(event) => setProofImage(event.target.files?.[0] ?? null)}
+                  type="file"
+                />
+              </div>
             </div>
           </div>
 
@@ -158,11 +298,11 @@ const MerchantPanel = () => {
                   activeTab === 'buy' ? 'border-ink-black bg-black/5 scale-105' : 'border-transparent opacity-30',
                 )}
                 id="merchant-buy-tab"
-                onClick={() => setActiveTab('buy')}
+                onClick={() => handleTabChange('buy')}
                 role="tab"
                 type="button"
               >
-                Buy Credits
+                Buy USDT
               </button>
               <button
                 aria-controls="merchant-sell-panel"
@@ -172,11 +312,11 @@ const MerchantPanel = () => {
                   activeTab === 'sell' ? 'border-ink-black bg-black/5 scale-105' : 'border-transparent opacity-30',
                 )}
                 id="merchant-sell-tab"
-                onClick={() => setActiveTab('sell')}
+                onClick={() => handleTabChange('sell')}
                 role="tab"
                 type="button"
               >
-                Withdraw USDT
+                Sell USDT
               </button>
             </div>
 
@@ -192,15 +332,17 @@ const MerchantPanel = () => {
                   className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
                   htmlFor={MERCHANT_AMOUNT_ID}
                 >
-                  Wager / Purchase Amount (USDT)
+                  {activeTab === 'buy' ? 'Amount to Buy (USDT)' : 'Amount to Sell (USDT)'}
                 </label>
                 <div className="relative">
                   <input
                     className="w-full text-5xl font-bold bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors"
                     id={MERCHANT_AMOUNT_ID}
-                    onChange={(event) => setAmount(event.target.value)}
+                    inputMode="decimal"
+                    onChange={handleAmountChange}
                     placeholder="0.00"
                     required
+                    step="0.01"
                     type="number"
                     value={amount}
                   />
@@ -208,26 +350,101 @@ const MerchantPanel = () => {
                 </div>
               </div>
 
-              <div>
-                <label
-                  className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
-                  htmlFor={MERCHANT_PROOF_ID}
-                >
-                  Transaction Proof (IMGUR/LINK)
-                </label>
-                <input
-                  className="w-full text-lg font-bold bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors"
-                  id={MERCHANT_PROOF_ID}
-                  onChange={(event) => setProofUrl(event.target.value)}
-                  placeholder="https://imgur.com/your-proof"
-                  required
-                  type="url"
-                  value={proofUrl}
-                />
+              <div className="rounded-3xl border border-black/10 bg-black/5 p-5">
+                {activeTab === 'buy' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">
+                        Step 1: Pay First
+                      </p>
+                      <p className="mt-2 text-2xl font-bold italic">{buyInstructionTitle}</p>
+                      <p className="mt-2 text-sm font-mono opacity-70">
+                        Active rate: {rateConfigured ? `${formatMoney(activeRate)} ${fiatCurrency}/USDT` : 'Merchant rate not configured'}
+                      </p>
+                    </div>
+
+                    {hasValidAmount && rateConfigured ? (
+                      <div className="rounded-3xl border border-yellow-400 bg-yellow-50 px-4 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-800">
+                          Payment summary
+                        </p>
+                        <p className="mt-3 text-3xl font-bold italic text-yellow-900">
+                          {formatMoney(fiatTotal)} {fiatCurrency}
+                        </p>
+                        <p className="mt-2 text-sm font-mono text-yellow-900/70">
+                          Send this exact amount to {merchantConfig?.mpesaNumber ?? 'the merchant'} before you confirm payment.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm font-mono opacity-60">
+                        Enter a valid amount to see the exact {fiatCurrency} total you need to pay.
+                      </p>
+                    )}
+
+                    {!paymentConfirmed ? (
+                      <SketchyButton
+                        className="w-full py-3 text-lg uppercase tracking-tighter"
+                        disabled={!hasValidAmount || !rateConfigured || loading}
+                        onClick={() => setPaymentConfirmed(true)}
+                        type="button"
+                      >
+                        Confirm Payment
+                      </SketchyButton>
+                    ) : (
+                      <div className="rounded-3xl border border-green-500 bg-green-50 px-4 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-green-800">
+                          Step 2: Share proof
+                        </p>
+                        <p className="mt-2 text-sm font-mono text-green-900/80">
+                          Paste your M-Pesa transaction code and upload your screenshot using the proof box.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">
+                      Expected Fiat Payout
+                    </p>
+                    <p className="text-3xl font-bold italic">
+                      {hasValidAmount && rateConfigured ? `${formatMoney(fiatTotal)} ${fiatCurrency}` : `0.00 ${fiatCurrency}`}
+                    </p>
+                    <p className="text-sm font-mono opacity-70">
+                      Rate: {rateConfigured ? `${formatMoney(activeRate)} ${fiatCurrency}/USDT` : 'Merchant rate not configured'}
+                    </p>
+                    <p className="text-sm font-mono opacity-60">
+                      Submit your sell order and the merchant will process the fiat payout after review.
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <SketchyButton className="w-full py-4 text-2xl uppercase tracking-tighter" disabled={loading} type="submit">
-                {loading ? 'Processing...' : `Execute ${activeTab.toUpperCase()} Trade`}
+              {activeTab === 'buy' && paymentConfirmed ? (
+                <div>
+                  <label
+                    className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
+                    htmlFor={MERCHANT_TRANSACTION_CODE_ID}
+                  >
+                    M-Pesa Transaction Code
+                  </label>
+                  <input
+                    className="w-full text-lg font-mono bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors uppercase"
+                    id={MERCHANT_TRANSACTION_CODE_ID}
+                    onChange={(event) => setTransactionCode(event.target.value)}
+                    placeholder="QWE123ABC"
+                    required
+                    type="text"
+                    value={transactionCode}
+                  />
+                </div>
+              ) : null}
+
+              <SketchyButton className="w-full py-4 text-2xl uppercase tracking-tighter" disabled={loading || (activeTab === 'buy' ? !buyReadyForSubmit : !hasValidAmount || !rateConfigured)} type="submit">
+                {loading
+                  ? 'Processing...'
+                  : activeTab === 'buy'
+                    ? 'Submit Buy Order'
+                    : 'Place Sell Order'}
               </SketchyButton>
             </form>
           </SketchyContainer>
@@ -267,11 +484,21 @@ const MerchantPanel = () => {
                         </div>
                         <div>
                           <p className="font-bold text-xl tracking-tight">
-                            {order.type} {order.amount.toFixed(2)} USDT
+                            {order.type === 'BUY' ? 'BUY USDT' : 'SELL USDT'} {order.amount.toFixed(2)} USDT
                           </p>
                           <p className="text-[10px] opacity-40 font-mono font-bold uppercase">
                             TX-{order._id.substring(0, 12)} | {new Date(order.createdAt).toLocaleDateString()}
                           </p>
+                          {order.exchangeRate && order.fiatTotal && order.fiatCurrency ? (
+                            <p className="mt-2 text-xs font-mono opacity-60">
+                              {formatMoney(order.fiatTotal)} {order.fiatCurrency} at {formatMoney(order.exchangeRate)} {order.fiatCurrency}/USDT
+                            </p>
+                          ) : null}
+                          {isAdmin && order.transactionCode ? (
+                            <p className="mt-1 text-xs font-mono opacity-60">
+                              M-Pesa code: <span className="font-bold text-ink-black">{order.transactionCode}</span>
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                       <div className="text-right">
@@ -304,14 +531,16 @@ const MerchantPanel = () => {
                             >
                               FAIL
                             </button>
-                            <a
-                              href={order.proofImageUrl}
-                              rel="noopener noreferrer"
-                              target="_blank"
-                              className="text-[11px] font-bold text-blue-700 hover:scale-110 transition-transform bg-blue-100 px-2 rounded"
-                            >
-                              IMG
-                            </a>
+                            {order.proof?.url ? (
+                              <a
+                                href={order.proof.url}
+                                rel="noopener noreferrer"
+                                target="_blank"
+                                className="text-[11px] font-bold text-blue-700 hover:scale-110 transition-transform bg-blue-100 px-2 rounded"
+                              >
+                                PROOF
+                              </a>
+                            ) : null}
                           </div>
                         )}
                       </div>
@@ -325,7 +554,7 @@ const MerchantPanel = () => {
               <div className="mt-8 p-4 bg-orange-100 border-2 border-orange-300 rounded italic text-sm text-orange-900 flex items-center gap-3">
                 <span className="text-2xl">⚠️</span>
                 <span className="font-bold">
-                  ADMIN NODE ACTIVE: ENSURE PROOFS ARE AUTHENTIC BEFORE STATE RELEASE.
+                  ADMIN NODE ACTIVE: ENSURE BUY PROOFS AND SELL PAYOUTS ARE VERIFIED BEFORE RELEASE.
                 </span>
               </div>
             )}

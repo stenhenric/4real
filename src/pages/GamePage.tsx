@@ -9,7 +9,9 @@ import { SketchyButton } from '../components/SketchyButton';
 import { SketchyContainer } from '../components/SketchyContainer';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useGameRoom } from '../features/game/useGameRoom';
+import { getMatch, joinMatch, resignMatch } from '../services/matches.service';
 import { cn } from '../utils/cn';
+import type { MatchDTO } from '../types/api';
 
 const BOARD_COLUMNS = Array.from({ length: 7 }, (_, index) => index);
 
@@ -22,10 +24,16 @@ const GamePage = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousRoomStatusRef = useRef<string | null>(null);
   const [selectedColumn, setSelectedColumn] = useState(0);
+  const [matchPreview, setMatchPreview] = useState<MatchDTO | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(true);
+  const [roomAccessReady, setRoomAccessReady] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [resigning, setResigning] = useState(false);
 
   const { gameOver, makeMove, room } = useGameRoom({
     roomId,
     userId: user?.id,
+    enabled: roomAccessReady,
     onRoomError: (message) => {
       warning(message);
       navigate('/');
@@ -36,6 +44,56 @@ const GamePage = () => {
       }
     },
   });
+
+  useEffect(() => {
+    if (!roomId || !user?.id) {
+      setMatchPreview(null);
+      setPreviewLoading(false);
+      setRoomAccessReady(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPreviewLoading(true);
+
+    void getMatch(roomId, controller.signal)
+      .then((match) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setMatchPreview(match);
+        const isParticipant = match.player1Id === user.id || match.player2Id === user.id;
+
+        if (isParticipant) {
+          setRoomAccessReady(true);
+          return;
+        }
+
+        setRoomAccessReady(false);
+        if (match.status !== 'waiting') {
+          warning('This match is no longer open for new players.');
+          navigate('/');
+        }
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        warning(error instanceof Error ? error.message : 'Unable to load match.');
+        navigate('/');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setPreviewLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [navigate, roomId, user?.id, warning]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -63,8 +121,94 @@ const GamePage = () => {
     previousRoomStatusRef.current = room.status;
   }, [refreshUser, room, user?.id]);
 
+  const canJoinMatch = Boolean(
+    roomId &&
+    matchPreview &&
+    user?.id &&
+    !roomAccessReady &&
+    matchPreview.status === 'waiting' &&
+    matchPreview.player1Id !== user.id &&
+    !matchPreview.player2Id,
+  );
+
+  const handleJoinMatch = async () => {
+    if (!roomId || !canJoinMatch) {
+      return;
+    }
+
+    setJoining(true);
+    try {
+      const joinedMatch = await joinMatch(roomId);
+      setMatchPreview(joinedMatch);
+      setRoomAccessReady(true);
+      if (joinedMatch.wager > 0) {
+        await refreshUser();
+      }
+    } catch (error) {
+      warning(error instanceof Error ? error.message : 'Unable to join this match.');
+      navigate('/');
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleResignMatch = async () => {
+    if (!roomId || resigning) {
+      return;
+    }
+
+    setResigning(true);
+    try {
+      const settledMatch = await resignMatch(roomId);
+      setMatchPreview(settledMatch);
+      await refreshUser();
+      navigate('/');
+    } catch (error) {
+      warning(error instanceof Error ? error.message : 'Unable to resign the match.');
+    } finally {
+      setResigning(false);
+    }
+  };
+
   if (!roomId) {
     return <div className="text-center py-20 font-bold">Game room not found.</div>;
+  }
+
+  if (previewLoading) {
+    return <div className="text-center py-20 italic">Inspecting the match ledger...</div>;
+  }
+
+  if (!roomAccessReady && canJoinMatch && matchPreview) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <SketchyContainer className="bg-white">
+          <h2 className="text-3xl font-bold italic tracking-tight mb-4">Match Preview</h2>
+          <p className="text-sm font-mono opacity-60 mb-6">
+            Room {matchPreview.roomId.toUpperCase()} • Host {matchPreview.p1Username}
+          </p>
+          <div className="space-y-3 text-lg font-bold">
+            <p>Type: {matchPreview.isPrivate ? 'Private invite' : 'Public lobby'}</p>
+            <p>Wager: {matchPreview.wager.toFixed(2)} USDT</p>
+            <p>Payout: {(matchPreview.projectedWinnerAmount ?? 0).toFixed(2)} USDT</p>
+          </div>
+          <p className="mt-6 text-sm opacity-70 italic">
+            Joining this room will claim the second seat and lock your wager on the server before realtime play starts.
+          </p>
+          <div className="mt-8 flex gap-3">
+            <SketchyButton className="flex-1" disabled={joining} onClick={() => void handleJoinMatch()}>
+              {joining ? 'Joining...' : 'Join Match'}
+            </SketchyButton>
+            <SketchyButton className="flex-1" onClick={() => navigate('/')}>
+              Cancel
+            </SketchyButton>
+          </div>
+        </SketchyContainer>
+      </div>
+    );
+  }
+
+  if (!roomAccessReady) {
+    return <div className="text-center py-20 font-bold">You do not have access to this match.</div>;
   }
 
   if (!room) {
@@ -270,8 +414,8 @@ const GamePage = () => {
           </div>
         </SketchyContainer>
 
-        <SketchyButton activeColor="#fee2e2" className="w-full" onClick={() => navigate('/')}>
-          Resign Match
+        <SketchyButton activeColor="#fee2e2" className="w-full" onClick={() => void handleResignMatch()}>
+          {resigning ? 'Resigning...' : 'Resign Match'}
         </SketchyButton>
 
         {gameOver && (

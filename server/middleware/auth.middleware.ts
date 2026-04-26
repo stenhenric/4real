@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import type { ApiErrorDTO } from '../../shared/types/api.ts';
 
 import { AUTH_COOKIE_NAME } from '../config/cookies.ts';
 import { verifyAuthToken } from '../services/auth-token.service.ts';
@@ -12,7 +13,11 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
   const token = req.cookies?.[AUTH_COOKIE_NAME];
 
   if (!token) {
-    res.status(401).json({ error: 'Access token required' });
+    const payload: ApiErrorDTO = {
+      code: 'UNAUTHENTICATED',
+      message: 'Access token required',
+    };
+    res.status(401).json(payload);
     return;
   }
 
@@ -22,16 +27,27 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
       next();
     })
     .catch((error) => {
-      const message = error instanceof Error && error.message === 'Invalid token payload'
-        ? 'Invalid token payload'
-        : 'Invalid token';
-      res.status(403).json({ error: message });
+      const message = error instanceof Error ? error.message : 'Invalid token';
+      const code = message === 'Token revoked'
+        ? 'TOKEN_REVOKED'
+        : message === 'Invalid token payload'
+          ? 'INVALID_TOKEN_PAYLOAD'
+          : 'INVALID_TOKEN';
+      const payload: ApiErrorDTO = {
+        code,
+        message,
+      };
+      res.status(401).json(payload);
     });
 };
 
 export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {
   if (!req.user?.isAdmin) {
-    res.status(403).json({ error: 'Admin access required' });
+    const payload: ApiErrorDTO = {
+      code: 'ADMIN_ACCESS_REQUIRED',
+      message: 'Admin access required',
+    };
+    res.status(403).json(payload);
     return;
   }
 

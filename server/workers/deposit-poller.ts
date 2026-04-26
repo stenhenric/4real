@@ -8,6 +8,7 @@ import { PollerStateRepository } from '../repositories/poller-state.repository.t
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { AuditService } from '../services/audit.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
 import { logger } from '../utils/logger.ts';
@@ -20,6 +21,9 @@ interface JettonTransfer {
   amount: string | number;
   source: string;
   source_owner?: string | null;
+  transaction_aborted?: boolean | null;
+  aborted?: boolean | null;
+  destination?: string;
   decoded_forward_payload?: { comment?: string } | Array<{ comment?: string }> | null;
 }
 
@@ -130,7 +134,27 @@ async function processIncomingTransfer(tx: JettonTransfer, memoMap: Map<string, 
   if (!tx.jetton_master) return;
 
   if (!addressesEqual(tx.jetton_master, USDT_MASTER)) {
-      return; // Reject fakes
+    return;
+  }
+
+  if (tx.transaction_aborted === true || tx.aborted === true) {
+    await ProcessedTransactionRepository.create({
+      txHash,
+      processedAt: new Date(),
+      type: 'deposit_rejected',
+    });
+    await AuditService.record({
+      eventType: 'deposit_rejected',
+      resourceType: 'deposit',
+      resourceId: txHash,
+      metadata: {
+        accepted: false,
+        reason: 'transaction_aborted',
+        senderJettonWallet: tx.source,
+        senderAddress: tx.source_owner ?? null,
+      },
+    });
+    return;
   }
 
   const receivedRaw = String(tx.amount);
@@ -188,6 +212,23 @@ async function processIncomingTransfer(tx: JettonTransfer, memoMap: Map<string, 
       await UserBalanceRepository.creditDeposit(claimedMemo.userId, receivedRaw, session);
 
       await UserService.syncUserDisplayBalance(claimedMemo.userId, session);
+    });
+    await AuditService.record({
+      eventType: 'deposit_credit',
+      actorUserId: memoDoc?.userId ?? null,
+      targetUserId: memoDoc?.userId ?? null,
+      resourceType: 'deposit',
+      resourceId: txHash,
+      metadata: {
+        accepted: true,
+        amountRaw: receivedRaw,
+        amountUsdt: Number(receivedRaw) / 1e6,
+        memo: comment,
+        senderJettonWallet,
+        senderAddress,
+        txTime,
+        destination: tx.destination ?? null,
+      },
     });
 
   } catch (err: unknown) {

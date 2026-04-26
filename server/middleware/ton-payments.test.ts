@@ -12,6 +12,7 @@ import { ProcessedTransactionRepository } from '../repositories/processed-transa
 import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { AuditService } from '../services/audit.service.ts';
 import { generateDepositMemo } from '../services/deposit-service.ts';
 import { resolveHotWalletRuntime, setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
@@ -31,7 +32,9 @@ const ZERO_ADDRESS = Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 const HOT_JETTON_WALLET = ZERO_ADDRESS;
 
 function registerBaseCleanup(t: TestContext) {
+  const auditMock = mock.method(AuditService, 'record', async () => {});
   t.after(() => {
+    auditMock.mock.restore();
     delete process.env.HOT_JETTON_WALLET;
     delete process.env.HOT_WALLET_MIN_USDT_BALANCE;
     process.env.HOT_WALLET_ADDRESS = HOT_WALLET_ADDRESS;

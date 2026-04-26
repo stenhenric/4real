@@ -13,6 +13,7 @@ import { RealtimeMatchService } from './services/realtime-match.service.ts';
 import { registerGameSocketHandlers } from './sockets/game.socket.ts';
 import { registerPublicMatchEvents } from './sockets/public-match-events.ts';
 import { startBackgroundJobs } from './services/background-jobs.service.ts';
+import { UserService } from './services/user.service.ts';
 
 export async function startServer() {
   const env = getEnv();
@@ -22,6 +23,7 @@ export async function startServer() {
 
   await connectDB();
   await setupIndexes();
+  await UserService.ensureSystemCommissionAccountExists();
 
   const backgroundJobs = await startBackgroundJobs();
   const roomRegistry = new GameRoomRegistry({

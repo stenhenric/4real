@@ -10,6 +10,9 @@ const router = Router();
 
 router.get('/active', asyncHandler(MatchController.getActiveMatches));
 router.post('/', authenticateToken, validateBody(createMatchRequestSchema), asyncHandler(MatchController.createMatch));
+router.post('/:roomId/join', authenticateToken, asyncHandler(MatchController.joinMatch));
+router.post('/:roomId/resign', authenticateToken, asyncHandler(MatchController.resignMatch));
 router.get('/user/:userId', asyncHandler(MatchController.getUserHistory));
+router.get('/:roomId', authenticateToken, asyncHandler(MatchController.getMatch));
 
 export default router;

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 import { getEnv } from '../config/env.ts';
-import { User } from "../models/User.ts";
+import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from "../models/User.ts";
 import { Order } from '../models/Order.ts';
 import { getMongoCollection } from '../repositories/mongo.repository.ts';
 import type { DepositDocument } from '../repositories/deposit.repository.ts';
@@ -21,6 +21,7 @@ import type {
   MerchantOrderDeskResponseDTO,
   OrderUserDTO,
 } from '../types/api.ts';
+import { trustFilter } from '../utils/trusted-filter.ts';
 
 interface MerchantDashboardOrderUser {
   _id: mongoose.Types.ObjectId;
@@ -34,7 +35,11 @@ interface MerchantDashboardOrderDocument {
   type: 'BUY' | 'SELL';
   amount: number;
   status: 'PENDING' | 'DONE' | 'REJECTED';
-  proofImageUrl?: string;
+  proof?: MerchantOrderDeskItemDTO['proof'];
+  transactionCode?: MerchantOrderDeskItemDTO['transactionCode'];
+  fiatCurrency?: MerchantOrderDeskItemDTO['fiatCurrency'];
+  exchangeRate?: MerchantOrderDeskItemDTO['exchangeRate'];
+  fiatTotal?: MerchantOrderDeskItemDTO['fiatTotal'];
   createdAt: Date;
 }
 
@@ -68,6 +73,7 @@ const JOB_LABELS: Record<MerchantJobKey, string> = {
   withdrawalWorker: 'Withdrawal worker',
   withdrawalConfirmation: 'Withdrawal confirmation',
   hotWalletMonitor: 'Hot wallet monitor',
+  staleMatchExpiry: 'Stale match expiry',
 };
 
 function roundMoney(value: number): number {
@@ -134,6 +140,7 @@ function buildJobStatuses(backgroundJobs: BackgroundJobState | null): MerchantJo
     withdrawalWorker: { enabled: false, lastError: 'Status unavailable' },
     withdrawalConfirmation: { enabled: false, lastError: 'Status unavailable' },
     hotWalletMonitor: { enabled: false, lastError: 'Status unavailable' },
+    staleMatchExpiry: { enabled: false, lastError: 'Status unavailable' },
   };
 
   return (Object.keys(JOB_LABELS) as MerchantJobKey[]).map((key) => {
@@ -254,7 +261,7 @@ async function fetchOrders(options: {
   const query = Order.find(options.filter)
     .sort({ createdAt: -1 })
     .populate('userId', 'username createdAt')
-    .select('userId type amount status proofImageUrl createdAt');
+    .select('userId type amount status proof transactionCode fiatCurrency exchangeRate fiatTotal createdAt');
 
   if (options.page !== undefined && options.pageSize !== undefined) {
     query.skip((options.page - 1) * options.pageSize).limit(options.pageSize);
@@ -281,7 +288,11 @@ async function fetchOrders(options: {
       status: order.status,
       createdAt: order.createdAt.toISOString(),
       waitMinutes: risk.waitMinutes,
-      proofImageUrl: order.proofImageUrl,
+      proof: order.proof,
+      transactionCode: order.transactionCode,
+      fiatCurrency: order.fiatCurrency,
+      exchangeRate: order.exchangeRate,
+      fiatTotal: order.fiatTotal,
       riskLevel: risk.riskLevel,
       riskFlags: risk.riskFlags,
     };
@@ -461,9 +472,11 @@ export class MerchantDashboardService {
       withdrawalCounts,
       ledgerUsdtRaw,
       balanceSnapshot,
+      systemCommissionAccount,
+      merchantConfig,
     ] = await Promise.all([
       fetchOrders({ filter: { status: 'PENDING' } }),
-      Order.find({ status: 'DONE', createdAt: { $gte: since24h } })
+      Order.find(trustFilter({ status: 'DONE', createdAt: { $gte: since24h } }))
         .select('amount createdAt')
         .sort({ createdAt: 1 })
         .lean<Array<{ amount: number; createdAt: Date }>>(),
@@ -475,6 +488,8 @@ export class MerchantDashboardService {
       getWithdrawalCounts(),
       UserBalanceRepository.sumBalanceRaw(),
       getBalanceSnapshot(),
+      User.findById(SYSTEM_COMMISSION_ACCOUNT_ID).select('balance').lean(),
+      getMerchantConfig(),
     ]);
 
     const pendingOrders = pendingOrdersResult.items
@@ -516,6 +531,7 @@ export class MerchantDashboardService {
     const usdtDeltaUsdt = balanceSnapshot.onChainUsdtBalanceUsdt === null
       ? null
       : roundMoney(balanceSnapshot.onChainUsdtBalanceUsdt - ledgerUsdtBalanceUsdt);
+    const systemCommissionUsdt = systemCommissionAccount?.balance ?? 0;
 
     const alerts: MerchantAlertDTO[] = [];
     const env = getEnv();
@@ -683,7 +699,7 @@ export class MerchantDashboardService {
       liquidity: {
         hotWalletAddress: runtime.hotWalletAddress,
         hotJettonWallet: runtime.hotJettonWallet,
-        merchantConfig: getMerchantConfig(),
+        merchantConfig,
         tonBalanceTon: balanceSnapshot.tonBalanceTon,
         onChainUsdtBalanceUsdt: balanceSnapshot.onChainUsdtBalanceUsdt,
         ledgerUsdtBalanceUsdt,
@@ -697,6 +713,7 @@ export class MerchantDashboardService {
         unresolvedDepositCount,
         jobs: jobStatuses,
         balanceError: balanceSnapshot.error,
+        systemCommissionUsdt,
       },
       alerts: sortAlerts(alerts),
     };

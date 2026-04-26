@@ -1,11 +1,18 @@
 import request from './api/apiClient';
+import { createIdempotencyKey } from '../utils/idempotency';
 import type { MerchantConfigDTO, OrderDTO } from '../types/api';
 
-interface CreateOrderPayload {
-  type: 'BUY' | 'SELL';
-  amount: number;
-  proofImageUrl: string;
-}
+type CreateOrderPayload =
+  | {
+      type: 'BUY';
+      amount: number;
+      transactionCode: string;
+      proofImage: File;
+    }
+  | {
+      type: 'SELL';
+      amount: number;
+    };
 
 type OrderStatus = OrderDTO['status'];
 
@@ -18,9 +25,20 @@ export function getMerchantConfig(signal?: AbortSignal) {
 }
 
 export function createOrder(payload: CreateOrderPayload) {
+  const form = new FormData();
+  form.set('type', payload.type);
+  form.set('amount', String(payload.amount));
+  if (payload.type === 'BUY') {
+    form.set('transactionCode', payload.transactionCode);
+    form.set('proofImage', payload.proofImage);
+  }
+
   return request<OrderDTO>('/orders', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    headers: {
+      'Idempotency-Key': createIdempotencyKey(),
+    },
+    body: form,
   });
 }
 

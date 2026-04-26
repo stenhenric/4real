@@ -1,11 +1,22 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export interface TelegramOrderProof {
+  provider: 'telegram';
+  url: string;
+  messageId: string;
+  chatId: string;
+}
+
 export interface IOrder extends Document {
   userId: mongoose.Types.ObjectId;
   type: 'BUY' | 'SELL';
   amount: number;
   status: 'PENDING' | 'DONE' | 'REJECTED';
-  proofImageUrl?: string;
+  proof?: TelegramOrderProof;
+  transactionCode?: string;
+  fiatCurrency?: 'KES';
+  exchangeRate?: number;
+  fiatTotal?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -15,7 +26,16 @@ const OrderSchema: Schema = new Schema({
   type: { type: String, enum: ['BUY', 'SELL'], required: true },
   amount: { type: Number, required: true, min: 0 },
   status: { type: String, enum: ['PENDING', 'DONE', 'REJECTED'], default: 'PENDING', index: true },
-  proofImageUrl: { type: String, trim: true }
+  transactionCode: { type: String, trim: true },
+  fiatCurrency: { type: String, enum: ['KES'], trim: true },
+  exchangeRate: { type: Number, min: 0 },
+  fiatTotal: { type: Number, min: 0 },
+  proof: {
+    provider: { type: String, enum: ['telegram'] },
+    url: { type: String, trim: true },
+    messageId: { type: String, trim: true },
+    chatId: { type: String, trim: true },
+  }
 }, {
   timestamps: true
 });

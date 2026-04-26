@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express';
+import type { ApiErrorDTO } from '../../shared/types/api.ts';
 
 import { isAllowedOrigin } from '../config/cors.ts';
 
@@ -28,5 +29,9 @@ export const csrfProtectionMiddleware: RequestHandler = (req, res, next) => {
     return;
   }
 
-  res.status(403).json({ error: 'Invalid request origin' });
+  const payload: ApiErrorDTO = {
+    code: 'INVALID_REQUEST_ORIGIN',
+    message: 'Invalid request origin',
+  };
+  res.status(403).json(payload);
 };

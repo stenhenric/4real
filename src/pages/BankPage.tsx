@@ -113,12 +113,12 @@ const BankPage = () => {
             <Store size={40} className="text-yellow-700" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Merchant</h2>
-          <p className="text-xs font-mono font-bold opacity-60 mb-6">P2P Agent Trading</p>
+          <p className="text-xs font-mono font-bold opacity-60 mb-6">Fiat / M-Pesa P2P</p>
           <SketchyButton
             className="w-full bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-700"
             onClick={() => setActiveView('merchant')}
           >
-            Open Merchant UI
+            Buy / Sell via Fiat
           </SketchyButton>
         </SketchyContainer>
       </div>
@@ -147,7 +147,7 @@ const BankPage = () => {
                 <div className="flex items-center gap-4 mb-2 sm:mb-0">
                   <div
                     className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg
-                    ${transaction.type.includes('WIN') || transaction.type.includes('DEPOSIT') || transaction.type === 'SELL_P2P' ? 'bg-green-600' :
+                    ${transaction.type.includes('WIN') || transaction.type.includes('DEPOSIT') || transaction.type === 'SELL_P2P' || transaction.type === 'MATCH_REFUND' ? 'bg-green-600' :
                       transaction.type.includes('LOSS') || transaction.type.includes('WITHDRAW') || transaction.type === 'BUY_P2P' || transaction.type === 'MATCH_WAGER' ? 'bg-red-600' : 'bg-gray-600'}`}
                   >
                     {transaction.amount > 0 ? '+' : ''}

@@ -95,6 +95,8 @@ export function serializeMatch(match: IMatch): MatchDTO {
     moveHistory: match.moveHistory ?? [],
     projectedWinnerAmount: payout.projectedWinnerAmount,
     commissionRate: payout.commissionRate,
+    settlementReason: match.settlementReason,
+    lastActivityAt: match.lastActivityAt?.toISOString(),
     createdAt: match.createdAt?.toISOString(),
   };
 }
@@ -106,7 +108,16 @@ export function serializeOrder(order: IOrder): OrderDTO {
     type: order.type,
     amount: order.amount,
     status: order.status,
-    proofImageUrl: order.proofImageUrl,
+    proof: order.proof ? {
+      provider: 'telegram',
+      url: order.proof.url,
+      messageId: order.proof.messageId,
+      chatId: order.proof.chatId,
+    } : undefined,
+    transactionCode: order.transactionCode,
+    fiatCurrency: order.fiatCurrency,
+    exchangeRate: order.exchangeRate,
+    fiatTotal: order.fiatTotal,
     createdAt: order.createdAt.toISOString(),
   };
 }

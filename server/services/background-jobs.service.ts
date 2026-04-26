@@ -1,5 +1,6 @@
 import { pollDeposits } from '../workers/deposit-poller.ts';
 import { initializeHotWalletRuntime } from './hot-wallet-runtime.service.ts';
+import { MatchService } from './match.service.ts';
 import {
   confirmSentWithdrawals,
   initWorker,
@@ -22,6 +23,7 @@ export interface BackgroundJobState {
   withdrawalWorker: JobSnapshot;
   withdrawalConfirmation: JobSnapshot;
   hotWalletMonitor: JobSnapshot;
+  staleMatchExpiry: JobSnapshot;
 }
 
 export interface BackgroundJobController {
@@ -63,6 +65,7 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
     withdrawalWorker: { enabled: true },
     withdrawalConfirmation: { enabled: true },
     hotWalletMonitor: { enabled: true },
+    staleMatchExpiry: { enabled: true },
   };
 
   try {
@@ -81,6 +84,12 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
   const runWithdrawalWorker = createJobRunner('withdrawalWorker', state, runWithdrawalWorkerTask);
   const runWithdrawalConfirmation = createJobRunner('withdrawalConfirmation', state, confirmSentWithdrawals);
   const runHotWalletMonitor = createJobRunner('hotWalletMonitor', state, monitorHotWalletBalances);
+  const runStaleMatchExpiry = createJobRunner('staleMatchExpiry', state, async () => {
+    const result = await MatchService.expireStaleMatches();
+    if (result.waitingExpired > 0 || result.activeExpired > 0) {
+      logger.warn('background_job.stale_matches_settled', result);
+    }
+  });
 
   const depositHandle = setInterval(() => {
     void runDepositPoller();
@@ -102,18 +111,25 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
   }, 60_000);
   monitorHandle.unref?.();
 
+  const staleMatchHandle = setInterval(() => {
+    void runStaleMatchExpiry();
+  }, 30_000);
+  staleMatchHandle.unref?.();
+
   return {
     getStatus: () => ({
       depositPoller: { ...state.depositPoller },
       withdrawalWorker: { ...state.withdrawalWorker },
       withdrawalConfirmation: { ...state.withdrawalConfirmation },
       hotWalletMonitor: { ...state.hotWalletMonitor },
+      staleMatchExpiry: { ...state.staleMatchExpiry },
     }),
     stop: () => {
       clearInterval(depositHandle);
       clearInterval(withdrawalHandle);
       clearInterval(confirmationHandle);
       clearInterval(monitorHandle);
+      clearInterval(staleMatchHandle);
     },
   };
 }

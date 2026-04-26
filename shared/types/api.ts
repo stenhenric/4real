@@ -4,6 +4,12 @@ export interface JwtUser {
   tokenVersion: number;
 }
 
+export interface ApiErrorDTO {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
 export interface UserStatsDTO {
   wins: number;
   losses: number;
@@ -58,6 +64,8 @@ export interface MatchDTO {
   moveHistory: MatchMoveDTO[];
   projectedWinnerAmount?: number;
   commissionRate?: number;
+  settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
+  lastActivityAt?: string;
   createdAt?: string;
 }
 
@@ -66,13 +74,26 @@ export interface OrderUserDTO {
   username: string;
 }
 
+export interface TelegramOrderProofDTO {
+  provider: 'telegram';
+  url: string;
+  messageId: string;
+  chatId: string;
+}
+
+export type FiatCurrency = 'KES';
+
 export interface OrderDTO {
   _id: string;
   userId: string | OrderUserDTO;
   type: 'BUY' | 'SELL';
   amount: number;
   status: 'PENDING' | 'DONE' | 'REJECTED';
-  proofImageUrl?: string;
+  proof?: TelegramOrderProofDTO;
+  transactionCode?: string;
+  fiatCurrency?: FiatCurrency;
+  exchangeRate?: number;
+  fiatTotal?: number;
   createdAt: string;
 }
 
@@ -83,7 +104,8 @@ export type MerchantJobKey =
   | 'depositPoller'
   | 'withdrawalWorker'
   | 'withdrawalConfirmation'
-  | 'hotWalletMonitor';
+  | 'hotWalletMonitor'
+  | 'staleMatchExpiry';
 
 export interface MerchantVolumePointDTO {
   bucketStart: string;
@@ -100,7 +122,11 @@ export interface MerchantOrderDeskItemDTO {
   status: OrderDTO['status'];
   createdAt: string;
   waitMinutes: number;
-  proofImageUrl?: string;
+  proof?: TelegramOrderProofDTO;
+  transactionCode?: string;
+  fiatCurrency?: FiatCurrency;
+  exchangeRate?: number;
+  fiatTotal?: number;
   riskLevel: MerchantRiskLevel;
   riskFlags: string[];
 }
@@ -133,6 +159,7 @@ export type TransactionType =
   | 'MATCH_WIN'
   | 'MATCH_LOSS'
   | 'MATCH_DRAW'
+  | 'MATCH_REFUND'
   | 'MATCH_WAGER'
   | 'BUY_P2P'
   | 'SELL_P2P';
@@ -194,6 +221,17 @@ export interface MerchantConfigDTO {
   mpesaNumber: string;
   walletAddress: string;
   instructions: string;
+  fiatCurrency: FiatCurrency;
+  buyRateKesPerUsdt: number;
+  sellRateKesPerUsdt: number;
+}
+
+export interface UpdateMerchantConfigRequestDTO {
+  mpesaNumber?: string;
+  walletAddress?: string;
+  instructions?: string;
+  buyRateKesPerUsdt?: number;
+  sellRateKesPerUsdt?: number;
 }
 
 export interface MerchantLiquidityDTO {
@@ -213,6 +251,7 @@ export interface MerchantLiquidityDTO {
   unresolvedDepositCount: number;
   jobs: MerchantJobStatusDTO[];
   balanceError?: string;
+  systemCommissionUsdt: number;
 }
 
 export interface MerchantAlertDTO {

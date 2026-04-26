@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ITransaction extends Document {
   userId: mongoose.Types.ObjectId;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'MATCH_WIN' | 'MATCH_LOSS' | 'MATCH_DRAW' | 'MATCH_WAGER' | 'BUY_P2P' | 'SELL_P2P';
+  type: 'DEPOSIT' | 'WITHDRAW' | 'MATCH_WIN' | 'MATCH_LOSS' | 'MATCH_DRAW' | 'MATCH_REFUND' | 'MATCH_WAGER' | 'BUY_P2P' | 'SELL_P2P';
   amount: number;
   status: 'PENDING' | 'COMPLETED' | 'REJECTED' | 'DONE';
   referenceId?: string;
@@ -14,7 +14,7 @@ const TransactionSchema: Schema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   type: {
     type: String,
-    enum: ['DEPOSIT', 'WITHDRAW', 'MATCH_WIN', 'MATCH_LOSS', 'MATCH_DRAW', 'MATCH_WAGER', 'BUY_P2P', 'SELL_P2P'],
+    enum: ['DEPOSIT', 'WITHDRAW', 'MATCH_WIN', 'MATCH_LOSS', 'MATCH_DRAW', 'MATCH_REFUND', 'MATCH_WAGER', 'BUY_P2P', 'SELL_P2P'],
     required: true
   },
   amount: { type: Number, required: true },

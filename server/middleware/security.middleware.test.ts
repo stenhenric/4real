@@ -39,7 +39,10 @@ test('csrfProtectionMiddleware blocks state-changing requests from disallowed or
 
   assert.equal(nextCalled, false);
   assert.equal(res.statusCode, 403);
-  assert.deepEqual(res.body, { error: 'Invalid request origin' });
+  assert.deepEqual(res.body, {
+    code: 'INVALID_REQUEST_ORIGIN',
+    message: 'Invalid request origin',
+  });
 
   if (previousAllowedOrigins === undefined) {
     delete process.env.ALLOWED_ORIGINS;

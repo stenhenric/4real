@@ -10,7 +10,7 @@ export function AppLayout() {
   return (
     <div className="min-h-screen flex flex-col paper-texture">
       {user && <Navbar />}
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main className="flex-1 container mx-auto px-4 py-8 pb-20 md:pb-8">
         <Suspense fallback={<RouteLoading />}>
           <Outlet />
         </Suspense>

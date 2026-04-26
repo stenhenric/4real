@@ -167,6 +167,11 @@ export default function OrderDeskPage() {
                         <div>
                           <p className="text-xl font-bold italic">{formatMoney(order.amount)} USDT</p>
                           <p className="text-xs font-mono opacity-50">#{order.id.slice(0, 8)}</p>
+                          {order.exchangeRate && order.fiatTotal && order.fiatCurrency ? (
+                            <p className="mt-2 text-sm font-mono opacity-70">
+                              {formatMoney(order.fiatTotal)} {order.fiatCurrency} at {formatMoney(order.exchangeRate)} {order.fiatCurrency}/USDT
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     </td>
@@ -189,19 +194,26 @@ export default function OrderDeskPage() {
                       ) : null}
                     </td>
                     <td className="px-4 py-4">
-                      {order.proofImageUrl ? (
-                        <a
-                          className="inline-flex items-center gap-1 text-sm font-bold text-ink-blue hover:underline"
-                          href={order.proofImageUrl}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                        >
-                          Open
-                          <ExternalLink size={14} />
-                        </a>
-                      ) : (
-                        <span className="text-sm font-mono opacity-40">No proof</span>
-                      )}
+                      <div className="space-y-2">
+                        {order.proof?.url ? (
+                          <a
+                            className="inline-flex items-center gap-1 text-sm font-bold text-ink-blue hover:underline"
+                            href={order.proof.url}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                          >
+                            Open
+                            <ExternalLink size={14} />
+                          </a>
+                        ) : (
+                          <span className="text-sm font-mono opacity-40">No proof</span>
+                        )}
+                        {order.transactionCode ? (
+                          <p className="text-xs font-mono opacity-70">
+                            Code: <span className="font-bold text-ink-black">{order.transactionCode}</span>
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : order.status === 'DONE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-ink-red'}`}>

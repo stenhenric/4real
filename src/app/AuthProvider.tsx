@@ -35,14 +35,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUserData(data.user);
     } catch (error) {
       if (isAbortError(error)) {
+        // StrictMode unmount aborted this request — skip all state updates
+        // so the second mount's request can resolve cleanly.
         return;
       }
 
       setUser(null);
       setUserData(null);
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {

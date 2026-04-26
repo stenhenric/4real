@@ -5,6 +5,8 @@ import { User } from '../models/User.ts';
 import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
 import { DepositRepository } from '../repositories/deposit.repository.ts';
 import { JettonWalletCacheRepository } from '../repositories/jetton-wallet-cache.repository.ts';
+import { AuditEventRepository } from '../repositories/audit-event.repository.ts';
+import { IdempotencyKeyRepository } from '../repositories/idempotency-key.repository.ts';
 import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
@@ -17,6 +19,8 @@ export async function setupIndexes() {
     DepositRepository.ensureIndexes(),
     WithdrawalRepository.ensureIndexes(),
     UserBalanceRepository.ensureIndexes(),
+    AuditEventRepository.ensureIndexes(),
+    IdempotencyKeyRepository.ensureIndexes(),
     ProcessedTransactionRepository.ensureIndexes(),
     DepositMemoRepository.ensureIndexes(),
     PollerStateRepository.ensureIndexes(),

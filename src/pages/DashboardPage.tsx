@@ -25,7 +25,9 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   const [activeMatches, setActiveMatches] = useState<MatchDTO[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUserDTO[]>([]);
   const [wager, setWager] = useState('0');
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [draftStep, setDraftStep] = useState<1 | 2>(1);
+  const [draftType, setDraftType] = useState<'private' | 'free_public' | 'paid_public' | null>(null);
 
   const refreshActiveMatches = useEffectEvent(async (signal?: AbortSignal) => {
     try {
@@ -98,34 +100,48 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   }, [user?.id]);
 
   const createGameHandler = async () => {
-    if (!user) {
-      return;
+    if (!user || !draftType) return;
+
+    let parsedWager = 0;
+    let isPrivate = false;
+
+    if (draftType === 'private') {
+      isPrivate = true;
+      parsedWager = parseFloat(wager);
+    } else if (draftType === 'paid_public') {
+      parsedWager = parseFloat(wager);
     }
 
-    const parsedWager = parseFloat(wager);
-    if (Number.isNaN(parsedWager) || parsedWager < 0) {
+    if ((draftType === 'private' || draftType === 'paid_public') && (Number.isNaN(parsedWager) || parsedWager < 0)) {
       showError('Invalid wager amount.');
       return;
     }
 
     try {
-      const match = await createMatch({ wager: isPrivate ? parsedWager : 0, isPrivate });
-      if (isPrivate && parsedWager > 0) {
+      const match = await createMatch({ wager: parsedWager, isPrivate });
+      if (parsedWager > 0) {
         await refreshUser();
       }
       navigate(`/game/${match.roomId}`);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Match creation failed. Please try again.';
-
-      if (message === 'INSUFFICIENT_BALANCE') {
+      const message = error instanceof Error ? error.message : 'Match creation failed. Please try again.';
+      if (message.toLowerCase().includes('insufficient balance')) {
         showError('Insufficient balance to lock wager.');
-        return;
+      } else {
+        showError(message);
       }
-
-      showError('Match creation failed. Please try again.');
     }
   };
+
+  const resetDraft = () => {
+    setIsDrafting(false);
+    setDraftType(null);
+    setDraftStep(1);
+    setWager('0');
+  };
+
+  const freeMatches = activeMatches.filter((m) => m.wager === 0);
+  const paidMatches = activeMatches.filter((m) => m.wager > 0);
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -201,81 +217,183 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 <div className="highlighter w-full bottom-2 left-0 h-4 scale-x-110"></div>
               </div>
               <div className="flex flex-col items-end gap-2 text-right w-full md:w-auto">
-                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 mb-1">
-                  {isPrivate && (
-                    <div className="flex flex-col items-end">
-                      <label className="text-[10px] font-bold uppercase opacity-50 underline" htmlFor="private-wager">
-                        Wager (USDT)
-                      </label>
-                      <input
-                        className="w-20 bg-transparent border-b-2 border-black font-bold text-sm text-right outline-none"
-                        id="private-wager"
-                        onChange={(event) => setWager(event.target.value)}
-                        type="number"
-                        value={wager}
-                      />
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <input
-                      checked={isPrivate}
-                      className="w-4 h-4 accent-ink-black"
-                      id="private-toggle"
-                      onChange={(event) => {
-                        const nextIsPrivate = event.target.checked;
-                        setIsPrivate(nextIsPrivate);
-                        if (!nextIsPrivate) {
-                          setWager('0');
-                        }
-                      }}
-                      type="checkbox"
-                    />
-                    <label className="text-xs font-bold uppercase cursor-pointer" htmlFor="private-toggle">
-                      Private Match
-                    </label>
-                  </div>
-                </div>
-                <SketchyButton
-                  className="flex items-center gap-2 text-xl px-10 w-full md:w-auto justify-center"
-                  onClick={createGameHandler}
-                >
-                  <Plus size={24} /> New Draft
-                </SketchyButton>
+                {!isDrafting && (
+                  <SketchyButton
+                    className="flex items-center gap-2 text-xl px-10 w-full md:w-auto justify-center"
+                    onClick={() => setIsDrafting(true)}
+                  >
+                    <Plus size={24} /> New Draft
+                  </SketchyButton>
+                )}
               </div>
             </div>
 
-            <div className="space-y-6 relative z-10">
-              {activeMatches.length === 0 ? (
-                <div className="py-20 text-center border-2 border-dashed border-black/10 rounded-xl">
-                  <p className="italic opacity-30 font-bold text-lg uppercase tracking-[0.3em]">
-                    No active drafts in rotation...
-                  </p>
-                  <div className="mt-4 text-4xl opacity-10">✍️</div>
+            {isDrafting && (
+              <div className="mb-8 p-6 bg-paper rough-border relative z-10 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="tape w-16 h-6 -top-2 left-4 -rotate-2 opacity-60"></div>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-2xl font-bold italic tracking-tight underline decoration-wavy">Draft Creation</h3>
+                  <button onClick={resetDraft} className="text-sm font-bold uppercase opacity-50 hover:opacity-100">Cancel</button>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {activeMatches.map((match) => (
-                    <div
-                      key={match._id ?? match.roomId}
-                      className="group relative p-6 bg-white rough-border hover:-translate-y-1 hover:shadow-2xl transition-all duration-300"
-                    >
-                      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-20">
-                        <Clock size={12} /> <span className="text-[10px] font-mono">LIVE</span>
+                
+                {draftStep === 1 && (
+                  <div className="space-y-4">
+                    <p className="font-bold uppercase opacity-50 text-sm mb-4">Step 1: Select Match Type</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div onClick={() => setDraftType('private')} className="cursor-pointer h-full">
+                        <SketchyButton 
+                          fill={draftType === 'private' ? '#fff9c4' : 'transparent'}
+                          className="flex flex-col items-center justify-center p-4 h-full w-full pointer-events-none"
+                        >
+                          <span className="font-bold text-lg mb-2">Private Match</span>
+                          <span className="text-xs opacity-60 text-center">Hidden from lobby. Invite code required.</span>
+                        </SketchyButton>
                       </div>
-                      <div className="mb-4">
-                        <h3 className="font-bold text-2xl uppercase tracking-tighter">{match.p1Username}</h3>
-                        <p className="text-[10px] font-mono opacity-40 font-bold">
-                          NODE: {match.roomId.toUpperCase()}
-                        </p>
+                      <div onClick={() => setDraftType('free_public')} className="cursor-pointer h-full">
+                        <SketchyButton 
+                          fill={draftType === 'free_public' ? '#fff9c4' : 'transparent'}
+                          className="flex flex-col items-center justify-center p-4 h-full w-full pointer-events-none"
+                        >
+                          <span className="font-bold text-lg mb-2">Free Public</span>
+                          <span className="text-xs opacity-60 text-center">Visible in Free lobby. No wager.</span>
+                        </SketchyButton>
                       </div>
-                      <SketchyButton className="w-full bg-black/5" onClick={() => navigate(`/game/${match.roomId}`)}>
-                        Join Match
-                      </SketchyButton>
+                      <div onClick={() => setDraftType('paid_public')} className="cursor-pointer h-full">
+                        <SketchyButton 
+                          fill={draftType === 'paid_public' ? '#fff9c4' : 'transparent'}
+                          className="flex flex-col items-center justify-center p-4 h-full w-full pointer-events-none"
+                        >
+                          <span className="font-bold text-lg mb-2">Paid Public</span>
+                          <span className="text-xs opacity-60 text-center">Visible in Paid lobby. Wager required.</span>
+                        </SketchyButton>
+                      </div>
                     </div>
-                  ))}
+                    
+                    <div className="flex justify-end mt-6">
+                      <div onClick={() => {
+                        if (draftType) {
+                          if (draftType === 'free_public') {
+                            void createGameHandler();
+                          } else {
+                            setDraftStep(2);
+                          }
+                        }
+                      }} className={!draftType ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}>
+                        <SketchyButton className="px-8 pointer-events-none">
+                          {draftType === 'free_public' ? 'Create Match' : 'Next Step'}
+                        </SketchyButton>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {draftStep === 2 && (
+                  <div className="space-y-4">
+                    <p className="font-bold uppercase opacity-50 text-sm mb-4">Step 2: Set Wager</p>
+                    <div className="flex flex-col items-start">
+                      <label className="font-bold text-lg mb-2" htmlFor="draft-wager">
+                        Wager Amount (USDT)
+                      </label>
+                      <input
+                        className="w-full max-w-xs bg-transparent border-b-4 border-black font-bold text-2xl outline-none p-2 focus:bg-white/50 transition-colors"
+                        id="draft-wager"
+                        onChange={(event) => setWager(event.target.value)}
+                        type="number"
+                        value={wager}
+                        min="0"
+                        step="0.1"
+                        autoFocus
+                      />
+                      <p className="text-xs opacity-50 mt-2 font-bold uppercase">Available balance: {userData?.balance ?? 0} USDT</p>
+                    </div>
+                    
+                    <div className="flex justify-between mt-6">
+                      <div onClick={() => setDraftStep(1)} className="cursor-pointer">
+                        <SketchyButton className="pointer-events-none">Back</SketchyButton>
+                      </div>
+                      <div onClick={() => void createGameHandler()} className="cursor-pointer">
+                        <SketchyButton className="bg-black/5 pointer-events-none">Create Match</SketchyButton>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!isDrafting && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10 mt-12">
+                {/* Free Matches Column */}
+                <div>
+                  <h3 className="font-bold text-xl uppercase tracking-tighter mb-4 opacity-50 flex items-center gap-2">
+                    Free Public <span className="text-xs bg-black text-white px-2 py-0.5 rounded-full">{freeMatches.length}</span>
+                  </h3>
+                  <div className="space-y-4">
+                    {freeMatches.length === 0 ? (
+                      <div className="p-6 text-center border-2 border-dashed border-black/10 rounded-xl">
+                        <p className="italic opacity-30 font-bold text-sm uppercase tracking-widest">No free drafts...</p>
+                      </div>
+                    ) : (
+                      freeMatches.map((match) => (
+                        <div
+                          key={match._id ?? match.roomId}
+                          className="group relative p-5 bg-white rough-border hover:-translate-y-1 hover:shadow-xl transition-all duration-300"
+                        >
+                          <div className="absolute top-2 right-2 flex items-center gap-1 opacity-20">
+                            <Clock size={10} /> <span className="text-[9px] font-mono">LIVE</span>
+                          </div>
+                          <div className="mb-3">
+                            <h4 className="font-bold text-lg uppercase tracking-tight">{match.p1Username}</h4>
+                            <p className="text-[10px] font-mono opacity-40 font-bold">
+                              NODE: {match.roomId.toUpperCase()}
+                            </p>
+                          </div>
+                          <SketchyButton className="w-full text-sm py-2" onClick={() => navigate(`/game/${match.roomId}`)}>
+                            Join for Free
+                          </SketchyButton>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
+
+                {/* Paid Matches Column */}
+                <div>
+                  <h3 className="font-bold text-xl uppercase tracking-tighter mb-4 flex items-center gap-2 text-amber-600">
+                    Paid Public <span className="text-xs bg-amber-500 text-black px-2 py-0.5 rounded-full">{paidMatches.length}</span>
+                  </h3>
+                  <div className="space-y-4">
+                    {paidMatches.length === 0 ? (
+                      <div className="p-6 text-center border-2 border-dashed border-black/10 rounded-xl">
+                        <p className="italic opacity-30 font-bold text-sm uppercase tracking-widest">No paid drafts...</p>
+                      </div>
+                    ) : (
+                      paidMatches.map((match) => (
+                        <div
+                          key={match._id ?? match.roomId}
+                          className="group relative p-5 bg-white rough-border border-amber-500/30 hover:border-amber-500 hover:-translate-y-1 hover:shadow-xl transition-all duration-300"
+                        >
+                          <div className="absolute -left-2 -top-2 bg-amber-400 text-black font-bold text-[10px] px-2 py-1 rotate-[-5deg] rough-border shadow-sm z-10">
+                            {match.wager} USDT
+                          </div>
+                          <div className="absolute top-2 right-2 flex items-center gap-1 opacity-20">
+                            <Clock size={10} /> <span className="text-[9px] font-mono">LIVE</span>
+                          </div>
+                          <div className="mb-3 mt-2">
+                            <h4 className="font-bold text-lg uppercase tracking-tight">{match.p1Username}</h4>
+                            <p className="text-[10px] font-mono opacity-40 font-bold">
+                              NODE: {match.roomId.toUpperCase()}
+                            </p>
+                          </div>
+                          <SketchyButton className="w-full text-sm py-2 bg-amber-400/10" onClick={() => navigate(`/game/${match.roomId}`)}>
+                            Join & Wager
+                          </SketchyButton>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
         )}
 

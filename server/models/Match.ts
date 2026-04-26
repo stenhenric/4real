@@ -8,9 +8,11 @@ export interface IMatch extends Document {
   p2Username?: string;
   status: 'waiting' | 'active' | 'completed';
   winnerId?: string; // 'draw', player1Id, or player2Id
+  settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
   wager: number;
   isPrivate: boolean;
   moveHistory: { userId: string; col: number; row: number }[];
+  lastActivityAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,8 +25,13 @@ const MatchSchema: Schema = new Schema({
   p2Username: { type: String },
   status: { type: String, enum: ['waiting', 'active', 'completed'], default: 'waiting', index: true },
   winnerId: { type: String },
+  settlementReason: {
+    type: String,
+    enum: ['winner', 'draw', 'waiting_expired', 'active_expired', 'resigned'],
+  },
   wager: { type: Number, default: 0, min: 0 },
   isPrivate: { type: Boolean, default: false },
+  lastActivityAt: { type: Date, required: true, default: () => new Date(), index: true },
   moveHistory: [{
     userId: { type: String, required: true },
     col: { type: Number, required: true },
@@ -35,6 +42,7 @@ const MatchSchema: Schema = new Schema({
 });
 
 MatchSchema.index({ status: 1, isPrivate: 1, createdAt: -1 });
+MatchSchema.index({ status: 1, lastActivityAt: 1, createdAt: 1 });
 MatchSchema.index({ player1Id: 1, status: 1, createdAt: -1 });
 MatchSchema.index({ player2Id: 1, status: 1, createdAt: -1 });
 

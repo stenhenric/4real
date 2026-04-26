@@ -12,11 +12,12 @@ interface GameOverPayload {
 interface UseGameRoomOptions {
   roomId?: string;
   userId?: string;
+  enabled?: boolean;
   onGameOver?: (gameOver: GameOverState, room: RoomState) => Promise<void> | void;
   onRoomError?: (message: string) => void;
 }
 
-export function useGameRoom({ roomId, userId, onGameOver, onRoomError }: UseGameRoomOptions) {
+export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoomError }: UseGameRoomOptions) {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [gameOver, setGameOver] = useState<GameOverState | null>(null);
   const roomRef = useRef<RoomState | null>(null);
@@ -35,7 +36,7 @@ export function useGameRoom({ roomId, userId, onGameOver, onRoomError }: UseGame
   }, [room]);
 
   useEffect(() => {
-    if (!roomId || !userId) {
+    if (!roomId || !userId || !enabled) {
       setRoom(null);
       setGameOver(null);
       roomRef.current = null;
@@ -110,7 +111,7 @@ export function useGameRoom({ roomId, userId, onGameOver, onRoomError }: UseGame
         socketRef.current = null;
       }
     };
-  }, [roomId, userId]);
+  }, [enabled, roomId, userId]);
 
   const makeMove = useCallback(
     (col: number) => {

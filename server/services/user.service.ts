@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
 
-import { User } from '../models/User.ts';
+import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import type { IUser } from '../models/User.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { TransactionService } from './transaction.service.ts';
+import { trustFilter } from '../utils/trusted-filter.ts';
 
 export class UserService {
   static async syncUserDisplayBalance(userId: string, session?: mongoose.ClientSession): Promise<number> {
@@ -15,6 +17,37 @@ export class UserService {
       session ? { session } : undefined
     );
     return balance;
+  }
+
+  static async ensureSystemCommissionAccountExists(): Promise<void> {
+    const existing = await User.findById(SYSTEM_COMMISSION_ACCOUNT_ID);
+    if (!existing) {
+      const user = new User({
+        _id: new mongoose.Types.ObjectId(SYSTEM_COMMISSION_ACCOUNT_ID),
+        username: 'system_commission',
+        email: 'commission@system.local',
+        passwordHash: 'none',
+        balance: 0,
+        elo: 1000,
+        isAdmin: true,
+      });
+      await user.save();
+      await UserBalanceRepository.ensureExists(SYSTEM_COMMISSION_ACCOUNT_ID);
+      await this.syncUserDisplayBalance(SYSTEM_COMMISSION_ACCOUNT_ID);
+    }
+  }
+
+  static async routeCommissionToAdmin(amount: number, referenceId: string, session: mongoose.ClientSession): Promise<void> {
+    if (amount <= 0) return;
+    
+    await this.updateBalance(SYSTEM_COMMISSION_ACCOUNT_ID, amount, session);
+    await TransactionService.createTransaction({
+      userId: SYSTEM_COMMISSION_ACCOUNT_ID,
+      type: 'MATCH_WIN',
+      amount,
+      referenceId,
+      session,
+    });
   }
 
   static async createUser(userData: Partial<IUser>): Promise<IUser> {
@@ -119,7 +152,7 @@ export class UserService {
 
   static async bumpTokenVersionIfCurrent(id: string, currentTokenVersion: number): Promise<boolean> {
     const filter = currentTokenVersion === 0
-      ? { _id: id, $or: [{ tokenVersion: 0 }, { tokenVersion: { $exists: false } }] }
+      ? trustFilter({ _id: id, $or: [{ tokenVersion: 0 }, { tokenVersion: { $exists: false } }] })
       : { _id: id, tokenVersion: currentTokenVersion };
 
     const result = await User.updateOne(filter, { $inc: { tokenVersion: 1 } });

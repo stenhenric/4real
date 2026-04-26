@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { badRequest } from '../utils/http-error.ts';
 import { UserService } from './user.service.ts';
 
 const MAX_TRANSACTION_RETRIES = 3;
@@ -33,7 +34,7 @@ export async function requestWithdrawal({
         const currentRaw = BigInt(balanceDoc?.balanceRaw ?? '0');
         const requestedRaw = BigInt(amountRaw);
         if (currentRaw < requestedRaw) {
-          throw new Error('Insufficient balance');
+          throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
         }
         const nextRaw = (currentRaw - requestedRaw).toString();
         await UserBalanceRepository.setBalanceRaw(userId, nextRaw, session);

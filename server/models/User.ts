@@ -37,3 +37,5 @@ const UserSchema: Schema = new Schema({
 UserSchema.index({ elo: -1 });
 
 export const User = mongoose.model<IUser>('User', UserSchema);
+
+export const SYSTEM_COMMISSION_ACCOUNT_ID = 'c03315510000000000000000';

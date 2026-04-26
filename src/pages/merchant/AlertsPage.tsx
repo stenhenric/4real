@@ -2,13 +2,19 @@ import { AlertTriangle, ArrowRight, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SketchyContainer } from '../../components/SketchyContainer';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
+import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
 import { formatDateTime } from '../../features/merchant/format';
 
 export default function AlertsPage() {
   const { dashboard } = useMerchantOutletContext();
 
   if (!dashboard) {
-    return null;
+    return (
+      <MerchantPageFallback
+        title="Alerts & Risk"
+        description="Alert counts and the active risk feed will appear after the shared merchant dashboard request succeeds."
+      />
+    );
   }
 
   const criticalCount = dashboard.alerts.filter((alert) => alert.severity === 'critical').length;

@@ -4,6 +4,7 @@ import { getEnv } from '../config/env.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { AuditService } from '../services/audit.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
 import {
   findWithdrawalTransferOnChain,
@@ -71,6 +72,18 @@ export async function runWithdrawalWorker() {
       });
 
       await WithdrawalRepository.markSent(doc._id, seqno);
+      await AuditService.record({
+        eventType: 'withdrawal_sent',
+        actorUserId: doc.userId,
+        targetUserId: doc.userId,
+        resourceType: 'withdrawal',
+        resourceId: doc.withdrawalId,
+        metadata: {
+          seqno,
+          amountRaw: doc.amountRaw,
+          toAddress: doc.toAddress,
+        },
+      });
 
       logger.info('withdrawal.sent', { withdrawalId: doc.withdrawalId, seqno });
 
@@ -155,6 +168,17 @@ export async function confirmSentWithdrawals() {
               session,
             );
           });
+          await AuditService.record({
+            eventType: 'withdrawal_confirmed',
+            actorUserId: withdrawal.userId,
+            targetUserId: withdrawal.userId,
+            resourceType: 'withdrawal',
+            resourceId: withdrawal.withdrawalId,
+            metadata: {
+              txHash: confirmed.txHash,
+              confirmedAt: confirmed.confirmedAt.toISOString(),
+            },
+          });
 
           logger.info('withdrawal.confirmed', {
             withdrawalId: withdrawal.withdrawalId,
@@ -221,11 +245,16 @@ export async function monitorHotWalletBalances() {
         : formatUsdtRaw(onChainUsdtRaw >= ledgerUsdtRaw ? onChainUsdtRaw - ledgerUsdtRaw : ledgerUsdtRaw - onChainUsdtRaw),
     });
 
+    const failures: string[] = [];
+
     if (tonBalance < env.HOT_WALLET_MIN_TON_BALANCE) {
       logger.warn('wallet_monitor.low_ton_balance', {
         tonBalance,
         minimumTonBalance: env.HOT_WALLET_MIN_TON_BALANCE,
       });
+      failures.push(
+        `TON balance ${tonBalance.toFixed(2)} below minimum ${env.HOT_WALLET_MIN_TON_BALANCE.toFixed(2)}`,
+      );
     }
 
     if (onChainUsdtRaw === null) {
@@ -237,6 +266,9 @@ export async function monitorHotWalletBalances() {
         onChainUsdt: formatUsdtRaw(onChainUsdtRaw),
         minimumUsdtBalance: env.HOT_WALLET_MIN_USDT_BALANCE,
       });
+      failures.push(
+        `USDT reserve ${formatUsdtRaw(onChainUsdtRaw)} below minimum ${env.HOT_WALLET_MIN_USDT_BALANCE.toFixed(2)}`,
+      );
     }
 
     const deltaUsdtRaw = onChainUsdtRaw >= ledgerUsdtRaw
@@ -249,6 +281,7 @@ export async function monitorHotWalletBalances() {
         ledgerUsdt: formatUsdtRaw(ledgerUsdtRaw),
         deltaUsdt: formatUsdtRaw(ledgerUsdtRaw - onChainUsdtRaw),
       });
+      failures.push(`Ledger shortfall ${formatUsdtRaw(ledgerUsdtRaw - onChainUsdtRaw)}`);
     } else if (deltaUsdtRaw > mismatchToleranceRaw) {
       logger.warn('wallet_monitor.ledger_mismatch', {
         onChainUsdt: formatUsdtRaw(onChainUsdtRaw),
@@ -256,6 +289,13 @@ export async function monitorHotWalletBalances() {
         deltaUsdt: formatUsdtRaw(deltaUsdtRaw),
         toleranceUsdt: env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT,
       });
+      failures.push(
+        `Reserve/ledger mismatch ${formatUsdtRaw(deltaUsdtRaw)} exceeds tolerance ${env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT.toFixed(2)}`,
+      );
+    }
+
+    if (failures.length > 0) {
+      throw new Error(failures.join('; '));
     }
   } finally {
     isMonitoring = false;
@@ -309,6 +349,18 @@ export async function recoverStuckWithdrawals() {
                 withdrawal.amountRaw,
                 session,
               );
+            });
+            await AuditService.record({
+              eventType: 'withdrawal_confirmed',
+              actorUserId: withdrawal.userId,
+              targetUserId: withdrawal.userId,
+              resourceType: 'withdrawal',
+              resourceId: withdrawal.withdrawalId,
+              metadata: {
+                txHash: confirmed.txHash,
+                confirmedAt: confirmed.confirmedAt.toISOString(),
+                recovered: true,
+              },
             });
           } catch (error) {
             if (!isDuplicateKeyError(error)) {

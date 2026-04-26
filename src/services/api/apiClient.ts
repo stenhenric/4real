@@ -30,8 +30,13 @@ const request = async <T = unknown>(endpoint: string, options: RequestInit = {})
   }
 
   if (!response.ok) {
-    if (typeof data === 'object' && data !== null && 'error' in data) {
-      throw new Error(String((data as { error: unknown }).error));
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'message' in data &&
+      typeof (data as { message?: unknown }).message === 'string'
+    ) {
+      throw new Error(String((data as { message: unknown }).message));
     }
 
     if (typeof data === 'string' && data.trim().length > 0) {

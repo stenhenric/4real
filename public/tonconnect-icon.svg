@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title>4real TonConnect Icon</title>
+  <desc>Ink-styled 4real badge for wallet connections.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff2cc" />
+      <stop offset="100%" stop-color="#f6d365" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#bg)" />
+  <path d="M48 74h160v18H48z" fill="#111827" opacity=".18" />
+  <path d="M60 56h136c20.987 0 38 17.013 38 38v68c0 20.987-17.013 38-38 38H60c-20.987 0-38-17.013-38-38V94c0-20.987 17.013-38 38-38z" fill="#fefefe" stroke="#111827" stroke-width="10" />
+  <path d="M78 170l22-82h28l-8 32h28l8-32h28l-22 82h-28l8-30h-28l-8 30H78z" fill="#111827" />
+  <circle cx="196" cy="92" r="18" fill="#ef4444" stroke="#111827" stroke-width="8" />
+  <path d="M54 182c44 12 103 15 148 0" fill="none" stroke="#111827" stroke-linecap="round" stroke-width="8" opacity=".25" />
+</svg>

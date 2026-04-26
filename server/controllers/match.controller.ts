@@ -1,15 +1,11 @@
-import crypto from 'node:crypto';
-import { Request, Response } from 'express';
-import mongoose from 'mongoose';
+import type { Request, Response } from 'express';
 
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
-import type { IMatch } from '../models/Match.ts';
 import { serializeMatch } from '../serializers/api.ts';
+import { executeIdempotentMutation } from '../services/idempotency.service.ts';
 import { MatchService } from '../services/match.service.ts';
-import { TransactionService } from '../services/transaction.service.ts';
-import { UserService } from '../services/user.service.ts';
-import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
-import { notFound, unauthorized, badRequest } from '../utils/http-error.ts';
+import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
+import { notFound, unauthorized } from '../utils/http-error.ts';
 import type { CreateMatchRequest } from '../validation/request-schemas.ts';
 
 export class MatchController {
@@ -18,63 +14,108 @@ export class MatchController {
     res.json(matches.map((match) => serializeMatch(match)));
   }
 
+  static async getMatch(req: AuthRequest, res: Response): Promise<void> {
+    if (!req.user?.id) {
+      throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
+    }
+
+    const match = await MatchService.getMatchByRoomId(req.params.roomId);
+    if (!match) {
+      throw notFound('Match not found', 'MATCH_NOT_FOUND');
+    }
+
+    res.json(serializeMatch(match));
+  }
+
   static async createMatch(req: AuthRequest, res: Response): Promise<void> {
     if (!req.user?.id) {
-      throw unauthorized('Unauthenticated');
+      throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
     }
 
     const { wager, isPrivate } = req.body as CreateMatchRequest;
-    const roomId = crypto.randomBytes(3).toString('hex');
-    const session = await mongoose.startSession();
-    let match: IMatch | null = null;
+    const idempotencyKey = getRequiredIdempotencyKey(req);
 
-    try {
-      await session.withTransaction(async () => {
-        const user = await UserService.findById(req.user!.id, session);
-        if (!user) {
-          throw notFound('User not found');
-        }
-
-        if (wager > 0) {
-          const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager, session);
-          if (!updatedUser) {
-            throw badRequest('INSUFFICIENT_BALANCE');
-          }
-
-          await TransactionService.createTransaction({
-            userId: user._id.toString(),
-            type: 'MATCH_WAGER',
-            amount: -wager,
-            referenceId: roomId,
-            session,
-          });
-        }
-
-        match = await MatchService.createMatch({
-          roomId,
-          player1Id: user._id,
-          p1Username: user.username,
+    const result = await executeIdempotentMutation({
+      userId: req.user.id,
+      routeKey: 'matches:create',
+      idempotencyKey,
+      requestPayload: { wager, isPrivate },
+      execute: async () => {
+        const match = await MatchService.createMatchForUser({
+          userId: req.user!.id,
           wager: wager || 0,
           isPrivate: isPrivate || false,
-          status: 'waiting',
-          moveHistory: [],
-        }, session);
-      });
-    } finally {
-      await session.endSession();
-    }
+          requestId: res.locals.requestId,
+        });
 
-    if (!match) {
-      throw new Error('Unable to create match');
-    }
-
-    emitPublicMatchUpdatedEvent({
-      roomId: match.roomId,
-      status: match.status,
-      isPrivate: match.isPrivate,
+        return {
+          statusCode: 201,
+          body: serializeMatch(match),
+        };
+      },
     });
 
-    res.status(201).json(serializeMatch(match));
+    res.status(result.statusCode).json(result.body);
+  }
+
+  static async joinMatch(req: AuthRequest, res: Response): Promise<void> {
+    if (!req.user?.id) {
+      throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
+    }
+
+    const idempotencyKey = getRequiredIdempotencyKey(req);
+    const roomId = req.params.roomId;
+
+    const result = await executeIdempotentMutation({
+      userId: req.user.id,
+      routeKey: `matches:join:${roomId}`,
+      idempotencyKey,
+      requestPayload: { roomId },
+      execute: async () => {
+        const match = await MatchService.joinMatch({
+          roomId,
+          userId: req.user!.id,
+          requestId: res.locals.requestId,
+        });
+
+        return {
+          statusCode: 200,
+          body: serializeMatch(match),
+        };
+      },
+    });
+
+    res.status(result.statusCode).json(result.body);
+  }
+
+  static async resignMatch(req: AuthRequest, res: Response): Promise<void> {
+    if (!req.user?.id) {
+      throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
+    }
+
+    const idempotencyKey = getRequiredIdempotencyKey(req);
+    const roomId = req.params.roomId;
+
+    const result = await executeIdempotentMutation({
+      userId: req.user.id,
+      routeKey: `matches:resign:${roomId}`,
+      idempotencyKey,
+      requestPayload: { roomId },
+      execute: async () => {
+        const match = await MatchService.resignMatch({
+          roomId,
+          userId: req.user!.id,
+          requestId: res.locals.requestId,
+        });
+
+        return {
+          statusCode: 200,
+          body: serializeMatch(match),
+        };
+      },
+    });
+
+    res.status(result.statusCode).json(result.body);
   }
 
   static async getUserHistory(req: Request, res: Response): Promise<void> {

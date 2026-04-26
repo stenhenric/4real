@@ -1,4 +1,5 @@
 import request from './api/apiClient';
+import { createIdempotencyKey } from '../utils/idempotency';
 import type {
   DepositMemoDTO,
   PreparedTonConnectDepositDTO,
@@ -31,6 +32,9 @@ export function prepareTonConnectDeposit(payload: PrepareTonConnectDepositPayloa
 export function createWithdrawal(payload: WithdrawRequestDTO) {
   return request<WithdrawalRequestAcceptedDTO>('/transactions/withdraw', {
     method: 'POST',
+    headers: {
+      'Idempotency-Key': createIdempotencyKey(),
+    },
     body: JSON.stringify(payload),
   });
 }

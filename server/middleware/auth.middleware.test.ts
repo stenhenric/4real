@@ -22,7 +22,10 @@ test('authenticateToken - missing token', (t) => {
   authenticateToken(req, res, next);
 
   assert.strictEqual(res.status.mock.calls[0].arguments[0], 401);
-  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], { error: 'Access token required' });
+  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], {
+    code: 'UNAUTHENTICATED',
+    message: 'Access token required',
+  });
   assert.strictEqual(next.mock.callCount(), 0);
 });
 
@@ -67,8 +70,11 @@ test('authenticateToken - invalid token', async (t) => {
   authenticateToken(req, res, next);
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.strictEqual(res.status.mock.calls[0].arguments[0], 403);
-  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], { error: 'Invalid token' });
+  assert.strictEqual(res.status.mock.calls[0].arguments[0], 401);
+  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], {
+    code: 'INVALID_TOKEN',
+    message: 'Invalid token',
+  });
   assert.strictEqual(next.mock.callCount(), 0);
 
   verifyMock.mock.restore();
@@ -88,8 +94,11 @@ test('authenticateToken - revoked token', async (t) => {
   authenticateToken(req, res, next);
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.strictEqual(res.status.mock.calls[0].arguments[0], 403);
-  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], { error: 'Invalid token' });
+  assert.strictEqual(res.status.mock.calls[0].arguments[0], 401);
+  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], {
+    code: 'TOKEN_REVOKED',
+    message: 'Token revoked',
+  });
   assert.strictEqual(next.mock.callCount(), 0);
 
   verifyMock.mock.restore();
@@ -107,7 +116,10 @@ test('requireAdmin - not an admin', (t) => {
   requireAdmin(req, res, next);
 
   assert.strictEqual(res.status.mock.calls[0].arguments[0], 403);
-  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], { error: 'Admin access required' });
+  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], {
+    code: 'ADMIN_ACCESS_REQUIRED',
+    message: 'Admin access required',
+  });
   assert.strictEqual(next.mock.callCount(), 0);
 });
 
@@ -135,6 +147,9 @@ test('requireAdmin - no user on request', (t) => {
   requireAdmin(req, res, next);
 
   assert.strictEqual(res.status.mock.calls[0].arguments[0], 403);
-  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], { error: 'Admin access required' });
+  assert.deepStrictEqual(res.json.mock.calls[0].arguments[0], {
+    code: 'ADMIN_ACCESS_REQUIRED',
+    message: 'Admin access required',
+  });
   assert.strictEqual(next.mock.callCount(), 0);
 });

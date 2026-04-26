@@ -10,7 +10,10 @@ export function createGeneralRateLimiter() {
     max: env.GENERAL_RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Too many requests, please try again later.' },
+    message: {
+      code: 'RATE_LIMITED',
+      message: 'Too many requests, please try again later.',
+    },
   });
 }
 
@@ -23,6 +26,9 @@ export function createAuthRateLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     skipSuccessfulRequests: true,
-    message: { error: 'Too many authentication attempts, please try again later.' },
+    message: {
+      code: 'AUTH_RATE_LIMITED',
+      message: 'Too many authentication attempts, please try again later.',
+    },
   });
 }

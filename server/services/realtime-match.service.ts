@@ -1,11 +1,8 @@
-import mongoose from 'mongoose';
-
 import { MatchService } from './match.service.ts';
 import { createRoomStateFromMatch, checkWin, type RoomState } from './game-room.service.ts';
 import { GameRoomRegistry } from './game-room-registry.service.ts';
-import { TransactionService } from './transaction.service.ts';
 import { UserService } from './user.service.ts';
-import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
+import { conflict, notFound, unauthorized } from '../utils/http-error.ts';
 
 export interface JoinRoomResult {
   room: RoomState;
@@ -40,7 +37,7 @@ export class RealtimeMatchService {
   }): Promise<JoinRoomResult> {
     return this.roomRegistry.runExclusive(roomId, async () => {
       if (roomId.trim().length === 0) {
-        throw new Error('Unauthorized access');
+        throw unauthorized('Unauthorized access', 'MATCH_ROOM_REQUIRED');
       }
 
       const [user, dbMatch] = await Promise.all([
@@ -49,11 +46,11 @@ export class RealtimeMatchService {
       ]);
 
       if (!user) {
-        throw new Error('User not found');
+        throw notFound('User not found', 'USER_NOT_FOUND');
       }
 
       if (!dbMatch) {
-        throw new Error('Match not found');
+        throw notFound('Match not found', 'MATCH_NOT_FOUND');
       }
 
       let room = this.roomRegistry.get(roomId);
@@ -66,77 +63,29 @@ export class RealtimeMatchService {
       let player = room.players.find((entry) => entry.userId === userId);
 
       if (!player) {
-        const player1Id = dbMatch.player1Id.toString();
-        const player2Id = dbMatch.player2Id?.toString();
+        throw conflict(
+          'Join the match through the API before opening the realtime room',
+          'MATCH_JOIN_REQUIRED',
+        );
+      }
 
-        if (player2Id && player2Id !== userId) {
-          throw new Error('Match is already full');
-        }
-
-        if (userId !== player1Id) {
-          const knownSocketIds = new Map(room.players.map((entry) => [entry.userId, entry.socketId]));
-          const session = await mongoose.startSession();
-
-          try {
-            await session.withTransaction(async () => {
-              const txMatch = await MatchService.getMatchByRoomId(roomId, session);
-              if (!txMatch) {
-                throw new Error('Match not found');
-              }
-
-              if (txMatch.player2Id && txMatch.player2Id.toString() !== userId) {
-                throw new Error('Match is already full');
-              }
-
-              if (room.wager > 0) {
-                const updatedUser = await UserService.deductBalanceSafely(userId, room.wager, session);
-                if (!updatedUser) {
-                  throw new Error('Insufficient balance to join this match');
-                }
-
-                await TransactionService.createTransaction({
-                  userId,
-                  type: 'MATCH_WAGER',
-                  amount: -room.wager,
-                  referenceId: roomId,
-                  session,
-                });
-              }
-
-              txMatch.player2Id = user._id;
-              txMatch.p2Username = user.username;
-              txMatch.status = 'active';
-              await txMatch.save({ session });
-            });
-          } finally {
-            await session.endSession();
-          }
-
-          const refreshedMatch = await MatchService.getMatchByRoomId(roomId);
-          if (!refreshedMatch) {
-            throw new Error('Match not found');
-          }
-
-          emitPublicMatchUpdatedEvent({
-            roomId: refreshedMatch.roomId,
-            status: refreshedMatch.status,
-            isPrivate: refreshedMatch.isPrivate,
-          });
-
-          room = await createRoomStateFromMatch(refreshedMatch);
-          room.players = room.players.map((entry) => ({
-            ...entry,
-            socketId: knownSocketIds.get(entry.userId) ?? null,
-          }));
-          activatedRoom = true;
-        }
-
+      if (dbMatch.status === 'completed') {
+        const refreshedRoom = await createRoomStateFromMatch(dbMatch);
+        this.roomRegistry.set(roomId, refreshedRoom);
+        room = refreshedRoom;
+      } else if (dbMatch.status !== room.status || dbMatch.moveHistory.length !== room.moves.length) {
+        const knownSocketIds = new Map(room.players.map((entry) => [entry.userId, entry.socketId]));
+        room = await createRoomStateFromMatch(dbMatch);
+        room.players = room.players.map((entry) => ({
+          ...entry,
+          socketId: knownSocketIds.get(entry.userId) ?? null,
+        }));
         this.roomRegistry.set(roomId, room);
         player = room.players.find((entry) => entry.userId === userId);
       }
 
       if (!player) {
-        throw new Error('Unable to join match');
+        throw conflict('Only active participants can attach to this room', 'MATCH_PARTICIPANT_REQUIRED');
       }
 
       player.socketId = socketId;
@@ -159,13 +108,17 @@ export class RealtimeMatchService {
     col: number;
   }): Promise<MakeMoveResult> {
     return this.roomRegistry.runExclusive(roomId, async () => {
+      const dbMatch = await MatchService.getMatchByRoomId(roomId);
+      if (!dbMatch || dbMatch.status === 'completed') {
+        if (dbMatch) {
+          const completedRoom = await createRoomStateFromMatch(dbMatch);
+          this.roomRegistry.set(roomId, completedRoom);
+        }
+        return null;
+      }
+
       let room = this.roomRegistry.get(roomId);
       if (!room) {
-        const dbMatch = await MatchService.getMatchByRoomId(roomId);
-        if (!dbMatch) {
-          return null;
-        }
-
         room = await createRoomStateFromMatch(dbMatch);
         this.roomRegistry.set(roomId, room);
       }

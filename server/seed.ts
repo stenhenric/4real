@@ -13,6 +13,9 @@ dotenv.config();
 const seedDB = async () => {
   await connectDB();
 
+  console.log('Ensuring system commission account exists...');
+  await UserService.ensureSystemCommissionAccountExists();
+
   console.log('Clearing existing data...');
   await User.deleteMany({});
   await Match.deleteMany({});
@@ -94,14 +97,24 @@ const seedDB = async () => {
       type: 'BUY',
       amount: 50,
       status: 'DONE',
-      proofImageUrl: 'https://imgur.com/example'
+      proof: {
+        provider: 'telegram',
+        url: 'https://t.me/c/123/20',
+        messageId: '20',
+        chatId: '-100123',
+      }
     },
     {
       userId: users[2]._id,
       type: 'SELL',
       amount: 20,
       status: 'PENDING',
-      proofImageUrl: 'https://imgur.com/example'
+      proof: {
+        provider: 'telegram',
+        url: 'https://t.me/c/123/21',
+        messageId: '21',
+        chatId: '-100123',
+      }
     }
   ]);
 

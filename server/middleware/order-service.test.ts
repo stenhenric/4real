@@ -3,6 +3,7 @@ import test, { mock, type TestContext } from 'node:test';
 import mongoose from 'mongoose';
 
 import { Order } from '../models/Order.ts';
+import { AuditService } from '../services/audit.service.ts';
 import { OrderService } from '../services/order.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { UserService } from '../services/user.service.ts';
@@ -33,22 +34,41 @@ test('createOrder reserves SELL balances and creates the pending ledger entry in
     type: 'SELL',
     amount: 12,
     status: 'PENDING',
-    proofImageUrl: 'https://example.com/proof.png',
+    proof: {
+      provider: 'telegram',
+      url: 'https://t.me/c/123/10',
+      messageId: '10',
+      chatId: '-100123',
+    },
+    transactionCode: 'QWE123ABC',
+    fiatCurrency: 'KES',
+    exchangeRate: 140,
+    fiatTotal: 1680,
     createdAt: new Date(),
   }] as any));
+  const auditMock = mock.method(AuditService, 'record', async () => {});
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-1' } as any));
 
   t.after(() => deductMock.mock.restore());
   t.after(() => createOrderMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
   t.after(() => createTransactionMock.mock.restore());
 
   const order = await OrderService.createOrder({
     userId,
     type: 'SELL',
     amount: 12,
-    proofImageUrl: 'https://example.com/proof.png',
-    status: 'PENDING',
-  } as any);
+    proof: {
+      provider: 'telegram',
+      url: 'https://t.me/c/123/10',
+      messageId: '10',
+      chatId: '-100123',
+    },
+    transactionCode: 'QWE123ABC',
+    fiatCurrency: 'KES',
+    exchangeRate: 140,
+    fiatTotal: 1680,
+  });
 
   assert.equal(order._id.toString(), orderId.toString());
   assert.equal(deductMock.mock.callCount(), 1);
@@ -78,10 +98,12 @@ test('updateOrderStatus refunds rejected SELL orders and updates the ledger stat
   const findByIdMock = mock.method(Order, 'findById', async () => orderDocument as any);
   const updateBalanceMock = mock.method(UserService, 'updateBalance', async () => ({ _id: userId } as any));
   const updateTransactionMock = mock.method(TransactionService, 'updateTransactionStatusByReference', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
 
   t.after(() => findByIdMock.mock.restore());
   t.after(() => updateBalanceMock.mock.restore());
   t.after(() => updateTransactionMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
 
   const updated = await OrderService.updateOrderStatus(orderId.toString(), 'REJECTED');
 
@@ -111,10 +133,12 @@ test('updateOrderStatus rejects transitions away from final states', async (t) =
   const findByIdMock = mock.method(Order, 'findById', async () => orderDocument as any);
   const updateBalanceMock = mock.method(UserService, 'updateBalance', async () => null);
   const updateTransactionMock = mock.method(TransactionService, 'updateTransactionStatusByReference', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
 
   t.after(() => findByIdMock.mock.restore());
   t.after(() => updateBalanceMock.mock.restore());
   t.after(() => updateTransactionMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
 
   await assert.rejects(
     OrderService.updateOrderStatus(orderId.toString(), 'REJECTED'),

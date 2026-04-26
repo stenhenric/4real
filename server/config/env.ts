@@ -27,12 +27,20 @@ const rawEnvSchema = z.object({
   HOT_WALLET_MIN_TON_BALANCE: z.coerce.number().nonnegative().default(1),
   HOT_WALLET_MIN_USDT_BALANCE: z.coerce.number().nonnegative().default(0),
   HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT: z.coerce.number().nonnegative().default(1),
+  TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
+  TELEGRAM_PROOF_CHANNEL_ID: z.string().trim().optional(),
+  PROOF_MAX_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
+  PROOF_ALLOWED_MIME_TYPES: z.string().trim().default('image/jpeg,image/png,image/webp'),
   MERCHANT_MPESA_NUMBER: z.string().trim().optional(),
   MERCHANT_WALLET_ADDRESS: z.string().trim().optional(),
   MERCHANT_INSTRUCTIONS: z.string().trim().optional(),
+  MERCHANT_BUY_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
+  MERCHANT_SELL_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
   VITE_MERCHANT_MPESA_NUMBER: z.string().trim().optional(),
   VITE_MERCHANT_WALLET_ADDRESS: z.string().trim().optional(),
   VITE_MERCHANT_INSTRUCTIONS: z.string().trim().optional(),
+  VITE_MERCHANT_BUY_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
+  VITE_MERCHANT_SELL_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
   VITE_TON_MANIFEST_URL: z.string().trim().url().optional(),
   REQUEST_BODY_LIMIT: z.string().trim().default('100kb'),
   GENERAL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -46,12 +54,15 @@ const rawEnvSchema = z.object({
   ACTIVE_ROOM_TTL_MS: z.coerce.number().int().positive().default(3_600_000),
   COMPLETED_ROOM_TTL_MS: z.coerce.number().int().positive().default(600_000),
   ROOM_CLEANUP_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+  MATCH_WAITING_EXPIRY_MS: z.coerce.number().int().positive().default(900_000),
+  MATCH_ACTIVE_INACTIVITY_MS: z.coerce.number().int().positive().default(900_000),
   TRUST_PROXY: z.string().trim().optional(),
 });
 
-export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI'> {
+export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI' | 'PROOF_ALLOWED_MIME_TYPES'> {
   MONGODB_URI: string;
   allowedOrigins: string[];
+  proofAllowedMimeTypes: string[];
 }
 
 let cachedEnv: AppEnv | null = null;
@@ -64,6 +75,13 @@ function resolveAllowedOrigins(value?: string): string[] {
     .filter(Boolean);
 
   return origins && origins.length > 0 ? origins : defaults;
+}
+
+function resolveProofAllowedMimeTypes(value: string): string[] {
+  return value
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function getEnv(): AppEnv {
@@ -92,6 +110,7 @@ export function getEnv(): AppEnv {
     ...parsed.data,
     MONGODB_URI: mongoUri,
     allowedOrigins: resolveAllowedOrigins(parsed.data.ALLOWED_ORIGINS),
+    proofAllowedMimeTypes: resolveProofAllowedMimeTypes(parsed.data.PROOF_ALLOWED_MIME_TYPES),
   };
 
   return cachedEnv;

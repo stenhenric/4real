@@ -2,13 +2,19 @@ import { AlertTriangle, ArrowDownUp, ArrowUpRight, Clock3, ShieldAlert, Wallet }
 import { Link } from 'react-router-dom';
 import { SketchyContainer } from '../../components/SketchyContainer';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
+import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
 import { formatCompactNumber, formatDateTime, formatMoney, formatRelativeMinutes } from '../../features/merchant/format';
 
 export default function MerchantDashboardPage() {
   const { dashboard } = useMerchantOutletContext();
 
   if (!dashboard) {
-    return null;
+    return (
+      <MerchantPageFallback
+        title="Treasury Overview"
+        description="Overview cards, throughput, review queue, and alert feed will appear after the shared merchant dashboard request succeeds."
+      />
+    );
   }
 
   const criticalCount = dashboard.alerts.filter((alert) => alert.severity === 'critical').length;

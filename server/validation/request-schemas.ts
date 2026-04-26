@@ -4,20 +4,18 @@ const positiveMoneySchema = z.coerce
   .number()
   .finite()
   .positive('Amount must be greater than 0');
-
-const httpUrlSchema = z.string().trim().url().refine((value) => {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}, 'Proof URL must use http or https');
+const passwordSchema = z
+  .string()
+  .min(10, 'Password must be at least 10 characters long')
+  .max(128)
+  .regex(/[a-z]/, 'Password must include a lowercase letter')
+  .regex(/[A-Z]/, 'Password must include an uppercase letter')
+  .regex(/\d/, 'Password must include a number');
 
 export const registerRequestSchema = z.object({
   username: z.string().trim().min(3).max(32),
   email: z.string().trim().email().optional(),
-  password: z.string().min(6).max(128),
+  password: passwordSchema,
 });
 
 export const loginRequestSchema = z
@@ -45,11 +43,33 @@ export const createMatchRequestSchema = z.object({
 export const createOrderRequestSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
   amount: positiveMoneySchema,
-  proofImageUrl: httpUrlSchema,
+  transactionCode: z.string().trim().min(1).optional(),
 });
 
 export const updateOrderStatusRequestSchema = z.object({
   status: z.enum(['PENDING', 'DONE', 'REJECTED']),
+});
+
+export const updateMerchantConfigRequestSchema = z.object({
+  mpesaNumber: z.string().trim().min(1).optional(),
+  walletAddress: z.string().trim().min(1).optional(),
+  instructions: z.string().trim().min(1).optional(),
+  buyRateKesPerUsdt: positiveMoneySchema.optional(),
+  sellRateKesPerUsdt: positiveMoneySchema.optional(),
+}).superRefine((value, ctx) => {
+  if (
+    value.mpesaNumber === undefined
+    && value.walletAddress === undefined
+    && value.instructions === undefined
+    && value.buyRateKesPerUsdt === undefined
+    && value.sellRateKesPerUsdt === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Provide at least one merchant config field',
+      path: ['mpesaNumber'],
+    });
+  }
 });
 
 export const withdrawRequestSchema = z.object({
@@ -68,5 +88,6 @@ export type LoginRequest = z.infer<typeof loginRequestSchema>;
 export type CreateMatchRequest = z.infer<typeof createMatchRequestSchema>;
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 export type UpdateOrderStatusRequest = z.infer<typeof updateOrderStatusRequestSchema>;
+export type UpdateMerchantConfigRequest = z.infer<typeof updateMerchantConfigRequestSchema>;
 export type WithdrawRequest = z.infer<typeof withdrawRequestSchema>;
 export type PrepareTonConnectDepositRequest = z.infer<typeof prepareTonConnectDepositRequestSchema>;

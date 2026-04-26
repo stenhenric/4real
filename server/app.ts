@@ -62,6 +62,20 @@ export async function createApp(statusProvider: AppStatusProvider) {
     });
   });
 
+  app.get('/tonconnect-manifest.json', (req, res) => {
+    const host = req.get('x-forwarded-host')?.split(',')[0]?.trim() || req.get('host');
+    const proto = req.get('x-forwarded-proto')?.split(',')[0]?.trim() || req.protocol;
+    const origin = `${proto}://${host}`;
+
+    res.json({
+      url: origin,
+      name: '4real',
+      iconUrl: `${origin}/tonconnect-icon.svg`,
+      privacyPolicyUrl: `${origin}/privacy-policy.html`,
+      termsOfUseUrl: `${origin}/terms-of-use.html`,
+    });
+  });
+
   app.use('/api', createGeneralRateLimiter());
   app.use('/api', csrfProtectionMiddleware);
   registerApiRoutes(app);

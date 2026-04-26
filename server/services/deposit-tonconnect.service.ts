@@ -2,6 +2,7 @@ import { Address, beginCell, toNano } from '@ton/ton';
 import { getOrDeriveJettonWallet } from '../lib/jetton.ts';
 import { getEnv } from '../config/env.ts';
 import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
+import { badRequest, notFound, serviceUnavailable } from '../utils/http-error.ts';
 
 const TONCONNECT_TRANSACTION_TTL_SECONDS = 360;
 const TONCONNECT_GAS_AMOUNT = '0.05';
@@ -67,18 +68,18 @@ export async function prepareTonConnectDeposit({
 }): Promise<PreparedTonConnectDeposit> {
   const { HOT_WALLET_ADDRESS: hotWalletAddress } = getEnv();
   if (!hotWalletAddress) {
-    throw new Error('HOT_WALLET_ADDRESS is not configured');
+    throw serviceUnavailable('HOT_WALLET_ADDRESS is not configured', 'HOT_WALLET_NOT_CONFIGURED');
   }
 
   const memoRecord = await DepositMemoRepository.findByUserAndMemo(userId, memo);
   if (!memoRecord) {
-    throw new Error('Deposit memo not found');
+    throw notFound('Deposit memo not found', 'DEPOSIT_MEMO_NOT_FOUND');
   }
   if (memoRecord.used === true) {
-    throw new Error('Deposit memo has already been used');
+    throw badRequest('Deposit memo has already been used', 'DEPOSIT_MEMO_ALREADY_USED');
   }
   if (memoRecord.expiresAt instanceof Date && memoRecord.expiresAt.getTime() <= Date.now()) {
-    throw new Error('Deposit memo has expired');
+    throw badRequest('Deposit memo has expired', 'DEPOSIT_MEMO_EXPIRED');
   }
 
   const ownerAddress = Address.parse(walletAddress).toString({ bounceable: true });
