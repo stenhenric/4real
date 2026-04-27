@@ -60,20 +60,24 @@ export class RealtimeMatchService {
       }
 
       let activatedRoom = false;
-      let player = room.players.find((entry) => entry.userId === userId);
-
-      if (!player) {
-        throw conflict(
-          'Join the match through the API before opening the realtime room',
-          'MATCH_JOIN_REQUIRED',
-        );
-      }
+      const expectedPlayerIds = [
+        dbMatch.player1Id.toString(),
+        dbMatch.player2Id?.toString(),
+      ].filter((playerId): playerId is string => Boolean(playerId));
+      const roomMembershipDrift =
+        expectedPlayerIds.length !== room.players.length
+        || expectedPlayerIds.some((playerId) => !room.players.some((entry) => entry.userId === playerId));
 
       if (dbMatch.status === 'completed') {
         const refreshedRoom = await createRoomStateFromMatch(dbMatch);
         this.roomRegistry.set(roomId, refreshedRoom);
         room = refreshedRoom;
-      } else if (dbMatch.status !== room.status || dbMatch.moveHistory.length !== room.moves.length) {
+      } else if (
+        dbMatch.status !== room.status
+        || dbMatch.moveHistory.length !== room.moves.length
+        || roomMembershipDrift
+      ) {
+        activatedRoom = room.status === 'waiting' && dbMatch.status === 'active';
         const knownSocketIds = new Map(room.players.map((entry) => [entry.userId, entry.socketId]));
         room = await createRoomStateFromMatch(dbMatch);
         room.players = room.players.map((entry) => ({
@@ -81,11 +85,15 @@ export class RealtimeMatchService {
           socketId: knownSocketIds.get(entry.userId) ?? null,
         }));
         this.roomRegistry.set(roomId, room);
-        player = room.players.find((entry) => entry.userId === userId);
       }
 
+      let player = room.players.find((entry) => entry.userId === userId);
+
       if (!player) {
-        throw conflict('Only active participants can attach to this room', 'MATCH_PARTICIPANT_REQUIRED');
+        throw conflict(
+          'Join the match through the API before opening the realtime room',
+          'MATCH_JOIN_REQUIRED',
+        );
       }
 
       player.socketId = socketId;

@@ -61,6 +61,12 @@ export function registerGameSocketHandlers(io: Server, realtimeMatchService: Rea
           io.to(result.room.roomId).emit('game-started', result.room);
         }
       } catch (error) {
+        logger.warn('socket.join_room_failed', {
+          socketId: socket.id,
+          userId: socket.data.userId,
+          roomId: typeof payload?.roomId === 'string' ? payload.roomId : undefined,
+          error,
+        });
         socket.emit('error', getSocketErrorMessage(error));
       }
     });

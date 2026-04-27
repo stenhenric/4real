@@ -14,7 +14,7 @@ interface GameRoomRegistryOptions {
 
 export class GameRoomRegistry {
   private readonly rooms = new Map<string, CachedRoom>();
-  private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly queues = new Map<string, Promise<void>>();
   private cleanupHandle: NodeJS.Timeout | null = null;
 
   constructor(private readonly options: GameRoomRegistryOptions) {}
@@ -86,8 +86,11 @@ export class GameRoomRegistry {
 
   async runExclusive<T>(roomId: string, task: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(roomId) ?? Promise.resolve();
-    const nextTask = previous.catch(() => undefined).then(task);
-    const queueTail = nextTask.finally(() => {
+    const nextTask = previous.then(task);
+    const queueTail = nextTask.then(
+      () => undefined,
+      () => undefined,
+    ).finally(() => {
       if (this.queues.get(roomId) === queueTail) {
         this.queues.delete(roomId);
       }
