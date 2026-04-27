@@ -18,6 +18,7 @@ const MerchantDashboardPage = lazy(() => import('../pages/merchant/MerchantDashb
 const MerchantOrderDeskPage = lazy(() => import('../pages/merchant/OrderDeskPage'));
 const MerchantLiquidityPage = lazy(() => import('../pages/merchant/LiquidityPage'));
 const MerchantAlertsPage = lazy(() => import('../pages/merchant/AlertsPage'));
+const MerchantDepositsPage = lazy(() => import('../pages/merchant/DepositsPage'));
 
 function AuthRoute() {
   const { user } = useAuth();
@@ -33,6 +34,7 @@ export default function App() {
             <Route element={<MerchantLayout />}>
               <Route index element={<MerchantDashboardPage />} />
               <Route path="orders" element={<MerchantOrderDeskPage />} />
+              <Route path="deposits" element={<MerchantDepositsPage />} />
               <Route path="liquidity" element={<MerchantLiquidityPage />} />
               <Route path="alerts" element={<MerchantAlertsPage />} />
               <Route path="*" element={<Navigate replace to="/merchant" />} />

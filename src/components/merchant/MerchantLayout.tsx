@@ -1,5 +1,5 @@
 import { startTransition, useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowDownUp, BellDot, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowDownUp, BellDot, Landmark, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { useToast } from '../../app/ToastProvider';
 import { RouteLoading } from '../../app/RouteLoading';
@@ -20,6 +20,7 @@ export interface MerchantOutletContext {
 const NAV_ITEMS = [
   { label: 'Overview', to: '/merchant', icon: ShieldCheck },
   { label: 'Order Desk', to: '/merchant/orders', icon: ArrowDownUp },
+  { label: 'Deposits', to: '/merchant/deposits', icon: Landmark },
   { label: 'Liquidity', to: '/merchant/liquidity', icon: Wallet },
   { label: 'Alerts', to: '/merchant/alerts', icon: BellDot },
 ] as const;
@@ -73,6 +74,10 @@ function getSectionLabel(pathname: string) {
 
   if (pathname.startsWith('/merchant/orders')) {
     return 'Order Desk';
+  }
+
+  if (pathname.startsWith('/merchant/deposits')) {
+    return 'Deposits';
   }
 
   if (pathname.startsWith('/merchant/liquidity')) {
@@ -139,11 +144,14 @@ export function MerchantLayout() {
 
   const pendingBadge = dashboard?.overview.pendingOrderCount ?? 0;
   const alertBadge = dashboard?.alerts.filter((alert) => alert.severity !== 'info').length ?? 0;
+  const unmatchedDepositBadge = dashboard?.liquidity.unresolvedDepositCount ?? 0;
   const statusBadge = buildStatusLabel(dashboard, error);
   const currentSectionLabel = getSectionLabel(location.pathname);
   const getNavBadge = (to: typeof NAV_ITEMS[number]['to']) => (
     to === '/merchant/orders'
       ? pendingBadge
+      : to === '/merchant/deposits'
+        ? unmatchedDepositBadge
       : to === '/merchant/alerts'
         ? alertBadge
         : null
@@ -176,11 +184,7 @@ export function MerchantLayout() {
 
           <nav className="rough-border bg-white/85 p-3 shadow-lg">
             {NAV_ITEMS.map((item) => {
-              const badge = item.to === '/merchant/orders'
-                ? pendingBadge
-                : item.to === '/merchant/alerts'
-                  ? alertBadge
-                  : null;
+              const badge = getNavBadge(item.to);
 
               return (
                 <NavLink
@@ -218,8 +222,12 @@ export function MerchantLayout() {
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="opacity-60">Ledger liabilities</span>
+                <span className="opacity-60">Customer liabilities</span>
                 <span className="font-bold">{formatMoney(dashboard?.liquidity.ledgerUsdtBalanceUsdt)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="opacity-60">Open deposit reviews</span>
+                <span className="font-bold">{unmatchedDepositBadge}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="opacity-60">Pending orders</span>
@@ -312,8 +320,8 @@ export function MerchantLayout() {
                     <p className="mt-1 font-bold">{pendingBadge}</p>
                   </div>
                   <div>
-                    <p className="opacity-50">Alerts</p>
-                    <p className="mt-1 font-bold">{alertBadge}</p>
+                    <p className="opacity-50">Deposit reviews</p>
+                    <p className="mt-1 font-bold">{unmatchedDepositBadge}</p>
                   </div>
                   <div>
                     <p className="opacity-50">On-chain USDT</p>
@@ -322,7 +330,7 @@ export function MerchantLayout() {
                     </p>
                   </div>
                   <div>
-                    <p className="opacity-50">Ledger liabilities</p>
+                    <p className="opacity-50">Customer liabilities</p>
                     <p className="mt-1 font-bold">
                       {formatMoney(dashboard?.liquidity.ledgerUsdtBalanceUsdt)}
                     </p>

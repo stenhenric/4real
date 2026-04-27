@@ -15,6 +15,11 @@ import { trustFilter } from '../utils/trusted-filter.ts';
 
 type MatchSettlementReason = NonNullable<IMatch['settlementReason']>;
 
+interface CreateMatchForUserResult {
+  match: IMatch;
+  inviteUrl?: string;
+}
+
 interface MatchSettlementOptions {
   match: IMatch;
   winnerId: string;
@@ -30,6 +35,10 @@ function now(): Date {
 }
 
 export class MatchService {
+  static hashInviteToken(inviteToken: string): string {
+    return crypto.createHash('sha256').update(inviteToken).digest('hex');
+  }
+
   static async createMatch(matchData: Partial<IMatch>, session?: mongoose.ClientSession): Promise<IMatch> {
     const match = new Match({
       ...matchData,
@@ -48,8 +57,9 @@ export class MatchService {
     wager: number;
     isPrivate: boolean;
     requestId?: string;
-  }): Promise<IMatch> {
+  }): Promise<CreateMatchForUserResult> {
     const roomId = crypto.randomBytes(3).toString('hex');
+    const inviteToken = isPrivate ? crypto.randomBytes(16).toString('base64url') : undefined;
     const session = await mongoose.startSession();
     let match: IMatch | null = null;
 
@@ -94,6 +104,7 @@ export class MatchService {
           p1Username: user.username,
           wager,
           isPrivate,
+          ...(inviteToken ? { inviteTokenHash: this.hashInviteToken(inviteToken) } : {}),
           status: 'waiting',
           moveHistory: [],
           lastActivityAt: now(),
@@ -113,16 +124,23 @@ export class MatchService {
       isPrivate: match.isPrivate,
     });
 
-    return match;
+    return {
+      match,
+      ...(inviteToken ? {
+        inviteUrl: `/game/${encodeURIComponent(match.roomId)}?invite=${encodeURIComponent(inviteToken)}`,
+      } : {}),
+    };
   }
 
   static async joinMatch({
     roomId,
     userId,
+    inviteToken,
     requestId,
   }: {
     roomId: string;
     userId: string;
+    inviteToken?: string;
     requestId?: string;
   }): Promise<IMatch> {
     const session = await mongoose.startSession();
@@ -140,6 +158,10 @@ export class MatchService {
         }
 
         if (!match) {
+          throw notFound('Match not found', 'MATCH_NOT_FOUND');
+        }
+
+        if (!this.canAccessMatch({ match, userId, inviteToken })) {
           throw notFound('Match not found', 'MATCH_NOT_FOUND');
         }
 
@@ -208,6 +230,25 @@ export class MatchService {
     });
 
     return joinedMatch;
+  }
+
+  static async getAccessibleMatch({
+    roomId,
+    userId,
+    inviteToken,
+    session,
+  }: {
+    roomId: string;
+    userId: string;
+    inviteToken?: string;
+    session?: mongoose.ClientSession;
+  }): Promise<IMatch | null> {
+    const match = await this.getMatchByRoomId(roomId, session);
+    if (!match) {
+      return null;
+    }
+
+    return this.canAccessMatch({ match, userId, inviteToken }) ? match : null;
   }
 
   static async resignMatch({
@@ -712,5 +753,43 @@ export class MatchService {
       },
       session,
     });
+  }
+
+  private static canAccessMatch({
+    match,
+    userId,
+    inviteToken,
+  }: {
+    match: IMatch;
+    userId: string;
+    inviteToken?: string;
+  }): boolean {
+    if (!match.isPrivate) {
+      return true;
+    }
+
+    const player1Id = match.player1Id.toString();
+    const player2Id = match.player2Id?.toString();
+    if (userId === player1Id || userId === player2Id) {
+      return true;
+    }
+
+    return this.matchesInviteToken(match, inviteToken);
+  }
+
+  private static matchesInviteToken(match: IMatch, inviteToken?: string): boolean {
+    if (!match.isPrivate || !match.inviteTokenHash || !inviteToken) {
+      return false;
+    }
+
+    const candidateHash = this.hashInviteToken(inviteToken);
+    const storedHashBuffer = Buffer.from(match.inviteTokenHash, 'hex');
+    const candidateHashBuffer = Buffer.from(candidateHash, 'hex');
+
+    if (storedHashBuffer.length !== candidateHashBuffer.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(storedHashBuffer, candidateHashBuffer);
   }
 }

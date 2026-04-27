@@ -86,6 +86,7 @@ export default function MerchantDashboardPage() {
                   : `${dashboard.liquidity.usdtDeltaUsdt >= 0 ? '+' : ''}${formatMoney(dashboard.liquidity.usdtDeltaUsdt)}`}
               </p>
               <p className="mt-2 text-sm font-mono opacity-60">On-chain minus internal ledger</p>
+              <p className="mt-1 text-xs font-mono opacity-40">Customer liabilities only</p>
             </div>
             <Wallet className="text-ink-blue/40" size={34} />
           </div>

@@ -11,6 +11,7 @@ export interface IMatch extends Document {
   settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
   wager: number;
   isPrivate: boolean;
+  inviteTokenHash?: string;
   moveHistory: { userId: string; col: number; row: number }[];
   lastActivityAt: Date;
   createdAt: Date;
@@ -31,6 +32,7 @@ const MatchSchema: Schema = new Schema({
   },
   wager: { type: Number, default: 0, min: 0 },
   isPrivate: { type: Boolean, default: false },
+  inviteTokenHash: { type: String },
   lastActivityAt: { type: Date, required: true, default: () => new Date(), index: true },
   moveHistory: [{
     userId: { type: String, required: true },

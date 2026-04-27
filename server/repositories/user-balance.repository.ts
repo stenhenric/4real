@@ -112,9 +112,12 @@ export class UserBalanceRepository {
     );
   }
 
-  static async sumBalanceRaw(): Promise<bigint> {
+  static async sumBalanceRaw(options?: { excludeUserIds?: string[] }): Promise<bigint> {
+    const filter = options?.excludeUserIds?.length
+      ? { userId: { $nin: options.excludeUserIds } }
+      : {};
     const balances = await this.collection()
-      .find({})
+      .find(filter)
       .project<Pick<UserBalanceDocument, 'balanceRaw'>>({ balanceRaw: 1, _id: 0 })
       .toArray();
 

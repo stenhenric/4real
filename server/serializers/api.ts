@@ -65,7 +65,6 @@ export function serializeUserProfile(user: IUser): UserProfileDTO {
     id: user._id.toString(),
     username: user.username,
     elo: user.elo,
-    balance: user.balance,
     stats: serializeStats(user.stats),
   };
 }
@@ -78,7 +77,7 @@ export function serializeLeaderboardUser(user: IUser): LeaderboardUserDTO {
   };
 }
 
-export function serializeMatch(match: IMatch): MatchDTO {
+export function serializeMatch(match: IMatch, options?: { inviteUrl?: string }): MatchDTO {
   const payout = calculateMatchPayout(match.wager ?? 0);
 
   return {
@@ -98,6 +97,7 @@ export function serializeMatch(match: IMatch): MatchDTO {
     settlementReason: match.settlementReason,
     lastActivityAt: match.lastActivityAt?.toISOString(),
     createdAt: match.createdAt?.toISOString(),
+    ...(options?.inviteUrl ? { inviteUrl: options.inviteUrl } : {}),
   };
 }
 

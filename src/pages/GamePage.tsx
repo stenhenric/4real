@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Medal, Trophy } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
@@ -17,6 +17,7 @@ const BOARD_COLUMNS = Array.from({ length: 7 }, (_, index) => index);
 
 const GamePage = () => {
   const { roomId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, userData, refreshUser } = useAuth();
   const { warning } = useToast();
@@ -29,6 +30,7 @@ const GamePage = () => {
   const [roomAccessReady, setRoomAccessReady] = useState(false);
   const [joining, setJoining] = useState(false);
   const [resigning, setResigning] = useState(false);
+  const inviteToken = searchParams.get('invite')?.trim() || undefined;
 
   const { gameOver, makeMove, room } = useGameRoom({
     roomId,
@@ -56,7 +58,7 @@ const GamePage = () => {
     const controller = new AbortController();
     setPreviewLoading(true);
 
-    void getMatch(roomId, controller.signal)
+    void getMatch(roomId, controller.signal, inviteToken)
       .then((match) => {
         if (controller.signal.aborted) {
           return;
@@ -93,7 +95,7 @@ const GamePage = () => {
     return () => {
       controller.abort();
     };
-  }, [navigate, roomId, user?.id, warning]);
+  }, [inviteToken, navigate, roomId, user?.id, warning]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -138,7 +140,7 @@ const GamePage = () => {
 
     setJoining(true);
     try {
-      const joinedMatch = await joinMatch(roomId);
+      const joinedMatch = await joinMatch(roomId, inviteToken);
       setMatchPreview(joinedMatch);
       setRoomAccessReady(true);
       if (joinedMatch.wager > 0) {
@@ -264,8 +266,10 @@ const GamePage = () => {
     }
   };
 
+  const invitePath = `${window.location.origin}/game/${roomId}${inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : ''}`;
+
   const copyInviteLink = async () => {
-    const link = `${window.location.origin}/game/${roomId}`;
+    const link = invitePath;
     await copyToClipboard(link, 'Invite link scratched to clipboard!');
   };
 
@@ -365,7 +369,7 @@ const GamePage = () => {
             Selected column {selectedColumn + 1}.
           </p>
           <p className="text-center mt-4 text-xs font-mono opacity-40">
-            INVITE LINK: {window.location.origin}/game/{roomId}
+            INVITE LINK: {invitePath}
           </p>
         </SketchyContainer>
       </div>

@@ -355,9 +355,12 @@ async function getRecentUnmatchedDeposits(limit: number): Promise<UnmatchedDepos
       receivedRaw: 1,
       comment: 1,
       senderJettonWallet: 1,
+      senderOwnerAddress: 1,
       txTime: 1,
       recordedAt: 1,
       resolved: 1,
+      memoStatus: 1,
+      candidateUserId: 1,
     })
     .sort({ recordedAt: -1 })
     .limit(limit)
@@ -470,7 +473,7 @@ export class MerchantDashboardService {
       recentUnmatchedDeposits,
       unresolvedDepositCount,
       withdrawalCounts,
-      ledgerUsdtRaw,
+      customerLiabilityUsdtRaw,
       balanceSnapshot,
       systemCommissionAccount,
       merchantConfig,
@@ -486,7 +489,7 @@ export class MerchantDashboardService {
       getMongoCollection<UnmatchedDepositDocument>(UNMATCHED_DEPOSITS_COLLECTION)
         .countDocuments({ resolved: { $ne: true } }),
       getWithdrawalCounts(),
-      UserBalanceRepository.sumBalanceRaw(),
+      UserBalanceRepository.sumBalanceRaw({ excludeUserIds: [SYSTEM_COMMISSION_ACCOUNT_ID] }),
       getBalanceSnapshot(),
       User.findById(SYSTEM_COMMISSION_ACCOUNT_ID).select('balance').lean(),
       getMerchantConfig(),
@@ -527,7 +530,7 @@ export class MerchantDashboardService {
     const withdrawalFlow24hUsdt = roundMoney(
       withdrawals24h.reduce((total, withdrawal) => total + Number(withdrawal.amountDisplay), 0),
     );
-    const ledgerUsdtBalanceUsdt = roundMoney(usdtRawToNumber(ledgerUsdtRaw));
+    const ledgerUsdtBalanceUsdt = roundMoney(usdtRawToNumber(customerLiabilityUsdtRaw));
     const usdtDeltaUsdt = balanceSnapshot.onChainUsdtBalanceUsdt === null
       ? null
       : roundMoney(balanceSnapshot.onChainUsdtBalanceUsdt - ledgerUsdtBalanceUsdt);
@@ -581,7 +584,7 @@ export class MerchantDashboardService {
           severity: 'critical',
           category: 'liquidity',
           title: 'Ledger exceeds on-chain USDT reserves',
-          description: `User ledger liabilities exceed the hot wallet reserve by ${Math.abs(usdtDeltaUsdt).toFixed(2)} USDT.`,
+          description: `Customer ledger liabilities exceed the hot wallet reserve by ${Math.abs(usdtDeltaUsdt).toFixed(2)} USDT.`,
           metric: `${Math.abs(usdtDeltaUsdt).toFixed(2)} USDT`,
           targetPath: '/merchant/liquidity',
         });
@@ -630,7 +633,7 @@ export class MerchantDashboardService {
         title: 'Unmatched deposits need manual review',
         description: `${unresolvedDepositCount} deposit${unresolvedDepositCount === 1 ? '' : 's'} arrived without an active memo or with an expired memo.`,
         metric: String(unresolvedDepositCount),
-        targetPath: '/merchant/alerts',
+        targetPath: '/merchant/deposits',
       });
     }
 
@@ -679,7 +682,7 @@ export class MerchantDashboardService {
         title: 'Recent deposit is waiting for memo reconciliation',
         description: `Unmatched deposit ${usdtRawToNumber(deposit.receivedRaw).toFixed(2)} USDT with memo "${deposit.comment || 'empty'}".`,
         createdAt: deposit.recordedAt.toISOString(),
-        targetPath: '/merchant/alerts',
+        targetPath: '/merchant/deposits',
       });
     }
 

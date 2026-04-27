@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { MerchantConfig as MerchantConfigModel } from '../models/MerchantConfig.ts';
 import { Order } from '../models/Order.ts';
-import { User } from '../models/User.ts';
+import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { MerchantDashboardService } from '../services/merchant-dashboard.service.ts';
 import { setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
@@ -373,6 +373,9 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
   assert.ok(doneFilter);
   assert.ok(hasTrustedSymbol(doneFilter));
   assert.ok((doneFilter.createdAt as { $gte: unknown }).$gte instanceof Date);
+  assert.deepEqual(sumBalanceMock.mock.calls[0].arguments[0], {
+    excludeUserIds: [SYSTEM_COMMISSION_ACCOUNT_ID],
+  });
   assert.deepEqual(dashboard.liquidity.merchantConfig, expectedConfig);
   assert.ok(dashboard.liquidity.jobs.some((job) => job.key === 'staleMatchExpiry'));
 });

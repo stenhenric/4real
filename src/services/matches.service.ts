@@ -1,10 +1,15 @@
-import request from './api/apiClient';
-import { createIdempotencyKey } from '../utils/idempotency';
-import type { MatchDTO } from '../types/api';
+import request from './api/apiClient.ts';
+import { createIdempotencyKey } from '../utils/idempotency.ts';
+import type { MatchDTO } from '../types/api.ts';
 
 interface CreateMatchPayload {
   wager: number;
   isPrivate: boolean;
+}
+
+function normalizeInviteToken(inviteToken?: string): string | undefined {
+  const trimmed = inviteToken?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 export function getActiveMatches(signal?: AbortSignal) {
@@ -25,15 +30,19 @@ export function getUserMatches(userId: string, signal?: AbortSignal) {
   return request<MatchDTO[]>(`/matches/user/${userId}`, { signal });
 }
 
-export function getMatch(roomId: string, signal?: AbortSignal) {
-  return request<MatchDTO>(`/matches/${roomId}`, { signal });
+export function getMatch(roomId: string, signal?: AbortSignal, inviteToken?: string) {
+  const normalizedInviteToken = normalizeInviteToken(inviteToken);
+  const query = normalizedInviteToken ? `?invite=${encodeURIComponent(normalizedInviteToken)}` : '';
+  return request<MatchDTO>(`/matches/${roomId}${query}`, { signal });
 }
 
-export function joinMatch(roomId: string) {
+export function joinMatch(roomId: string, inviteToken?: string) {
+  const normalizedInviteToken = normalizeInviteToken(inviteToken);
   return request<MatchDTO>(`/matches/${roomId}/join`, {
     method: 'POST',
     headers: {
       'Idempotency-Key': createIdempotencyKey(),
+      ...(normalizedInviteToken ? { 'X-Match-Invite': normalizedInviteToken } : {}),
     },
   });
 }

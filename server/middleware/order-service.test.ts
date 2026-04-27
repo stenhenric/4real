@@ -98,11 +98,13 @@ test('updateOrderStatus refunds rejected SELL orders and updates the ledger stat
   const findByIdMock = mock.method(Order, 'findById', async () => orderDocument as any);
   const updateBalanceMock = mock.method(UserService, 'updateBalance', async () => ({ _id: userId } as any));
   const updateTransactionMock = mock.method(TransactionService, 'updateTransactionStatusByReference', async () => {});
+  const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'refund-tx' } as any));
   const auditMock = mock.method(AuditService, 'record', async () => {});
 
   t.after(() => findByIdMock.mock.restore());
   t.after(() => updateBalanceMock.mock.restore());
   t.after(() => updateTransactionMock.mock.restore());
+  t.after(() => createTransactionMock.mock.restore());
   t.after(() => auditMock.mock.restore());
 
   const updated = await OrderService.updateOrderStatus(orderId.toString(), 'REJECTED');
@@ -114,6 +116,9 @@ test('updateOrderStatus refunds rejected SELL orders and updates the ledger stat
   assert.equal(updateBalanceMock.mock.calls[0].arguments[0], userId.toString());
   assert.equal(updateTransactionMock.mock.callCount(), 1);
   assert.equal(updateTransactionMock.mock.calls[0].arguments[1], 'REJECTED');
+  assert.equal(createTransactionMock.mock.callCount(), 1);
+  assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { type: string }).type, 'SELL_P2P_REFUND');
+  assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { amount: number }).amount, 7);
 });
 
 test('updateOrderStatus rejects transitions away from final states', async (t) => {

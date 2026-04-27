@@ -4,6 +4,7 @@ import { RouteLoading } from '../app/RouteLoading';
 import { useToast } from '../app/ToastProvider';
 import { SketchyButton } from '../components/SketchyButton';
 import { SketchyContainer } from '../components/SketchyContainer';
+import { getTransactionAccentClass, isCreditTransaction } from '../features/bank/transactionPresentation';
 import { getTransactions } from '../services/transactions.service';
 import { isAbortError } from '../utils/isAbortError';
 import type { TransactionDTO } from '../types/api';
@@ -146,12 +147,10 @@ const BankPage = () => {
               >
                 <div className="flex items-center gap-4 mb-2 sm:mb-0">
                   <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg
-                    ${transaction.type.includes('WIN') || transaction.type.includes('DEPOSIT') || transaction.type === 'SELL_P2P' || transaction.type === 'MATCH_REFUND' ? 'bg-green-600' :
-                      transaction.type.includes('LOSS') || transaction.type.includes('WITHDRAW') || transaction.type === 'BUY_P2P' || transaction.type === 'MATCH_WAGER' ? 'bg-red-600' : 'bg-gray-600'}`}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg ${getTransactionAccentClass(transaction)}`}
                   >
-                    {transaction.amount > 0 ? '+' : ''}
-                    {transaction.amount > 0 ? '↑' : '↓'}
+                    {isCreditTransaction(transaction) ? '+' : ''}
+                    {isCreditTransaction(transaction) ? '↑' : '↓'}
                   </div>
                   <div>
                     <p className="font-bold text-xl uppercase tracking-tight">

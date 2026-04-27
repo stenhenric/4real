@@ -1,11 +1,13 @@
 import mongoose from 'mongoose';
 
 import { getEnv } from '../config/env.ts';
+import { SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { AuditService } from '../services/audit.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
+import { TransactionService } from '../services/transaction.service.ts';
 import {
   findWithdrawalTransferOnChain,
   getHotWalletTonBalance,
@@ -19,6 +21,7 @@ import { logger } from '../utils/logger.ts';
 let isSending = false;
 let isConfirming = false;
 let isMonitoring = false;
+let hotWalletAddress: string | null = null;
 let hotJettonWallet: string | null = null;
 
 const defaultWorkerDependencies = {
@@ -44,8 +47,44 @@ function isDuplicateKeyError(error: unknown): error is { code: number } {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 11000);
 }
 
+async function refundFailedWithdrawal({
+  id,
+  withdrawalId,
+  userId,
+  amountRaw,
+  amountDisplay,
+  errorMessage,
+}: {
+  id: unknown;
+  withdrawalId: string;
+  userId: string;
+  amountRaw: string;
+  amountDisplay: string;
+  errorMessage: string;
+}): Promise<void> {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.withTransaction(async () => {
+      await WithdrawalRepository.markRetryState(id, 'failed', errorMessage, session);
+      await UserBalanceRepository.refundWithdrawal(userId, amountRaw, session);
+      await TransactionService.createTransaction({
+        userId,
+        type: 'WITHDRAW_REFUND',
+        amount: Number(amountDisplay),
+        referenceId: withdrawalId,
+        session,
+      });
+      await UserService.syncUserDisplayBalance(userId, session);
+    });
+  } finally {
+    await session.endSession();
+  }
+}
+
 export async function initWorker() {
   const runtime = getHotWalletRuntime();
+  hotWalletAddress = runtime.hotWalletAddress;
   hotJettonWallet = runtime.hotJettonWallet;
   logger.info('withdrawal_worker.initialized', {
     hotJettonWallet,
@@ -63,29 +102,58 @@ export async function runWithdrawalWorker() {
 
     if (!doc) return;
 
+    let submittedWithdrawal: Awaited<ReturnType<typeof workerDependencies.sendUsdtWithdrawal>> | null = null;
+
     try {
-      const seqno = await workerDependencies.sendUsdtWithdrawal({
+      submittedWithdrawal = await workerDependencies.sendUsdtWithdrawal({
         toAddress: doc.toAddress,
         amountRaw: doc.amountRaw,
         withdrawalId: doc.withdrawalId,
         hotJettonWallet,
       });
 
-      await WithdrawalRepository.markSent(doc._id, seqno);
-      await AuditService.record({
-        eventType: 'withdrawal_sent',
-        actorUserId: doc.userId,
-        targetUserId: doc.userId,
-        resourceType: 'withdrawal',
-        resourceId: doc.withdrawalId,
-        metadata: {
-          seqno,
-          amountRaw: doc.amountRaw,
-          toAddress: doc.toAddress,
-        },
-      });
+      try {
+        await WithdrawalRepository.markSent(doc._id, submittedWithdrawal.seqno, submittedWithdrawal.sentAt);
+        await AuditService.record({
+          eventType: 'withdrawal_sent',
+          actorUserId: doc.userId,
+          targetUserId: doc.userId,
+          resourceType: 'withdrawal',
+          resourceId: doc.withdrawalId,
+          metadata: {
+            seqno: submittedWithdrawal.seqno,
+            amountRaw: doc.amountRaw,
+            toAddress: doc.toAddress,
+          },
+        });
 
-      logger.info('withdrawal.sent', { withdrawalId: doc.withdrawalId, seqno });
+        logger.info('withdrawal.sent', {
+          withdrawalId: doc.withdrawalId,
+          seqno: submittedWithdrawal.seqno,
+        });
+      } catch (postSendError: unknown) {
+        const errorMessage = postSendError instanceof Error ? postSendError.message : String(postSendError);
+        logger.error('withdrawal.post_send_persist_failed', {
+          withdrawalId: doc.withdrawalId,
+          errorMessage,
+          seqno: submittedWithdrawal.seqno,
+        });
+
+        try {
+          await WithdrawalRepository.markStuck(
+            doc._id,
+            errorMessage,
+            submittedWithdrawal.seqno,
+            submittedWithdrawal.sentAt,
+          );
+        } catch (markStuckError) {
+          logger.error('withdrawal.post_send_stuck_mark_failed', {
+            withdrawalId: doc.withdrawalId,
+            errorMessage: markStuckError instanceof Error ? markStuckError.message : String(markStuckError),
+            seqno: submittedWithdrawal.seqno,
+          });
+        }
+      }
 
     } catch (sendErr: unknown) {
       const errorMessage = sendErr instanceof Error ? sendErr.message : String(sendErr);
@@ -96,19 +164,25 @@ export async function runWithdrawalWorker() {
       } else {
         const retries = (doc.retries ?? 0) + 1;
         const newStatus = retries >= 3 ? 'failed' : 'queued';
-        const session = await mongoose.startSession();
-
-        try {
-          await session.withTransaction(async () => {
-            await WithdrawalRepository.markRetryState(doc._id, newStatus, errorMessage, session);
-
-            if (newStatus === 'failed') {
-              await UserBalanceRepository.refundWithdrawal(doc.userId, doc.amountRaw, session);
-              await UserService.syncUserDisplayBalance(doc.userId, session);
-            }
+        if (newStatus === 'failed') {
+          await refundFailedWithdrawal({
+            id: doc._id,
+            withdrawalId: doc.withdrawalId,
+            userId: doc.userId,
+            amountRaw: doc.amountRaw,
+            amountDisplay: doc.amountDisplay,
+            errorMessage,
           });
-        } finally {
-          await session.endSession();
+        } else {
+          const session = await mongoose.startSession();
+
+          try {
+            await session.withTransaction(async () => {
+              await WithdrawalRepository.markRetryState(doc._id, newStatus, errorMessage, session);
+            });
+          } finally {
+            await session.endSession();
+          }
         }
 
         if (newStatus === 'failed') {
@@ -123,7 +197,7 @@ export async function runWithdrawalWorker() {
 }
 
 export async function confirmSentWithdrawals() {
-  if (!hotJettonWallet) return;
+  if (!hotWalletAddress) return;
   if (isConfirming) return;
   isConfirming = true;
 
@@ -137,16 +211,15 @@ export async function confirmSentWithdrawals() {
       }
 
       const confirmed = await workerDependencies.findWithdrawalTransferOnChain({
-        hotJettonWallet,
+        hotWalletAddress,
         sentAt: withdrawal.sentAt,
         withdrawalId: withdrawal.withdrawalId,
         amountRaw: withdrawal.amountRaw,
         toAddress: withdrawal.toAddress,
       });
 
-      const session = await mongoose.startSession();
-
       if (confirmed) {
+        const session = await mongoose.startSession();
         try {
           await session.withTransaction(async () => {
             await ProcessedTransactionRepository.create({
@@ -193,28 +266,19 @@ export async function confirmSentWithdrawals() {
           await session.endSession();
         }
       } else if (withdrawal.sentAt.getTime() < thirtyMinsAgo) {
-         try {
-            await session.withTransaction(async () => {
-              await WithdrawalRepository.markRetryState(
-                withdrawal._id,
-                'failed',
-                'Expired waiting for confirmation on-chain',
-                session
-              );
-
-              await UserBalanceRepository.refundWithdrawal(
-                withdrawal.userId,
-                withdrawal.amountRaw,
-                session
-              );
-              await UserService.syncUserDisplayBalance(withdrawal.userId, session);
-            });
-            logger.warn('withdrawal.expired_unconfirmed_refunded', { withdrawalId: withdrawal.withdrawalId });
-         } catch (err) {
-             logger.error('withdrawal.expire_error', { withdrawalId: withdrawal.withdrawalId, err });
-         } finally {
-           await session.endSession();
-         }
+        try {
+          await WithdrawalRepository.markStuck(
+            withdrawal._id,
+            'Expired waiting for confirmation on-chain',
+            withdrawal.seqno,
+            withdrawal.sentAt,
+          );
+          logger.warn('withdrawal.confirmation_delayed', {
+            withdrawalId: withdrawal.withdrawalId,
+          });
+        } catch (err) {
+          logger.error('withdrawal.expire_error', { withdrawalId: withdrawal.withdrawalId, err });
+        }
       }
     }
   } finally {
@@ -231,7 +295,9 @@ export async function monitorHotWalletBalances() {
     const runtime = getHotWalletRuntime();
     const tonBalanceRaw = await workerDependencies.getHotWalletTonBalance(runtime.hotWalletAddress);
     const onChainUsdtRaw = await workerDependencies.getHotWalletUsdtBalanceRaw(runtime.hotWalletAddress);
-    const ledgerUsdtRaw = await UserBalanceRepository.sumBalanceRaw();
+    const ledgerUsdtRaw = await UserBalanceRepository.sumBalanceRaw({
+      excludeUserIds: [SYSTEM_COMMISSION_ACCOUNT_ID],
+    });
     const tonBalance = Number(tonBalanceRaw) / 1_000_000_000;
     const minimumUsdtBalanceRaw = BigInt(Math.round(env.HOT_WALLET_MIN_USDT_BALANCE * 1_000_000));
     const mismatchToleranceRaw = BigInt(Math.round(env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT * 1_000_000));
@@ -281,7 +347,7 @@ export async function monitorHotWalletBalances() {
         ledgerUsdt: formatUsdtRaw(ledgerUsdtRaw),
         deltaUsdt: formatUsdtRaw(ledgerUsdtRaw - onChainUsdtRaw),
       });
-      failures.push(`Ledger shortfall ${formatUsdtRaw(ledgerUsdtRaw - onChainUsdtRaw)}`);
+      failures.push(`Customer liability shortfall ${formatUsdtRaw(ledgerUsdtRaw - onChainUsdtRaw)}`);
     } else if (deltaUsdtRaw > mismatchToleranceRaw) {
       logger.warn('wallet_monitor.ledger_mismatch', {
         onChainUsdt: formatUsdtRaw(onChainUsdtRaw),
@@ -303,19 +369,17 @@ export async function monitorHotWalletBalances() {
 }
 
 export async function recoverStuckWithdrawals() {
-  if (!hotJettonWallet) return;
+  if (!hotWalletAddress) return;
   const tenMinsAgo = new Date(Date.now() - 10 * 60_000);
   const stuck = await WithdrawalRepository.findStaleProcessing(tenMinsAgo);
 
   if (stuck.length > 0) {
-    const idsToRequeue: mongoose.Types.ObjectId[] = [];
-
     for (const withdrawal of stuck) {
       if (!withdrawal.startedAt) continue;
 
       try {
         const confirmed = await workerDependencies.findWithdrawalTransferOnChain({
-          hotJettonWallet,
+          hotWalletAddress,
           sentAt: withdrawal.startedAt,
           withdrawalId: withdrawal.withdrawalId,
           amountRaw: withdrawal.amountRaw,
@@ -370,18 +434,23 @@ export async function recoverStuckWithdrawals() {
             await session.endSession();
           }
         } else {
-          idsToRequeue.push(withdrawal._id as mongoose.Types.ObjectId);
+          await WithdrawalRepository.markStuck(
+            withdrawal._id,
+            'Processing state expired before a definitive on-chain outcome was recorded',
+            withdrawal.seqno,
+            withdrawal.startedAt,
+          );
+          logger.warn('withdrawal.processing_stuck', { withdrawalId: withdrawal.withdrawalId });
         }
       } catch (err) {
         logger.error('withdrawal.stuck_check_error', { withdrawalId: withdrawal.withdrawalId, err });
-        // Assume not sent and requeue, but ideally we'd retry checking
-        idsToRequeue.push(withdrawal._id as mongoose.Types.ObjectId);
+        await WithdrawalRepository.markStuck(
+          withdrawal._id,
+          'On-chain reconciliation check failed for a stale processing withdrawal',
+          withdrawal.seqno,
+          withdrawal.startedAt,
+        );
       }
-    }
-
-    if (idsToRequeue.length > 0) {
-      logger.warn('withdrawal.reset_stuck', { count: idsToRequeue.length });
-      await WithdrawalRepository.requeueByIds(idsToRequeue);
     }
   }
 }
@@ -390,6 +459,7 @@ export function resetWithdrawalWorkerStateForTests(): void {
   isSending = false;
   isConfirming = false;
   isMonitoring = false;
+  hotWalletAddress = null;
   hotJettonWallet = null;
   Object.assign(workerDependencies, defaultWorkerDependencies);
 }

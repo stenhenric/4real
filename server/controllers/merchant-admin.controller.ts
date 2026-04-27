@@ -1,10 +1,19 @@
 import type { Response } from 'express';
 
 import type { BackgroundJobState } from '../services/background-jobs.service.ts';
+import {
+  listMerchantDepositReviews,
+  reconcileMerchantDeposit,
+  replayDepositWindow,
+} from '../services/deposit-ingestion.service.ts';
 import { MerchantDashboardService } from '../services/merchant-dashboard.service.ts';
 import { getMerchantConfig, updateMerchantConfig } from '../services/merchant-config.service.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
-import type { UpdateMerchantConfigRequest } from '../validation/request-schemas.ts';
+import type {
+  MerchantDepositReconcileRequest,
+  MerchantDepositReplayWindowRequest,
+  UpdateMerchantConfigRequest,
+} from '../validation/request-schemas.ts';
 
 function getBackgroundJobs(req: AuthRequest): BackgroundJobState | null {
   const backgroundJobs = req.app.locals.statusProvider?.getBackgroundJobs?.();
@@ -51,5 +60,43 @@ export class MerchantAdminController {
     });
 
     res.json(orders);
+  }
+
+  static async getDeposits(req: AuthRequest, res: Response): Promise<void> {
+    const statusParam = typeof req.query.status === 'string' ? req.query.status.toLowerCase() : 'open';
+    const limitParam = typeof req.query.limit === 'string' ? Number(req.query.limit) : 50;
+    const status = statusParam === 'resolved' ? 'resolved' : 'open';
+    const limit = Number.isFinite(limitParam)
+      ? Math.min(200, Math.max(1, Math.floor(limitParam)))
+      : 50;
+
+    const deposits = await listMerchantDepositReviews({ status, limit });
+    res.json(deposits);
+  }
+
+  static async reconcileDeposit(req: AuthRequest, res: Response): Promise<void> {
+    if (!req.user?.id) {
+      throw new Error('Authenticated admin is required');
+    }
+
+    const body = req.body as MerchantDepositReconcileRequest;
+    const result = await reconcileMerchantDeposit({
+      txHash: req.params.txHash,
+      action: body.action,
+      userId: body.userId,
+      note: body.note,
+      actorUserId: req.user.id,
+    });
+    res.json(result);
+  }
+
+  static async replayDepositWindow(req: AuthRequest, res: Response): Promise<void> {
+    const body = req.body as MerchantDepositReplayWindowRequest;
+    const result = await replayDepositWindow({
+      sinceUnixTime: body.sinceUnixTime,
+      untilUnixTime: body.untilUnixTime,
+      dryRun: body.dryRun ?? true,
+    });
+    res.json(result);
   }
 }

@@ -148,6 +148,16 @@ export class OrderService {
           session,
         );
 
+        if (status === 'REJECTED' && order.type === 'SELL') {
+          await TransactionService.createTransaction({
+            userId: order.userId.toString(),
+            type: 'SELL_P2P_REFUND',
+            amount: order.amount,
+            referenceId: order._id.toString(),
+            session,
+          });
+        }
+
         if (status === 'DONE' || status === 'REJECTED') {
           await AuditService.record({
             eventType: status === 'DONE' ? 'order_approved' : 'order_rejected',

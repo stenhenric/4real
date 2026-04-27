@@ -13,7 +13,7 @@ interface ExecuteIdempotentMutationOptions<TBody> {
   routeKey: string;
   idempotencyKey: string;
   requestPayload: unknown;
-  execute: () => Promise<IdempotentMutationResult<TBody>>;
+  execute: (context: { requestHash: string }) => Promise<IdempotentMutationResult<TBody>>;
 }
 
 export interface IdempotentMutationResponse<TBody> extends IdempotentMutationResult<TBody> {
@@ -113,7 +113,7 @@ export async function executeIdempotentMutation<TBody>({
   }
 
   try {
-    const response = await execute();
+    const response = await execute({ requestHash });
     await IdempotencyKeyRepository.markCompleted(
       userId,
       routeKey,

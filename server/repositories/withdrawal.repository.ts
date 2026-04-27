@@ -56,11 +56,11 @@ export class WithdrawalRepository {
     );
   }
 
-  static async markSent(id: unknown, seqno: number): Promise<void> {
+  static async markSent(id: unknown, seqno: number, sentAt: Date = new Date()): Promise<void> {
     await this.collection().updateOne(
       { _id: id },
       {
-        $set: { status: 'sent', sentAt: new Date(), updatedAt: new Date(), seqno },
+        $set: { status: 'sent', sentAt, updatedAt: new Date(), seqno },
         $unset: { lastError: '' },
       },
     );

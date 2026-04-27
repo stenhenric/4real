@@ -30,7 +30,6 @@ export interface UserProfileDTO {
   id: string;
   username: string;
   elo: number;
-  balance: number;
   stats: UserStatsDTO;
 }
 
@@ -67,6 +66,7 @@ export interface MatchDTO {
   settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
   lastActivityAt?: string;
   createdAt?: string;
+  inviteUrl?: string;
 }
 
 export interface OrderUserDTO {
@@ -156,13 +156,15 @@ export interface MerchantJobStatusDTO {
 export type TransactionType =
   | 'DEPOSIT'
   | 'WITHDRAW'
+  | 'WITHDRAW_REFUND'
   | 'MATCH_WIN'
   | 'MATCH_LOSS'
   | 'MATCH_DRAW'
   | 'MATCH_REFUND'
   | 'MATCH_WAGER'
   | 'BUY_P2P'
-  | 'SELL_P2P';
+  | 'SELL_P2P'
+  | 'SELL_P2P_REFUND';
 
 export type TransactionStatus =
   | 'PENDING'
@@ -287,6 +289,68 @@ export interface MerchantOrderDeskResponseDTO {
     totalPages: number;
   };
   orders: MerchantOrderDeskItemDTO[];
+}
+
+export type MerchantDepositMemoStatus = 'missing' | 'inactive' | 'active';
+export type MerchantDepositResolutionStatus = 'open' | 'credited' | 'dismissed';
+export type MerchantDepositReplayDecision =
+  | 'credit'
+  | 'already_processed'
+  | 'already_unmatched_open'
+  | 'unmatched'
+  | 'rejected';
+
+export interface MerchantDepositReviewItemDTO {
+  txHash: string;
+  amountRaw: string;
+  amountUsdt: number;
+  comment: string;
+  senderJettonWallet: string | null;
+  senderOwnerAddress: string | null;
+  txTime: string;
+  recordedAt: string;
+  memoStatus: MerchantDepositMemoStatus;
+  candidateUserId?: string | null;
+  candidateUsername?: string | null;
+  resolutionStatus: MerchantDepositResolutionStatus;
+  resolvedAt?: string;
+  resolvedBy?: string | null;
+  resolutionNote?: string | null;
+  resolvedUserId?: string | null;
+}
+
+export interface MerchantDepositReconcileRequestDTO {
+  action: 'credit' | 'dismiss';
+  userId?: string;
+  note?: string;
+}
+
+export interface MerchantDepositReplayRequestDTO {
+  sinceUnixTime: number;
+  untilUnixTime: number;
+  dryRun?: boolean;
+}
+
+export interface MerchantDepositReplayTransferResultDTO {
+  txHash: string;
+  decision: MerchantDepositReplayDecision;
+  amountRaw: string;
+  amountUsdt: number;
+  comment: string;
+  memoStatus: MerchantDepositMemoStatus;
+  candidateUserId?: string | null;
+  candidateUsername?: string | null;
+  senderJettonWallet: string | null;
+  senderOwnerAddress: string | null;
+  txTime: string;
+  reason?: string;
+}
+
+export interface MerchantDepositReplayResultDTO {
+  dryRun: boolean;
+  sinceUnixTime: number;
+  untilUnixTime: number;
+  transfers: MerchantDepositReplayTransferResultDTO[];
 }
 
 export interface PreparedTonConnectDepositDTO {

@@ -6,6 +6,7 @@ export interface ProcessedTransactionDocument {
   txHash: string;
   processedAt: Date;
   type: string;
+  updatedAt?: Date;
 }
 
 export class ProcessedTransactionRepository {
@@ -26,6 +27,25 @@ export class ProcessedTransactionRepository {
 
   static async create(document: ProcessedTransactionDocument, session?: mongoose.ClientSession): Promise<void> {
     await this.collection().insertOne(document, session ? { session } : undefined);
+  }
+
+  static async findByHash(txHash: string, session?: mongoose.ClientSession) {
+    return this.collection().findOne({ txHash }, session ? { session } : undefined);
+  }
+
+  static async updateType(txHash: string, type: string, session?: mongoose.ClientSession): Promise<void> {
+    const now = new Date();
+    await this.collection().updateOne(
+      { txHash },
+      {
+        $set: {
+          type,
+          processedAt: now,
+          updatedAt: now,
+        },
+      },
+      session ? { session } : undefined,
+    );
   }
 
   static async ensureIndexes(): Promise<void> {

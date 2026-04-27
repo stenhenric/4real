@@ -84,6 +84,21 @@ function resolveProofAllowedMimeTypes(value: string): string[] {
     .filter(Boolean);
 }
 
+function hasMongoDatabaseName(uri: string): boolean {
+  const withoutProtocol = uri.replace(/^mongodb(\+srv)?:\/\//, '');
+  const slashIndex = withoutProtocol.indexOf('/');
+  if (slashIndex < 0) {
+    return false;
+  }
+
+  const databaseName = withoutProtocol
+    .slice(slashIndex + 1)
+    .split('?')[0]
+    .trim();
+
+  return databaseName.length > 0;
+}
+
 export function getEnv(): AppEnv {
   if (cachedEnv) {
     return cachedEnv;
@@ -105,6 +120,10 @@ export function getEnv(): AppEnv {
         })()
       : 'mongodb://127.0.0.1:27017/4real'
   );
+
+  if (!hasMongoDatabaseName(mongoUri)) {
+    throw new Error('MONGODB_URI must include an explicit database name (for example /4real)');
+  }
 
   cachedEnv = {
     ...parsed.data,

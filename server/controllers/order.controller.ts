@@ -7,7 +7,7 @@ import { serializeOrder } from '../serializers/api.ts';
 import { executeIdempotentMutation } from '../services/idempotency.service.ts';
 import { getMerchantConfig } from '../services/merchant-config.service.ts';
 import { OrderService } from '../services/order.service.ts';
-import { relayOrderProofToTelegram } from '../services/telegram-proof.service.ts';
+import { getOrRelayOrderProof } from '../services/order-proof-relay.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
 import { parseMultipartForm } from '../utils/multipart.ts';
@@ -110,20 +110,25 @@ export class OrderController {
         proofDigest,
         proofMimeType: proofImage?.contentType,
       },
-      execute: async () => {
+      execute: async ({ requestHash }) => {
         const proof = parsedBody.type === 'BUY' && proofImage
-          ? await relayOrderProofToTelegram({
-              orderType: parsedBody.type,
-              amount: parsedBody.amount,
-              fiatCurrency: merchantConfig.fiatCurrency,
-              exchangeRate,
-              fiatTotal,
-              transactionCode: parsedBody.transactionCode ?? '',
-              username: user.username,
+          ? await getOrRelayOrderProof({
               userId: user._id.toString(),
-              mimeType: proofImage.contentType,
-              filename: proofImage.filename,
-              fileBytes: proofImage.data,
+              routeKey: 'orders:create',
+              requestHash,
+              relay: {
+                orderType: parsedBody.type,
+                amount: parsedBody.amount,
+                fiatCurrency: merchantConfig.fiatCurrency,
+                exchangeRate,
+                fiatTotal,
+                transactionCode: parsedBody.transactionCode ?? '',
+                username: user.username,
+                userId: user._id.toString(),
+                mimeType: proofImage.contentType,
+                filename: proofImage.filename,
+                fileBytes: proofImage.data,
+              },
             })
           : undefined;
 

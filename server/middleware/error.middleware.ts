@@ -11,6 +11,18 @@ function isIdentifierCastError(error: mongoose.Error.CastError): boolean {
   return error.kind === 'ObjectId' || normalizedPath === '_id' || normalizedPath.endsWith('id');
 }
 
+function getLoggedPath(req: { path?: string; originalUrl?: string }): string | undefined {
+  if (typeof req.path === 'string' && req.path.length > 0) {
+    return req.path;
+  }
+
+  if (typeof req.originalUrl === 'string') {
+    return req.originalUrl.split('?')[0];
+  }
+
+  return undefined;
+}
+
 export const notFoundApiHandler: RequestHandler = (_req, res) => {
   const payload: ApiErrorDTO = {
     code: 'NOT_FOUND',
@@ -31,7 +43,7 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
       logger.error('request.http_error', {
         requestId,
         method: req.method,
-        path: req.originalUrl,
+        path: getLoggedPath(req),
         error,
       });
     }
@@ -84,7 +96,7 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   logger.error('request.unhandled_error', {
     requestId,
     method: req.method,
-    path: req.originalUrl,
+    path: getLoggedPath(req),
     error,
   });
 

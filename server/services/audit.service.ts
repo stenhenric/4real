@@ -3,6 +3,8 @@ import type mongoose from 'mongoose';
 
 export type AuditEventType =
   | 'deposit_credit'
+  | 'deposit_reconciled'
+  | 'deposit_dismissed'
   | 'deposit_rejected'
   | 'withdrawal_requested'
   | 'withdrawal_sent'

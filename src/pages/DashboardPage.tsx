@@ -122,7 +122,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
       if (parsedWager > 0) {
         await refreshUser();
       }
-      navigate(`/game/${match.roomId}`);
+      navigate(match.inviteUrl ?? `/game/${match.roomId}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Match creation failed. Please try again.';
       if (message.toLowerCase().includes('insufficient balance')) {

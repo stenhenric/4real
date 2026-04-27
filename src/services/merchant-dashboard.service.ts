@@ -1,5 +1,12 @@
 import request from './api/apiClient';
-import type { MerchantDashboardDTO, MerchantOrderDeskResponseDTO } from '../types/api';
+import type {
+  MerchantDashboardDTO,
+  MerchantDepositReconcileRequestDTO,
+  MerchantDepositReplayRequestDTO,
+  MerchantDepositReplayResultDTO,
+  MerchantDepositReviewItemDTO,
+  MerchantOrderDeskResponseDTO,
+} from '../types/api';
 
 interface MerchantOrderQuery {
   page?: number;
@@ -38,4 +45,41 @@ export function getMerchantOrders(query: MerchantOrderQuery = {}) {
     : '/admin/merchant/orders';
 
   return request<MerchantOrderDeskResponseDTO>(endpoint, { signal: query.signal });
+}
+
+export function getMerchantDeposits(query: {
+  status?: 'open' | 'resolved';
+  limit?: number;
+  signal?: AbortSignal;
+} = {}) {
+  const params = new URLSearchParams();
+
+  if (query.status) {
+    params.set('status', query.status);
+  }
+
+  if (query.limit) {
+    params.set('limit', String(query.limit));
+  }
+
+  const queryString = params.toString();
+  const endpoint = queryString.length > 0
+    ? `/admin/merchant/deposits?${queryString}`
+    : '/admin/merchant/deposits';
+
+  return request<MerchantDepositReviewItemDTO[]>(endpoint, { signal: query.signal });
+}
+
+export function replayMerchantDeposits(body: MerchantDepositReplayRequestDTO) {
+  return request<MerchantDepositReplayResultDTO>('/admin/merchant/deposits/replay-window', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function reconcileMerchantDeposit(txHash: string, body: MerchantDepositReconcileRequestDTO) {
+  return request<MerchantDepositReviewItemDTO>(`/admin/merchant/deposits/${encodeURIComponent(txHash)}/reconcile`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }

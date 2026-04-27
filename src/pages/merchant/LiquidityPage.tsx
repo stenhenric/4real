@@ -131,9 +131,9 @@ export default function LiquidityPage() {
           <p className="mt-2 text-sm font-mono opacity-60">Hot wallet jetton reserve</p>
         </SketchyContainer>
         <SketchyContainer className="bg-white">
-          <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Ledger Liabilities</p>
+          <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Customer Liabilities</p>
           <p className="mt-4 text-4xl font-bold italic">{formatMoney(dashboard.liquidity.ledgerUsdtBalanceUsdt)}</p>
-          <p className="mt-2 text-sm font-mono opacity-60">Aggregate user balances</p>
+          <p className="mt-2 text-sm font-mono opacity-60">User balances excluding platform commission</p>
         </SketchyContainer>
         <SketchyContainer className="bg-white">
           <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Coverage Delta</p>
@@ -143,6 +143,7 @@ export default function LiquidityPage() {
               : `${dashboard.liquidity.usdtDeltaUsdt >= 0 ? '+' : ''}${formatMoney(dashboard.liquidity.usdtDeltaUsdt)}`}
           </p>
           <p className="mt-2 text-sm font-mono opacity-60">On-chain reserve minus ledger</p>
+          <p className="mt-1 text-xs font-mono opacity-40">Commission is tracked separately below.</p>
         </SketchyContainer>
         <SketchyContainer className="bg-white">
           <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Hotwallet TON Gas</p>

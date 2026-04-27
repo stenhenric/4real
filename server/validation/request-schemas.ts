@@ -72,6 +72,18 @@ export const updateMerchantConfigRequestSchema = z.object({
   }
 });
 
+export const merchantDepositReconcileRequestSchema = z.object({
+  action: z.enum(['credit', 'dismiss']),
+  userId: z.string().trim().min(1).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
+export const merchantDepositReplayWindowRequestSchema = z.object({
+  sinceUnixTime: z.coerce.number().finite().int().nonnegative(),
+  untilUnixTime: z.coerce.number().finite().int().nonnegative(),
+  dryRun: z.coerce.boolean().optional().default(true),
+});
+
 export const withdrawRequestSchema = z.object({
   toAddress: z.string().trim().min(1),
   amountUsdt: positiveMoneySchema,
@@ -89,5 +101,7 @@ export type CreateMatchRequest = z.infer<typeof createMatchRequestSchema>;
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 export type UpdateOrderStatusRequest = z.infer<typeof updateOrderStatusRequestSchema>;
 export type UpdateMerchantConfigRequest = z.infer<typeof updateMerchantConfigRequestSchema>;
+export type MerchantDepositReconcileRequest = z.infer<typeof merchantDepositReconcileRequestSchema>;
+export type MerchantDepositReplayWindowRequest = z.infer<typeof merchantDepositReplayWindowRequestSchema>;
 export type WithdrawRequest = z.infer<typeof withdrawRequestSchema>;
 export type PrepareTonConnectDepositRequest = z.infer<typeof prepareTonConnectDepositRequestSchema>;

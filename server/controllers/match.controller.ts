@@ -8,6 +8,26 @@ import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
 import { notFound, unauthorized } from '../utils/http-error.ts';
 import type { CreateMatchRequest } from '../validation/request-schemas.ts';
 
+function getInviteTokenFromQuery(req: Request): string | undefined {
+  const invite = req.query?.invite;
+  if (typeof invite !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = invite.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function getInviteTokenFromHeader(req: Request): string | undefined {
+  const invite = req.get('x-match-invite');
+  if (!invite) {
+    return undefined;
+  }
+
+  const trimmed = invite.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export class MatchController {
   static async getActiveMatches(_req: Request, res: Response): Promise<void> {
     const matches = await MatchService.getActiveMatches();
@@ -19,7 +39,11 @@ export class MatchController {
       throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
     }
 
-    const match = await MatchService.getMatchByRoomId(req.params.roomId);
+    const match = await MatchService.getAccessibleMatch({
+      roomId: req.params.roomId,
+      userId: req.user.id,
+      inviteToken: getInviteTokenFromQuery(req),
+    });
     if (!match) {
       throw notFound('Match not found', 'MATCH_NOT_FOUND');
     }
@@ -41,7 +65,7 @@ export class MatchController {
       idempotencyKey,
       requestPayload: { wager, isPrivate },
       execute: async () => {
-        const match = await MatchService.createMatchForUser({
+        const createdMatch = await MatchService.createMatchForUser({
           userId: req.user!.id,
           wager: wager || 0,
           isPrivate: isPrivate || false,
@@ -50,7 +74,9 @@ export class MatchController {
 
         return {
           statusCode: 201,
-          body: serializeMatch(match),
+          body: serializeMatch(createdMatch.match, {
+            inviteUrl: createdMatch.inviteUrl,
+          }),
         };
       },
     });
@@ -65,16 +91,21 @@ export class MatchController {
 
     const idempotencyKey = getRequiredIdempotencyKey(req);
     const roomId = req.params.roomId;
+    const inviteToken = getInviteTokenFromHeader(req);
 
     const result = await executeIdempotentMutation({
       userId: req.user.id,
       routeKey: `matches:join:${roomId}`,
       idempotencyKey,
-      requestPayload: { roomId },
+      requestPayload: {
+        roomId,
+        inviteTokenHash: inviteToken ? MatchService.hashInviteToken(inviteToken) : null,
+      },
       execute: async () => {
         const match = await MatchService.joinMatch({
           roomId,
           userId: req.user!.id,
+          inviteToken,
           requestId: res.locals.requestId,
         });
 

@@ -77,7 +77,7 @@ export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, h
     throw error;
   }
 
-  return seqno;
+  return { seqno, sentAt };
 }
 
 interface ToncenterJettonTransfer {
@@ -143,20 +143,20 @@ async function fetchJettonTransfers({
 }
 
 export async function findWithdrawalTransferOnChain({
-  hotJettonWallet,
+  hotWalletAddress,
   sentAt,
   withdrawalId,
   amountRaw,
   toAddress,
 }: {
-  hotJettonWallet: string;
+  hotWalletAddress: string;
   sentAt: Date;
   withdrawalId: string;
   amountRaw: string;
   toAddress: string;
 }) {
   const transfers = await fetchJettonTransfers({
-    ownerAddress: hotJettonWallet,
+    ownerAddress: hotWalletAddress,
     direction: 'out',
     startUtime: Math.max(0, Math.floor(sentAt.getTime() / 1000) - 30),
     limit: 20,

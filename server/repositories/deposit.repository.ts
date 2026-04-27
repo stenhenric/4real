@@ -24,6 +24,10 @@ export class DepositRepository {
     await this.collection().insertOne(document, session ? { session } : undefined);
   }
 
+  static async findByTxHash(txHash: string, session?: mongoose.ClientSession) {
+    return this.collection().findOne({ txHash }, session ? { session } : undefined);
+  }
+
   static async findByUserId(userId: string) {
     return this.collection().find({ userId }).sort({ createdAt: -1 }).toArray();
   }

@@ -7,6 +7,7 @@ import { DepositRepository } from '../repositories/deposit.repository.ts';
 import { JettonWalletCacheRepository } from '../repositories/jetton-wallet-cache.repository.ts';
 import { AuditEventRepository } from '../repositories/audit-event.repository.ts';
 import { IdempotencyKeyRepository } from '../repositories/idempotency-key.repository.ts';
+import { OrderProofRelayRepository } from '../repositories/order-proof-relay.repository.ts';
 import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
@@ -21,6 +22,7 @@ export async function setupIndexes() {
     UserBalanceRepository.ensureIndexes(),
     AuditEventRepository.ensureIndexes(),
     IdempotencyKeyRepository.ensureIndexes(),
+    OrderProofRelayRepository.ensureIndexes(),
     ProcessedTransactionRepository.ensureIndexes(),
     DepositMemoRepository.ensureIndexes(),
     PollerStateRepository.ensureIndexes(),
