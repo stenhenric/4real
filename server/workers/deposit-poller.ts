@@ -6,6 +6,8 @@ import {
   type JettonTransferEvent,
 } from '../services/deposit-ingestion.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
+import { logger } from '../utils/logger.ts';
+
 const INITIAL_DEPOSIT_LOOKBACK_SECONDS = 24 * 60 * 60;
 
 export async function pollDeposits() {
@@ -32,7 +34,14 @@ export async function pollDeposits() {
   }
 
   for (const tx of newTransfers) {
-    await ingestIncomingTransfer(tx);
+    try {
+      await ingestIncomingTransfer(tx);
+    } catch (error) {
+      logger.error('deposit_poller.ingestion_failed', {
+        txHash: tx.transaction_hash,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   const latestTime = Math.max(...transfers.map((t: JettonTransferEvent) => t.transaction_now));

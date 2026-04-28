@@ -138,7 +138,7 @@ export class UserService {
   }
 
   static async getLeaderboard(limit: number = 10): Promise<IUser[]> {
-    return User.find().sort({ elo: -1 }).limit(limit).select('-passwordHash -__v');
+    return User.find({ _id: { $ne: SYSTEM_COMMISSION_ACCOUNT_ID } }).sort({ elo: -1 }).limit(limit).select('-passwordHash -__v');
   }
 
   static async getTokenVersion(id: string): Promise<number | null> {

@@ -57,6 +57,10 @@ const rawEnvSchema = z.object({
   MATCH_WAITING_EXPIRY_MS: z.coerce.number().int().positive().default(900_000),
   MATCH_ACTIVE_INACTIVITY_MS: z.coerce.number().int().positive().default(900_000),
   TRUST_PROXY: z.string().trim().optional(),
+  MAX_WITHDRAWAL_USDT: z.coerce.number().positive().default(10_000),
+  DAILY_WITHDRAWAL_LIMIT_USDT: z.coerce.number().positive().default(50_000),
+  WITHDRAWAL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  WITHDRAWAL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
 });
 
 export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI' | 'PROOF_ALLOWED_MIME_TYPES'> {

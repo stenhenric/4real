@@ -24,8 +24,17 @@ export const csrfProtectionMiddleware: RequestHandler = (req, res, next) => {
   }
 
   const origin = req.get('origin') ?? getOriginFromReferrer(req.get('referer'));
-  if (!origin || isAllowedOrigin(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     next();
+    return;
+  }
+
+  if (!origin) {
+    const payload: ApiErrorDTO = {
+      code: 'MISSING_REQUEST_ORIGIN',
+      message: 'Origin header is required for state-changing requests',
+    };
+    res.status(403).json(payload);
     return;
   }
 

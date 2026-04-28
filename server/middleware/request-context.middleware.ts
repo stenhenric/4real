@@ -1,22 +1,14 @@
 import crypto from 'node:crypto';
 import type { RequestHandler } from 'express';
 
+import { getLoggedPath } from '../utils/get-logged-path.ts';
 import { logger } from '../utils/logger.ts';
 
-function getLoggedPath(req: { path?: string; originalUrl?: string }): string | undefined {
-  if (typeof req.path === 'string' && req.path.length > 0) {
-    return req.path;
-  }
-
-  if (typeof req.originalUrl === 'string') {
-    return req.originalUrl.split('?')[0];
-  }
-
-  return undefined;
-}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const requestContextMiddleware: RequestHandler = (req, res, next) => {
-  const requestId = req.get('x-request-id')?.trim() || crypto.randomUUID();
+  const clientId = req.get('x-request-id')?.trim();
+  const requestId = clientId && UUID_RE.test(clientId) ? clientId : crypto.randomUUID();
   const startedAt = process.hrtime.bigint();
 
   res.locals.requestId = requestId;

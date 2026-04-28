@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useTonWallet } from '@tonconnect/ui-react';
+import { useTonAddress, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowUpRight } from 'lucide-react';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
@@ -14,15 +14,16 @@ const WithdrawPanel = () => {
   const { userData, refreshUser } = useAuth();
   const { addToast } = useToast();
   const wallet = useTonWallet();
+  const connectedWalletAddress = useTonAddress();
   const [amount, setAmount] = useState('');
   const [toAddress, setToAddress] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (wallet?.account?.address) {
-      setToAddress(wallet.account.address);
+    if (connectedWalletAddress) {
+      setToAddress(connectedWalletAddress);
     }
-  }, [wallet]);
+  }, [connectedWalletAddress]);
 
   const handleWithdraw = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -107,7 +108,7 @@ const WithdrawPanel = () => {
               {wallet && (
                 <button
                   className="text-[10px] font-bold uppercase bg-ink-blue text-white px-2 py-1 rounded hover:bg-blue-600 mb-1"
-                  onClick={() => setToAddress(wallet.account.address)}
+                  onClick={() => setToAddress(connectedWalletAddress)}
                   type="button"
                 >
                   Auto-fill connected wallet

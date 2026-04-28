@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
+import { useTonAddress, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowDownRight, CheckCircle, Copy } from 'lucide-react';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
@@ -19,6 +19,7 @@ const DepositPanel = () => {
   const [sendingTransaction, setSendingTransaction] = useState(false);
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
+  const connectedWalletAddress = useTonAddress();
   const copyToClipboard = useCopyToClipboard();
   const { addToast } = useToast();
 
@@ -32,6 +33,10 @@ const DepositPanel = () => {
       addToast('Please generate a memo first', 'error');
       return;
     }
+    if (!connectedWalletAddress) {
+      addToast('Please connect your wallet first', 'error');
+      return;
+    }
 
     setSendingTransaction(true);
 
@@ -43,7 +48,7 @@ const DepositPanel = () => {
 
       const prepared = await prepareTonConnectDeposit({
         memo: memoData.memo,
-        walletAddress: wallet.account.address,
+        walletAddress: connectedWalletAddress,
         amountUsdt,
       });
 

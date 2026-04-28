@@ -32,3 +32,18 @@ export function createAuthRateLimiter() {
     },
   });
 }
+
+export function createWithdrawalRateLimiter() {
+  const env = getEnv();
+
+  return rateLimit({
+    windowMs: env.WITHDRAWAL_RATE_LIMIT_WINDOW_MS,
+    max: env.WITHDRAWAL_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      code: 'WITHDRAWAL_RATE_LIMITED',
+      message: 'Too many withdrawal requests, please try again later.',
+    },
+  });
+}

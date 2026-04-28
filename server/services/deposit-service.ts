@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { Address } from '@ton/ton';
 
 import { getEnv } from '../config/env.ts';
 import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
@@ -9,6 +10,7 @@ export async function generateDepositMemo(userId: string) {
   if (!hotWalletAddress) {
     throw serviceUnavailable('HOT_WALLET_ADDRESS is not configured', 'HOT_WALLET_NOT_CONFIGURED');
   }
+  const normalizedHotWalletAddress = Address.parse(hotWalletAddress).toString({ bounceable: true });
 
   const memo = `d-${userId}-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
   await DepositMemoRepository.create({
@@ -21,8 +23,8 @@ export async function generateDepositMemo(userId: string) {
 
   return {
     memo,
-    address: hotWalletAddress,
-    instructions: `Send USDT to ${hotWalletAddress} with comment: ${memo}`,
+    address: normalizedHotWalletAddress,
+    instructions: `Send USDT to ${normalizedHotWalletAddress} with comment: ${memo}`,
     expiresIn: '24 hours',
   };
 }

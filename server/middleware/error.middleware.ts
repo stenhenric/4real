@@ -4,23 +4,12 @@ import { ZodError } from 'zod';
 import type { ApiErrorDTO } from '../../shared/types/api.ts';
 
 import { HttpError } from '../utils/http-error.ts';
+import { getLoggedPath } from '../utils/get-logged-path.ts';
 import { logger } from '../utils/logger.ts';
 
 function isIdentifierCastError(error: mongoose.Error.CastError): boolean {
   const normalizedPath = error.path?.toLowerCase() ?? '';
   return error.kind === 'ObjectId' || normalizedPath === '_id' || normalizedPath.endsWith('id');
-}
-
-function getLoggedPath(req: { path?: string; originalUrl?: string }): string | undefined {
-  if (typeof req.path === 'string' && req.path.length > 0) {
-    return req.path;
-  }
-
-  if (typeof req.originalUrl === 'string') {
-    return req.originalUrl.split('?')[0];
-  }
-
-  return undefined;
 }
 
 export const notFoundApiHandler: RequestHandler = (_req, res) => {

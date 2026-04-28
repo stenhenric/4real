@@ -8,6 +8,7 @@ import {
   requestWithdrawalHandler,
 } from '../controllers/transaction.controller.ts';
 import { authenticateToken, requireAdmin } from '../middleware/auth.middleware.ts';
+import { createWithdrawalRateLimiter } from '../middleware/rate-limit.middleware.ts';
 import { asyncHandler } from '../utils/async-handler.ts';
 import { validateBody } from '../middleware/validate.middleware.ts';
 import {
@@ -24,6 +25,6 @@ router.get('/all', requireAdmin, asyncHandler(getAllTransactions));
 router.get('/withdrawals/:withdrawalId', asyncHandler(getWithdrawalStatusHandler));
 router.post('/deposit/memo', asyncHandler(generateDepositMemoHandler));
 router.post('/deposit/prepare', validateBody(prepareTonConnectDepositRequestSchema), asyncHandler(prepareTonConnectDepositHandler));
-router.post('/withdraw', validateBody(withdrawRequestSchema), asyncHandler(requestWithdrawalHandler));
+router.post('/withdraw', createWithdrawalRateLimiter(), validateBody(withdrawRequestSchema), asyncHandler(requestWithdrawalHandler));
 
 export default router;

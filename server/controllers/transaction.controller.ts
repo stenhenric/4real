@@ -27,8 +27,10 @@ export const getUserTransactions = async (req: AuthRequest, res: Response): Prom
   res.json(transactions);
 };
 
-export const getAllTransactions = async (_req: AuthRequest, res: Response): Promise<void> => {
-  const transactions = await TransactionService.getAllTransactions();
+export const getAllTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const transactions = await TransactionService.getAllTransactions(limit, offset);
   res.json(transactions.map((transaction) => serializeLedgerTransaction(transaction)));
 };
 

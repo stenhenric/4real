@@ -36,8 +36,8 @@ export class TransactionService {
     return Transaction.find({ userId: normalizedUserId }).sort({ createdAt: -1 });
   }
 
-  static async getAllTransactions(): Promise<ITransaction[]> {
-    return Transaction.find().sort({ createdAt: -1 });
+  static async getAllTransactions(limit: number = 100, offset: number = 0): Promise<ITransaction[]> {
+    return Transaction.find().sort({ createdAt: -1 }).skip(offset).limit(limit);
   }
 
   static async getUnifiedTransactionsByUser(userId: string): Promise<TransactionDTO[]> {

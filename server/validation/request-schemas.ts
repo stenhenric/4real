@@ -1,4 +1,7 @@
+import { Address } from '@ton/ton';
 import { z } from 'zod';
+
+import { getEnv } from '../config/env.ts';
 
 const positiveMoneySchema = z.coerce
   .number()
@@ -85,8 +88,21 @@ export const merchantDepositReplayWindowRequestSchema = z.object({
 });
 
 export const withdrawRequestSchema = z.object({
-  toAddress: z.string().trim().min(1),
-  amountUsdt: positiveMoneySchema,
+  toAddress: z.string().trim().min(1).refine(
+    (value) => {
+      try {
+        Address.parse(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Invalid TON address format' },
+  ),
+  amountUsdt: positiveMoneySchema.refine(
+    (value) => value <= getEnv().MAX_WITHDRAWAL_USDT,
+    { message: 'Amount exceeds maximum withdrawal limit' },
+  ),
 });
 
 export const prepareTonConnectDepositRequestSchema = z.object({

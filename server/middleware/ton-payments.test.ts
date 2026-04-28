@@ -29,6 +29,7 @@ import {
 } from '../workers/withdrawal-worker.ts';
 
 const HOT_WALLET_ADDRESS = Address.parse(USDT_MASTER).toString({ bounceable: true });
+const HOT_WALLET_RAW = Address.parse(USDT_MASTER).toRawString();
 const ZERO_ADDRESS = Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c').toString({ bounceable: true });
 const HOT_JETTON_WALLET = ZERO_ADDRESS;
 const SENDER_JETTON_WALLET = HOT_WALLET_ADDRESS;
@@ -93,6 +94,20 @@ test('generateDepositMemo returns the existing shape and stores memo ownership',
   assert.equal('deepLink' in result, false);
   assert.equal(storedDocument?.userId, 'user-123');
   assert.equal(storedDocument?.memo, result.memo);
+});
+
+test('generateDepositMemo normalizes a raw HOT_WALLET_ADDRESS before returning it', async (t) => {
+  registerBaseCleanup(t);
+  process.env.HOT_WALLET_ADDRESS = HOT_WALLET_RAW;
+  resetEnvCacheForTests();
+
+  const createMock = mock.method(DepositMemoRepository, 'create', async () => {});
+  t.after(() => createMock.mock.restore());
+
+  const result = await generateDepositMemo('user-raw-address');
+
+  assert.equal(result.address, HOT_WALLET_ADDRESS);
+  assert.equal(result.instructions, `Send USDT to ${HOT_WALLET_ADDRESS} with comment: ${result.memo}`);
 });
 
 test('generateDepositMemo fails fast when the hot wallet is not configured and does not persist a memo', async (t) => {
