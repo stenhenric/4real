@@ -89,7 +89,16 @@ export async function executeIdempotentMutation<TBody>({
   execute,
 }: ExecuteIdempotentMutationOptions<TBody>): Promise<IdempotentMutationResponse<TBody>> {
   const requestHash = hashIdempotencyPayload(requestPayload);
-  const existing = await IdempotencyKeyRepository.findByKey(userId, routeKey, idempotencyKey);
+  let existing = await IdempotencyKeyRepository.findByKey(userId, routeKey, idempotencyKey);
+  
+  if (existing && existing.status === 'processing') {
+    const ageMs = Date.now() - existing.createdAt.getTime();
+    if (ageMs > 5 * 60 * 1000) {
+      await IdempotencyKeyRepository.deleteProcessing(userId, routeKey, idempotencyKey, existing.requestHash);
+      existing = null;
+    }
+  }
+
   if (existing) {
     return replayStoredResponse<TBody>(existing, requestHash);
   }

@@ -10,11 +10,13 @@ import { UserService } from './services/user.service.ts';
 
 dotenv.config();
 
+if (process.env.NODE_ENV === 'production') {
+  console.error('ERROR: seed.ts must not be run in production.');
+  process.exit(1);
+}
+
 const seedDB = async () => {
   await connectDB();
-
-  console.log('Ensuring system commission account exists...');
-  await UserService.ensureSystemCommissionAccountExists();
 
   console.log('Clearing existing data...');
   await User.deleteMany({});
@@ -69,7 +71,7 @@ const seedDB = async () => {
   console.log('Seeding matches...');
   await Match.insertMany([
     {
-      roomId: 'mock123',
+      roomId: 'seed01',
       player1Id: users[1]._id,
       player2Id: users[2]._id,
       p1Username: users[1].username,

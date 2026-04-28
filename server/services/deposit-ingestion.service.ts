@@ -442,27 +442,34 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
       return preview;
     }
 
+    const rejectionSession = await mongoose.startSession();
     try {
-      await ProcessedTransactionRepository.create({
-        txHash: tx.transaction_hash,
-        processedAt: new Date(),
-        type: 'deposit_rejected',
-      });
-      await AuditService.record({
-        eventType: 'deposit_rejected',
-        resourceType: 'deposit',
-        resourceId: tx.transaction_hash,
-        metadata: {
-          accepted: false,
-          reason: preview.reason,
-          senderJettonWallet: preview.senderJettonWallet,
-          senderAddress: preview.senderOwnerAddress,
-        },
+      await rejectionSession.withTransaction(async () => {
+        await ProcessedTransactionRepository.create({
+          txHash: tx.transaction_hash,
+          processedAt: new Date(),
+          type: 'deposit_rejected',
+        }, rejectionSession);
+        
+        await AuditService.record({
+          eventType: 'deposit_rejected',
+          resourceType: 'deposit',
+          resourceId: tx.transaction_hash,
+          metadata: {
+            accepted: false,
+            reason: preview.reason,
+            senderJettonWallet: preview.senderJettonWallet,
+            senderAddress: preview.senderOwnerAddress,
+          },
+          session: rejectionSession,
+        });
       });
     } catch (error) {
       if (!isDuplicateKeyError(error)) {
         throw error;
       }
+    } finally {
+      await rejectionSession.endSession();
     }
 
     return preview;
