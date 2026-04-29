@@ -8,6 +8,6 @@ export const telegramSendPhotoResponseSchema = z.object({
     chat: z.object({
       id: z.union([z.number(), z.string()]),
       username: z.string().optional(),
-    }).strict(),
+    }).passthrough(),
   }).optional(),
-}).strict();
+}).passthrough();
