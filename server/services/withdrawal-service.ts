@@ -1,9 +1,11 @@
 import mongoose from 'mongoose';
+import type { ClientSession } from 'mongoose';
 
-import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { getEnv } from '../config/env.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { badRequest } from '../utils/http-error.ts';
 import { UserService } from './user.service.ts';
+import { usdtNumberToRawAmount } from '../utils/money.ts';
 
 const MAX_TRANSACTION_RETRIES = 3;
 
@@ -18,35 +20,58 @@ export async function requestWithdrawal({
   toAddress,
   amountUsdt,
   withdrawalId,
+  session,
 }: {
   userId: string;
   toAddress: string;
   amountUsdt: number;
   withdrawalId: string;
+  session?: ClientSession;
 }) {
-  const amountRaw = BigInt(Math.round(amountUsdt * 1_000_000)).toString();
+  const amountRaw = usdtNumberToRawAmount(amountUsdt).toString();
+
+  const executeWithdrawalMutation = async (activeSession: ClientSession) => {
+    const updatedUser = await UserService.deductBalanceSafely(userId, amountUsdt, activeSession);
+    if (!updatedUser) {
+      throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
+    }
+
+    const now = new Date();
+    const dayStart = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ));
+    const nextDayStart = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const confirmedTodayRaw = await WithdrawalRepository.sumConfirmedRawBetween(userId, dayStart, nextDayStart);
+    const dailyLimitRaw = usdtNumberToRawAmount(getEnv().DAILY_WITHDRAWAL_LIMIT_USDT);
+    if (confirmedTodayRaw + BigInt(amountRaw) > dailyLimitRaw) {
+      throw badRequest('Daily withdrawal limit exceeded', 'DAILY_WITHDRAWAL_LIMIT_EXCEEDED');
+    }
+
+    await WithdrawalRepository.createQueued({
+      withdrawalId,
+      userId,
+      toAddress,
+      amountRaw,
+      amountDisplay: amountUsdt.toFixed(6),
+    }, activeSession);
+  };
+
+  if (session) {
+    await executeWithdrawalMutation(session);
+    return;
+  }
 
   for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt++) {
-    const session = await mongoose.startSession();
+    const ownSession = await mongoose.startSession();
     try {
-      await session.withTransaction(async () => {
-        const balanceDoc = await UserBalanceRepository.findByUserId(userId, session);
-        const currentRaw = BigInt(balanceDoc?.balanceRaw ?? '0');
-        const requestedRaw = BigInt(amountRaw);
-        if (currentRaw < requestedRaw) {
-          throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
-        }
-        const nextRaw = (currentRaw - requestedRaw).toString();
-        await UserBalanceRepository.setBalanceRaw(userId, nextRaw, session);
-        await WithdrawalRepository.createQueued({
-          withdrawalId,
-          userId,
-          toAddress,
-          amountRaw,
-          amountDisplay: amountUsdt.toFixed(6),
-        }, session);
-
-        await UserService.syncUserDisplayBalance(userId, session);
+      await ownSession.withTransaction(async () => {
+        await executeWithdrawalMutation(ownSession);
       });
       return;
     } catch (error) {
@@ -55,7 +80,7 @@ export async function requestWithdrawal({
       }
       throw error;
     } finally {
-      await session.endSession();
+      await ownSession.endSession();
     }
   }
 }

@@ -6,12 +6,12 @@ import { createTonClient } from './ton-client.ts';
 export const USDT_MASTER = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 
 interface JettonPayloadCommentLike {
-  comment?: string;
+  comment?: string | undefined;
 }
 
 interface JettonTransferCommentLike {
-  comment?: string;
-  decoded_forward_payload?: JettonPayloadCommentLike | JettonPayloadCommentLike[] | null;
+  comment?: string | undefined;
+  decoded_forward_payload?: JettonPayloadCommentLike | JettonPayloadCommentLike[] | null | undefined;
 }
 
 export async function deriveJettonWallet(ownerAddress: string) {

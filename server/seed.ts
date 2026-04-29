@@ -6,25 +6,26 @@ import { Match } from './models/Match.ts';
 import { Order } from './models/Order.ts';
 import connectDB from './config/db.ts';
 import { UserBalanceRepository } from './repositories/user-balance.repository.ts';
-import { UserService } from './services/user.service.ts';
+import { decimal128FromRaw } from './utils/money.ts';
+import { logger } from './utils/logger.ts';
 
 dotenv.config();
 
 if (process.env.NODE_ENV === 'production') {
-  console.error('ERROR: seed.ts must not be run in production.');
+  logger.error('seed.production_blocked');
   process.exit(1);
 }
 
 const seedDB = async () => {
   await connectDB();
 
-  console.log('Clearing existing data...');
+  logger.info('seed.clearing_existing_data');
   await User.deleteMany({});
   await Match.deleteMany({});
   await Order.deleteMany({});
   await UserBalanceRepository.deleteAll();
 
-  console.log('Seeding users...');
+  logger.info('seed.seeding_users');
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash('password123', salt);
 
@@ -55,47 +56,56 @@ const seedDB = async () => {
     }
   ]);
 
-  const userBalances = users.map((u) => ({
-    userId: u._id.toString(),
-    balanceRaw: BigInt(Math.round(u.balance * 1_000_000)).toString(),
-    totalDepositedRaw: '0',
-    totalWithdrawnRaw: '0',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }));
+  const userBalances = users.map((u) => {
+    const rawBalance = BigInt(Math.round(u.balance * 1_000_000)).toString();
+    return {
+      userId: u._id.toString(),
+      balanceRaw: rawBalance,
+      balanceAtomic: decimal128FromRaw(rawBalance),
+      totalDepositedRaw: '0',
+      totalDepositedAtomic: decimal128FromRaw(0),
+      totalWithdrawnRaw: '0',
+      totalWithdrawnAtomic: decimal128FromRaw(0),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  });
   await UserBalanceRepository.insertMany(userBalances);
-  for (const user of users) {
-    await UserService.syncUserDisplayBalance(user._id.toString());
+
+  logger.info('seed.seeding_matches');
+  const player1 = users[1];
+  const player2 = users[2];
+  if (!player1 || !player2) {
+    throw new Error('Seed users were not created as expected');
   }
 
-  console.log('Seeding matches...');
   await Match.insertMany([
     {
       roomId: 'seed01',
-      player1Id: users[1]._id,
-      player2Id: users[2]._id,
-      p1Username: users[1].username,
-      p2Username: users[2].username,
+      player1Id: player1._id,
+      player2Id: player2._id,
+      p1Username: player1.username,
+      p2Username: player2.username,
       status: 'completed',
-      winnerId: users[1]._id.toString(),
+      winnerId: player1._id.toString(),
       wager: 10,
       isPrivate: false,
       moveHistory: [
-        { userId: users[1]._id.toString(), col: 0, row: 5 },
-        { userId: users[2]._id.toString(), col: 1, row: 5 },
-        { userId: users[1]._id.toString(), col: 0, row: 4 },
-        { userId: users[2]._id.toString(), col: 1, row: 4 },
-        { userId: users[1]._id.toString(), col: 0, row: 3 },
-        { userId: users[2]._id.toString(), col: 1, row: 3 },
-        { userId: users[1]._id.toString(), col: 0, row: 2 } // P1 wins with 4 in a col
+        { userId: player1._id.toString(), col: 0, row: 5 },
+        { userId: player2._id.toString(), col: 1, row: 5 },
+        { userId: player1._id.toString(), col: 0, row: 4 },
+        { userId: player2._id.toString(), col: 1, row: 4 },
+        { userId: player1._id.toString(), col: 0, row: 3 },
+        { userId: player2._id.toString(), col: 1, row: 3 },
+        { userId: player1._id.toString(), col: 0, row: 2 },
       ]
     }
   ]);
 
-  console.log('Seeding orders...');
+  logger.info('seed.seeding_orders');
   await Order.insertMany([
     {
-      userId: users[1]._id,
+      userId: player1._id,
       type: 'BUY',
       amount: 50,
       status: 'DONE',
@@ -107,7 +117,7 @@ const seedDB = async () => {
       }
     },
     {
-      userId: users[2]._id,
+      userId: player2._id,
       type: 'SELL',
       amount: 20,
       status: 'PENDING',
@@ -120,8 +130,11 @@ const seedDB = async () => {
     }
   ]);
 
-  console.log('Database seeded successfully!');
-  mongoose.connection.close();
+  logger.info('seed.completed');
+  await mongoose.connection.close();
 };
 
-seedDB().catch(console.error);
+void seedDB().catch((error) => {
+  logger.error('seed.failed', { error });
+  process.exit(1);
+});

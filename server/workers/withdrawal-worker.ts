@@ -8,6 +8,7 @@ import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { AuditService } from '../services/audit.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
+import { LockUnavailableError, withLock } from '../services/distributed-lock.service.ts';
 import {
   findWithdrawalTransferOnChain,
   getHotWalletTonBalance,
@@ -18,7 +19,6 @@ import {
 import { UserService } from '../services/user.service.ts';
 import { logger } from '../utils/logger.ts';
 
-let isSending = false;
 let isConfirming = false;
 let isMonitoring = false;
 let hotWalletAddress: string | null = null;
@@ -29,6 +29,7 @@ const defaultWorkerDependencies = {
   findWithdrawalTransferOnChain,
   getHotWalletTonBalance,
   getHotWalletUsdtBalanceRaw,
+  withLock,
 };
 
 const workerDependencies = {
@@ -55,7 +56,7 @@ async function refundFailedWithdrawal({
   amountDisplay,
   errorMessage,
 }: {
-  id: unknown;
+  id: mongoose.Types.ObjectId | string;
   withdrawalId: string;
   userId: string;
   amountRaw: string;
@@ -75,7 +76,6 @@ async function refundFailedWithdrawal({
         referenceId: withdrawalId,
         session,
       });
-      await UserService.syncUserDisplayBalance(userId, session);
     });
   } finally {
     await session.endSession();
@@ -93,11 +93,13 @@ export async function initWorker() {
 }
 
 export async function runWithdrawalWorker() {
-  if (!hotJettonWallet) return;
-  if (isSending) return;
-  isSending = true;
-
-  try {
+  const currentHotJettonWallet = hotJettonWallet;
+  const currentHotWalletAddress = hotWalletAddress;
+  if (!currentHotJettonWallet) return;
+  if (!currentHotWalletAddress) return;
+  const env = getEnv();
+  const sendLockResource = `wallet-send:${currentHotWalletAddress}`;
+  const sendTask = async () => {
     const doc = await WithdrawalRepository.claimNextQueued(3);
 
     if (!doc) return;
@@ -109,7 +111,7 @@ export async function runWithdrawalWorker() {
         toAddress: doc.toAddress,
         amountRaw: doc.amountRaw,
         withdrawalId: doc.withdrawalId,
-        hotJettonWallet,
+        hotJettonWallet: currentHotJettonWallet,
       });
 
       try {
@@ -154,7 +156,6 @@ export async function runWithdrawalWorker() {
           });
         }
       }
-
     } catch (sendErr: unknown) {
       const errorMessage = sendErr instanceof Error ? sendErr.message : String(sendErr);
       logger.error('withdrawal.failed', { withdrawalId: doc.withdrawalId, errorMessage });
@@ -190,9 +191,24 @@ export async function runWithdrawalWorker() {
         }
       }
     }
+  };
 
-  } finally {
-    isSending = false;
+  try {
+    if (!env.FEATURE_DISTRIBUTED_LOCK) {
+      await sendTask();
+      return;
+    }
+
+    await workerDependencies.withLock(sendLockResource, 30_000, sendTask);
+  } catch (error) {
+    if (error instanceof LockUnavailableError) {
+      logger.info('withdrawal.send_lock_unavailable', {
+        resource: sendLockResource,
+      });
+      return;
+    }
+
+    throw error;
   }
 }
 
@@ -295,7 +311,7 @@ export async function monitorHotWalletBalances() {
     const runtime = getHotWalletRuntime();
     const tonBalanceRaw = await workerDependencies.getHotWalletTonBalance(runtime.hotWalletAddress);
     const onChainUsdtRaw = await workerDependencies.getHotWalletUsdtBalanceRaw(runtime.hotWalletAddress);
-    const ledgerUsdtRaw = await UserBalanceRepository.sumBalanceRaw({
+    const ledgerUsdtRaw = await UserBalanceRepository.sumBalanceRawForLedger({
       excludeUserIds: [SYSTEM_COMMISSION_ACCOUNT_ID],
     });
     const tonBalance = Number(tonBalanceRaw) / 1_000_000_000;
@@ -456,7 +472,6 @@ export async function recoverStuckWithdrawals() {
 }
 
 export function resetWithdrawalWorkerStateForTests(): void {
-  isSending = false;
   isConfirming = false;
   isMonitoring = false;
   hotWalletAddress = null;

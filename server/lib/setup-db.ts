@@ -4,8 +4,10 @@ import { Transaction } from '../models/Transaction.ts';
 import { User } from '../models/User.ts';
 import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
 import { DepositRepository } from '../repositories/deposit.repository.ts';
+import { FailedDepositIngestionRepository } from '../repositories/failed-deposit-ingestion.repository.ts';
 import { JettonWalletCacheRepository } from '../repositories/jetton-wallet-cache.repository.ts';
 import { AuditEventRepository } from '../repositories/audit-event.repository.ts';
+import { DistributedLockRepository } from '../repositories/distributed-lock.repository.ts';
 import { IdempotencyKeyRepository } from '../repositories/idempotency-key.repository.ts';
 import { OrderProofRelayRepository } from '../repositories/order-proof-relay.repository.ts';
 import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
@@ -21,6 +23,7 @@ export async function setupIndexes() {
     WithdrawalRepository.ensureIndexes(),
     UserBalanceRepository.ensureIndexes(),
     AuditEventRepository.ensureIndexes(),
+    DistributedLockRepository.ensureIndexes(),
     IdempotencyKeyRepository.ensureIndexes(),
     OrderProofRelayRepository.ensureIndexes(),
     ProcessedTransactionRepository.ensureIndexes(),
@@ -28,6 +31,7 @@ export async function setupIndexes() {
     PollerStateRepository.ensureIndexes(),
     JettonWalletCacheRepository.ensureIndexes(),
     UnmatchedDepositRepository.ensureIndexes(),
+    FailedDepositIngestionRepository.ensureIndexes(),
     User.createIndexes(),
     Match.createIndexes(),
     Order.createIndexes(),

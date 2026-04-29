@@ -176,7 +176,7 @@ const DepositPanel = () => {
                   TonConnect Deposit
                 </h4>
                 <p className="text-xs font-mono opacity-60 mb-3">
-                  Recommended. Native TON transfer deep links are disabled because they do not safely represent a USDT jetton deposit.
+                  Recommended.
                 </p>
                 <div className="flex gap-2 mb-4">
                   <input

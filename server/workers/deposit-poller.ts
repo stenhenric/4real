@@ -1,3 +1,4 @@
+import { FailedDepositIngestionRepository } from '../repositories/failed-deposit-ingestion.repository.ts';
 import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import {
@@ -23,27 +24,45 @@ export async function pollDeposits() {
   if (transfers.length === 0) return;
 
   const txHashes = transfers.map((tx: JettonTransferEvent) => tx.transaction_hash);
-  const seenDocs = await ProcessedTransactionRepository.findSeenHashes(txHashes);
+  const [seenDocs, failedIngestionDocs] = await Promise.all([
+    ProcessedTransactionRepository.findSeenHashes(txHashes),
+    FailedDepositIngestionRepository.findByTxHashes(txHashes),
+  ]);
   const seenHashes = new Set(seenDocs.map(d => d.txHash));
+  const failedIngestionMap = new Map(
+    failedIngestionDocs.map((document) => [document.txHash, document]),
+  );
 
-  const newTransfers = transfers.filter((tx: JettonTransferEvent) => !seenHashes.has(tx.transaction_hash));
-  if (newTransfers.length === 0) {
-    const latestTime = Math.max(...transfers.map((t: JettonTransferEvent) => t.transaction_now));
-    await PollerStateRepository.setLastProcessedTime('deposit_poller', latestTime);
-    return;
-  }
+  for (const tx of transfers) {
+    if (seenHashes.has(tx.transaction_hash)) {
+      continue;
+    }
 
-  for (const tx of newTransfers) {
+    const existingFailure = failedIngestionMap.get(tx.transaction_hash);
+    if (existingFailure && existingFailure.status !== 'resolved') {
+      continue;
+    }
+
     try {
       await ingestIncomingTransfer(tx);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await FailedDepositIngestionRepository.upsertFailure({
+        txHash: tx.transaction_hash,
+        transferData: tx,
+        lastError: errorMessage,
+      });
       logger.error('deposit_poller.ingestion_failed', {
         txHash: tx.transaction_hash,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
       });
     }
   }
 
   const latestTime = Math.max(...transfers.map((t: JettonTransferEvent) => t.transaction_now));
-  await PollerStateRepository.setLastProcessedTime('deposit_poller', latestTime);
+  const earliestPendingFailureTime = await FailedDepositIngestionRepository.findEarliestPendingTransactionTime();
+  const nextCursor = earliestPendingFailureTime === null
+    ? latestTime
+    : Math.min(latestTime, earliestPendingFailureTime);
+  await PollerStateRepository.setLastProcessedTime('deposit_poller', nextCursor);
 }

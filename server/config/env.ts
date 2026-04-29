@@ -27,6 +27,8 @@ const rawEnvSchema = z.object({
   HOT_WALLET_MIN_TON_BALANCE: z.coerce.number().nonnegative().default(1),
   HOT_WALLET_MIN_USDT_BALANCE: z.coerce.number().nonnegative().default(0),
   HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT: z.coerce.number().nonnegative().default(1),
+  DEPOSIT_INGESTION_MAX_RETRIES: z.coerce.number().int().positive().default(5),
+  REDIS_URL: z.string().trim().url().optional(),
   TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
   TELEGRAM_PROOF_CHANNEL_ID: z.string().trim().optional(),
   PROOF_MAX_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
@@ -61,6 +63,51 @@ const rawEnvSchema = z.object({
   DAILY_WITHDRAWAL_LIMIT_USDT: z.coerce.number().positive().default(50_000),
   WITHDRAWAL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   WITHDRAWAL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  FEATURE_AGGREGATED_BALANCE_SUM: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
+  FEATURE_ATOMIC_BALANCE: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
+  FEATURE_DISTRIBUTED_LOCK: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
+  FEATURE_BULLMQ_JOBS: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
+  FEATURE_REDIS_SOCKET_ADAPTER: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
 });
 
 export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI' | 'PROOF_ALLOWED_MIME_TYPES'> {
@@ -97,7 +144,7 @@ function hasMongoDatabaseName(uri: string): boolean {
 
   const databaseName = withoutProtocol
     .slice(slashIndex + 1)
-    .split('?')[0]
+    .split('?')[0] ?? ''
     .trim();
 
   return databaseName.length > 0;

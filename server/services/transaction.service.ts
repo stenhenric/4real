@@ -2,20 +2,22 @@ import mongoose from 'mongoose';
 
 import { serializeDepositTransaction, serializeLedgerTransaction, serializeWithdrawalTransaction } from '../serializers/api.ts';
 import { Transaction } from '../models/Transaction.ts';
-import type { ITransaction } from '../models/Transaction.ts';
+import type { ITransaction, LedgerTransactionStatus, LedgerTransactionType } from '../models/Transaction.ts';
 import { DepositRepository } from '../repositories/deposit.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import type { TransactionDTO } from '../types/api.ts';
 
+interface CreateTransactionInput {
+  userId: string | mongoose.Types.ObjectId;
+  type: LedgerTransactionType;
+  amount: number;
+  status?: LedgerTransactionStatus;
+  referenceId?: string;
+  session?: mongoose.ClientSession;
+}
+
 export class TransactionService {
-  static async createTransaction(data: {
-    userId: string | mongoose.Types.ObjectId;
-    type: string;
-    amount: number;
-    status?: string;
-    referenceId?: string;
-    session?: mongoose.ClientSession;
-  }): Promise<ITransaction> {
+  static async createTransaction(data: CreateTransactionInput): Promise<ITransaction> {
     const userId = typeof data.userId === 'string'
       ? new mongoose.Types.ObjectId(data.userId)
       : data.userId;
@@ -56,7 +58,7 @@ export class TransactionService {
 
   static async updateTransactionStatusByReference(
     referenceId: string,
-    status: string,
+    status: LedgerTransactionStatus,
     session?: mongoose.ClientSession,
   ): Promise<void> {
     await Transaction.updateMany(

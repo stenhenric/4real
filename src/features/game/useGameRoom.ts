@@ -9,6 +9,11 @@ interface GameOverPayload {
   winningLine?: WinningLine;
 }
 
+interface SocketErrorPayload {
+  code?: string;
+  message: string;
+}
+
 interface UseGameRoomOptions {
   roomId?: string;
   userId?: string;
@@ -61,8 +66,8 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
       handleRoomError(error.message);
     };
 
-    const handleServerError = (message: string) => {
-      handleRoomError(message);
+    const handleServerError = (error: string | SocketErrorPayload) => {
+      handleRoomError(typeof error === 'string' ? error : error.message);
     };
 
     const handleGameStarted = (nextRoom: RoomState) => {

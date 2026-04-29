@@ -22,8 +22,16 @@ export class IdempotencyKeyRepository {
     return getMongoCollection<IdempotencyKeyDocument>('idempotency_keys');
   }
 
-  static async findByKey(userId: string, routeKey: string, idempotencyKey: string) {
-    return this.collection().findOne({ userId, routeKey, idempotencyKey });
+  static async findByKey(
+    userId: string,
+    routeKey: string,
+    idempotencyKey: string,
+    session?: mongoose.ClientSession,
+  ) {
+    return this.collection().findOne(
+      { userId, routeKey, idempotencyKey },
+      session ? { session } : undefined,
+    );
   }
 
   static async createProcessing(document: Pick<
@@ -37,6 +45,36 @@ export class IdempotencyKeyRepository {
       createdAt: now,
       updatedAt: now,
     }, session ? { session } : undefined);
+  }
+
+  static async claimOrGetExisting(
+    document: Pick<IdempotencyKeyDocument, 'userId' | 'routeKey' | 'idempotencyKey' | 'requestHash'>,
+    session?: mongoose.ClientSession,
+  ): Promise<IdempotencyKeyDocument | null> {
+    const now = new Date();
+    return this.collection().findOneAndUpdate(
+      {
+        userId: document.userId,
+        routeKey: document.routeKey,
+        idempotencyKey: document.idempotencyKey,
+      },
+      {
+        $setOnInsert: {
+          ...document,
+          status: 'processing',
+          createdAt: now,
+          updatedAt: now,
+        },
+        $set: {
+          updatedAt: now,
+        },
+      },
+      {
+        upsert: true,
+        returnDocument: 'before',
+        ...(session ? { session } : {}),
+      },
+    );
   }
 
   static async markCompleted(
@@ -61,6 +99,36 @@ export class IdempotencyKeyRepository {
       },
       session ? { session } : undefined,
     );
+  }
+
+  static async markCompletedIfProcessing(
+    document: Pick<IdempotencyKeyDocument, 'userId' | 'routeKey' | 'idempotencyKey' | 'requestHash'>,
+    responseStatusCode: number,
+    responseBody: unknown,
+    session?: mongoose.ClientSession,
+  ): Promise<boolean> {
+    const now = new Date();
+    const result = await this.collection().updateOne(
+      {
+        userId: document.userId,
+        routeKey: document.routeKey,
+        idempotencyKey: document.idempotencyKey,
+        requestHash: document.requestHash,
+        status: 'processing',
+      },
+      {
+        $set: {
+          status: 'completed',
+          responseStatusCode,
+          responseBody,
+          updatedAt: now,
+          completedAt: now,
+        },
+      },
+      session ? { session } : undefined,
+    );
+
+    return result.matchedCount === 1;
   }
 
   static async deleteProcessing(

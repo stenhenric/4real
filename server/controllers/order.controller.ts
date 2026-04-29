@@ -1,17 +1,19 @@
 import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
+import type { ClientSession } from 'mongoose';
 
 import { getEnv } from '../config/env.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
+import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeOrder } from '../serializers/api.ts';
-import { executeIdempotentMutation } from '../services/idempotency.service.ts';
+import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
 import { getMerchantConfig } from '../services/merchant-config.service.ts';
 import { OrderService } from '../services/order.service.ts';
 import { getOrRelayOrderProof } from '../services/order-proof-relay.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
 import { parseMultipartForm } from '../utils/multipart.ts';
-import { badRequest, notFound, payloadTooLarge, serviceUnavailable, unauthorized, unsupportedMediaType } from '../utils/http-error.ts';
+import { badRequest, notFound, payloadTooLarge, serviceUnavailable, unsupportedMediaType } from '../utils/http-error.ts';
 import {
   createOrderRequestSchema,
   type UpdateOrderStatusRequest,
@@ -23,10 +25,7 @@ function roundMoney(value: number): number {
 
 export class OrderController {
   static async getOrders(req: AuthRequest, res: Response): Promise<void> {
-    if (!req.user?.id) {
-      throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
-    }
-
+    assertAuthenticated(req);
     const orders = await OrderService.getOrders(req.user.id, req.user.isAdmin);
     res.json(orders.map((order) => serializeOrder(order)));
   }
@@ -36,11 +35,9 @@ export class OrderController {
   }
 
   static async createOrder(req: AuthRequest, res: Response): Promise<void> {
-    if (!req.user?.id) {
-      throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
-    }
-
+    assertAuthenticated(req);
     const env = getEnv();
+    const userId = req.user.id;
     const idempotencyKey = getRequiredIdempotencyKey(req);
     const { fields, files } = await parseMultipartForm(req, {
       maxBytes: env.PROOF_MAX_BYTES + 64 * 1024,
@@ -87,7 +84,7 @@ export class OrderController {
       throw serviceUnavailable('Merchant rate is not configured', 'MERCHANT_RATE_NOT_CONFIGURED');
     }
 
-    const user = await UserService.findById(req.user.id);
+    const user = await UserService.findById(userId);
     if (!user) {
       throw notFound('User not found', 'USER_NOT_FOUND');
     }
@@ -96,8 +93,8 @@ export class OrderController {
     const proofDigest = proofImage
       ? crypto.createHash('sha256').update(proofImage.data).digest('hex')
       : undefined;
-    const result = await executeIdempotentMutation({
-      userId: req.user.id,
+    const result = await executeIdempotentMutationV2({
+      userId,
       routeKey: 'orders:create',
       idempotencyKey,
       requestPayload: {
@@ -110,7 +107,7 @@ export class OrderController {
         proofDigest,
         proofMimeType: proofImage?.contentType,
       },
-      execute: async ({ requestHash }) => {
+      execute: async ({ requestHash, session }: { requestHash: string; session: ClientSession }) => {
         const proof = parsedBody.type === 'BUY' && proofImage
           ? await getOrRelayOrderProof({
               userId: user._id.toString(),
@@ -136,12 +133,13 @@ export class OrderController {
           userId: user._id,
           type: parsedBody.type,
           amount: parsedBody.amount,
-          proof,
-          transactionCode: parsedBody.transactionCode,
+          ...(proof ? { proof } : {}),
+          ...(parsedBody.transactionCode ? { transactionCode: parsedBody.transactionCode } : {}),
           fiatCurrency: merchantConfig.fiatCurrency,
           exchangeRate,
           fiatTotal,
-          requestId: res.locals.requestId,
+          ...(res.locals.requestId ? { requestId: res.locals.requestId as string } : {}),
+          session,
         });
 
         return {
@@ -155,13 +153,16 @@ export class OrderController {
   }
 
   static async updateOrder(req: AuthRequest, res: Response): Promise<void> {
-    if (!req.user?.id) {
-      throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
-    }
+    assertAuthenticated(req);
 
     const { status } = req.body as UpdateOrderStatusRequest;
+    const orderId = req.params.id;
+    if (!orderId) {
+      throw notFound('Order not found', 'ORDER_NOT_FOUND');
+    }
+
     const order = await OrderService.updateOrderStatus(
-      req.params.id,
+      orderId,
       status,
       req.user.id,
       res.locals.requestId,

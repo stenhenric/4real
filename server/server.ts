@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import helmet from 'helmet';
 import { Server as SocketIOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 
 import { createApp } from './app.ts';
 import { getSocketCorsOptions } from './config/cors.ts';
@@ -13,6 +14,7 @@ import { RealtimeMatchService } from './services/realtime-match.service.ts';
 import { registerGameSocketHandlers } from './sockets/game.socket.ts';
 import { registerPublicMatchEvents } from './sockets/public-match-events.ts';
 import { startBackgroundJobs } from './services/background-jobs.service.ts';
+import { disconnectRedis, getRedisClient } from './services/redis.service.ts';
 import { UserService } from './services/user.service.ts';
 
 export async function startServer() {
@@ -49,6 +51,12 @@ export async function startServer() {
       maxDisconnectionDuration: 2 * 60 * 1000,
     },
   });
+  let socketAdapterSubClient: ReturnType<typeof getRedisClient> | null = null;
+  if (env.FEATURE_REDIS_SOCKET_ADAPTER && env.REDIS_URL) {
+    const pubClient = getRedisClient();
+    socketAdapterSubClient = pubClient.duplicate();
+    io.adapter(createAdapter(pubClient, socketAdapterSubClient));
+  }
   io.engine.use(helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
@@ -83,7 +91,7 @@ export async function startServer() {
     forceShutdownTimer.unref?.();
 
     try {
-      backgroundJobs.stop();
+      await backgroundJobs.stop();
       roomRegistry.stop();
 
       await new Promise<void>((resolve) => io.close(() => resolve()));
@@ -98,7 +106,11 @@ export async function startServer() {
         });
       });
 
+      if (socketAdapterSubClient) {
+        await socketAdapterSubClient.quit();
+      }
       await disconnectDB();
+      await disconnectRedis();
       logger.info('server.shutdown_completed', { signal });
       clearTimeout(forceShutdownTimer);
       process.exit(0);

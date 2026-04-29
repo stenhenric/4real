@@ -192,7 +192,6 @@ export interface DepositMemoDTO {
   address: string;
   instructions: string;
   expiresIn: string;
-  deepLink?: string;
 }
 
 export interface WithdrawRequestDTO {

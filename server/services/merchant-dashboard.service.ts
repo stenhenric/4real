@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 import { getEnv } from '../config/env.ts';
-import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from "../models/User.ts";
+import { SYSTEM_COMMISSION_ACCOUNT_ID } from "../models/User.ts";
 import { Order } from '../models/Order.ts';
 import { getMongoCollection } from '../repositories/mongo.repository.ts';
 import type { DepositDocument } from '../repositories/deposit.repository.ts';
@@ -150,10 +150,10 @@ function buildJobStatuses(backgroundJobs: BackgroundJobState | null): MerchantJo
       label: JOB_LABELS[key],
       enabled: snapshot.enabled,
       state: getJobState(snapshot),
-      lastStartedAt: snapshot.lastStartedAt,
-      lastSucceededAt: snapshot.lastSucceededAt,
-      lastFailedAt: snapshot.lastFailedAt,
-      lastError: snapshot.lastError,
+      ...(snapshot.lastStartedAt ? { lastStartedAt: snapshot.lastStartedAt } : {}),
+      ...(snapshot.lastSucceededAt ? { lastSucceededAt: snapshot.lastSucceededAt } : {}),
+      ...(snapshot.lastFailedAt ? { lastFailedAt: snapshot.lastFailedAt } : {}),
+      ...(snapshot.lastError ? { lastError: snapshot.lastError } : {}),
     };
   });
 }
@@ -288,13 +288,13 @@ async function fetchOrders(options: {
       status: order.status,
       createdAt: order.createdAt.toISOString(),
       waitMinutes: risk.waitMinutes,
-      proof: order.proof,
-      transactionCode: order.transactionCode,
-      fiatCurrency: order.fiatCurrency,
-      exchangeRate: order.exchangeRate,
-      fiatTotal: order.fiatTotal,
       riskLevel: risk.riskLevel,
       riskFlags: risk.riskFlags,
+      ...(order.proof ? { proof: order.proof } : {}),
+      ...(order.transactionCode ? { transactionCode: order.transactionCode } : {}),
+      ...(order.fiatCurrency ? { fiatCurrency: order.fiatCurrency } : {}),
+      ...(order.exchangeRate !== undefined ? { exchangeRate: order.exchangeRate } : {}),
+      ...(order.fiatTotal !== undefined ? { fiatTotal: order.fiatTotal } : {}),
     };
   });
 
@@ -436,6 +436,9 @@ function buildVolumeSeries(orders: Array<{ createdAt: Date; amount: number }>, n
       Math.max(0, Math.floor((order.createdAt.getTime() - dayStart) / bucketSizeMs)),
     );
     const bucket = buckets[bucketIndex];
+    if (!bucket) {
+      continue;
+    }
     bucket.completedVolumeUsdt = roundMoney(bucket.completedVolumeUsdt + order.amount);
     bucket.completedCount += 1;
   }
@@ -475,7 +478,7 @@ export class MerchantDashboardService {
       withdrawalCounts,
       customerLiabilityUsdtRaw,
       balanceSnapshot,
-      systemCommissionAccount,
+      systemCommissionBalance,
       merchantConfig,
     ] = await Promise.all([
       fetchOrders({ filter: { status: 'PENDING' } }),
@@ -489,9 +492,9 @@ export class MerchantDashboardService {
       getMongoCollection<UnmatchedDepositDocument>(UNMATCHED_DEPOSITS_COLLECTION)
         .countDocuments({ resolved: { $ne: true } }),
       getWithdrawalCounts(),
-      UserBalanceRepository.sumBalanceRaw({ excludeUserIds: [SYSTEM_COMMISSION_ACCOUNT_ID] }),
+      UserBalanceRepository.sumBalanceRawForLedger({ excludeUserIds: [SYSTEM_COMMISSION_ACCOUNT_ID] }),
       getBalanceSnapshot(),
-      User.findById(SYSTEM_COMMISSION_ACCOUNT_ID).select('balance').lean(),
+      UserBalanceRepository.findByUserId(SYSTEM_COMMISSION_ACCOUNT_ID),
       getMerchantConfig(),
     ]);
 
@@ -534,7 +537,9 @@ export class MerchantDashboardService {
     const usdtDeltaUsdt = balanceSnapshot.onChainUsdtBalanceUsdt === null
       ? null
       : roundMoney(balanceSnapshot.onChainUsdtBalanceUsdt - ledgerUsdtBalanceUsdt);
-    const systemCommissionUsdt = systemCommissionAccount?.balance ?? 0;
+    const systemCommissionUsdt = roundMoney(
+      usdtRawToNumber(UserBalanceRepository.getBalanceRaw(systemCommissionBalance)),
+    );
 
     const alerts: MerchantAlertDTO[] = [];
     const env = getEnv();
@@ -645,8 +650,8 @@ export class MerchantDashboardService {
           category: 'operations',
           title: `${job.label} is unavailable`,
           description: job.lastError ?? 'The worker is disabled or has not reported a healthy state.',
-          createdAt: job.lastFailedAt,
           targetPath: '/merchant/liquidity',
+          ...(job.lastFailedAt ? { createdAt: job.lastFailedAt } : {}),
         });
       } else if (job.state === 'warning') {
         alerts.push({
@@ -655,8 +660,8 @@ export class MerchantDashboardService {
           category: 'operations',
           title: `${job.label} reported a recent problem`,
           description: job.lastError ?? 'The worker has recent failures and should be checked.',
-          createdAt: job.lastFailedAt,
           targetPath: '/merchant/liquidity',
+          ...(job.lastFailedAt ? { createdAt: job.lastFailedAt } : {}),
         });
       }
     }
@@ -715,8 +720,8 @@ export class MerchantDashboardService {
         failedWithdrawalCount: withdrawalCounts.failed,
         unresolvedDepositCount,
         jobs: jobStatuses,
-        balanceError: balanceSnapshot.error,
         systemCommissionUsdt,
+        ...(balanceSnapshot.error ? { balanceError: balanceSnapshot.error } : {}),
       },
       alerts: sortAlerts(alerts),
     };

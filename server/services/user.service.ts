@@ -5,18 +5,21 @@ import type { IUser } from '../models/User.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { TransactionService } from './transaction.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
+import { rawAmountToUsdtNumber, usdtNumberToRawAmount } from '../utils/money.ts';
+
+export interface CreateUserInput {
+  username: string;
+  email: string;
+  passwordHash: string;
+  elo?: number;
+  isAdmin?: boolean;
+  tokenVersion?: number;
+}
 
 export class UserService {
-  static async syncUserDisplayBalance(userId: string, session?: mongoose.ClientSession): Promise<number> {
+  static async getDisplayBalance(userId: string, session?: mongoose.ClientSession): Promise<number> {
     const balanceDoc = await UserBalanceRepository.findByUserId(userId, session);
-    const balanceRaw = BigInt(balanceDoc?.balanceRaw ?? '0');
-    const balance = Number(balanceRaw) / 1_000_000;
-    await User.findByIdAndUpdate(
-      userId,
-      { $set: { balance } },
-      session ? { session } : undefined
-    );
-    return balance;
+    return rawAmountToUsdtNumber(UserBalanceRepository.getBalanceRaw(balanceDoc));
   }
 
   static async ensureSystemCommissionAccountExists(): Promise<void> {
@@ -33,7 +36,6 @@ export class UserService {
       });
       await user.save();
       await UserBalanceRepository.ensureExists(SYSTEM_COMMISSION_ACCOUNT_ID);
-      await this.syncUserDisplayBalance(SYSTEM_COMMISSION_ACCOUNT_ID);
     }
   }
 
@@ -50,14 +52,21 @@ export class UserService {
     });
   }
 
-  static async createUser(userData: Partial<IUser>): Promise<IUser> {
+  static async createUser(userData: CreateUserInput): Promise<IUser> {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-      const user = new User(userData);
+      const user = new User({
+        username: userData.username,
+        email: userData.email,
+        passwordHash: userData.passwordHash,
+        balance: 0,
+        elo: userData.elo ?? 1000,
+        isAdmin: userData.isAdmin ?? false,
+        tokenVersion: userData.tokenVersion ?? 0,
+      });
       const saved = await user.save({ session });
-      await UserBalanceRepository.ensureExists(saved._id.toString(), session);
-      await this.syncUserDisplayBalance(saved._id.toString(), session);
+      await UserBalanceRepository.ensureExists(saved._id.toString(), session, '0');
       await session.commitTransaction();
       return saved;
     } catch (error) {
@@ -82,26 +91,34 @@ export class UserService {
   }
 
   static async updateBalance(id: string, amount: number, session?: mongoose.ClientSession): Promise<IUser | null> {
-    const rawDelta = BigInt(Math.round(amount * 1_000_000)).toString();
-    const current = await UserBalanceRepository.findByUserId(id, session);
-    const currentRaw = BigInt(current?.balanceRaw ?? '0');
-    await UserBalanceRepository.setBalanceRaw(id, (currentRaw + BigInt(rawDelta)).toString(), session);
-    await this.syncUserDisplayBalance(id, session);
-    const query = User.findById(id).select('-passwordHash -__v');
-    return session ? query.session(session) : query;
+    const rawDelta = usdtNumberToRawAmount(amount);
+    if (rawDelta === 0n) {
+      return this.findById(id, session);
+    }
+
+    if (rawDelta < 0n) {
+      return this.deductBalanceSafely(id, Math.abs(amount), session);
+    }
+
+    await UserBalanceRepository.adjustBalanceRaw(id, rawDelta.toString(), session);
+    return this.findById(id, session);
   }
 
   static async deductBalanceSafely(id: string, amount: number, session?: mongoose.ClientSession): Promise<IUser | null> {
+    if (amount <= 0) {
+      return this.findById(id, session);
+    }
+
     if (session) {
-      const amountRaw = BigInt(Math.round(amount * 1_000_000)).toString();
-      const balanceDoc = await UserBalanceRepository.findByUserId(id, session);
-      const currentRaw = BigInt(balanceDoc?.balanceRaw ?? '0');
-      if (currentRaw < BigInt(amountRaw)) {
+      const updatedBalance = await UserBalanceRepository.deductBalanceRawIfSufficient(
+        id,
+        usdtNumberToRawAmount(amount).toString(),
+        session,
+      );
+      if (!updatedBalance) {
         return null;
       }
 
-      await UserBalanceRepository.setBalanceRaw(id, (currentRaw - BigInt(amountRaw)).toString(), session);
-      await this.syncUserDisplayBalance(id, session);
       return this.findById(id, session);
     }
 

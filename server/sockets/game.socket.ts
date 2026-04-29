@@ -1,7 +1,9 @@
 import type { Server } from 'socket.io';
+import { getEnv } from '../config/env.ts';
 
 import { extractSocketToken, verifyAuthToken } from '../services/auth-token.service.ts';
 import { RealtimeMatchService } from '../services/realtime-match.service.ts';
+import { isSocketRateLimited } from '../services/socket-rate-limit.service.ts';
 import { logger } from '../utils/logger.ts';
 
 interface JoinRoomPayload {
@@ -13,11 +15,24 @@ interface MakeMovePayload {
   col?: unknown;
 }
 
-function getSocketErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unexpected socket error';
+interface SocketErrorPayload {
+  code: string;
+  message: string;
+}
+
+function createSocketError(code: string, message: string): SocketErrorPayload {
+  return { code, message };
+}
+
+function getSocketErrorPayload(error: unknown): SocketErrorPayload {
+  return createSocketError(
+    'SOCKET_ERROR',
+    error instanceof Error ? error.message : 'Unexpected socket error',
+  );
 }
 
 export function registerGameSocketHandlers(io: Server, realtimeMatchService: RealtimeMatchService): void {
+  const env = getEnv();
   io.use((socket, next) => {
     const token = extractSocketToken(socket.handshake);
     if (!token) {
@@ -41,9 +56,20 @@ export function registerGameSocketHandlers(io: Server, realtimeMatchService: Rea
       socketId: socket.id,
       userId: socket.data.userId,
     });
+    const heartbeatHandle = setInterval(() => {
+      void realtimeMatchService.refreshSocketPresence(socket.id);
+    }, 30_000);
+    heartbeatHandle.unref?.();
 
     socket.on('join-room', async (payload: JoinRoomPayload) => {
       try {
+        const joinRateLimitKey = `socket:join-room:${socket.data.userId}`;
+        const joinRateLimited = await isSocketRateLimited(joinRateLimitKey, 5, 60_000);
+        if (joinRateLimited) {
+          socket.emit('error', createSocketError('JOIN_ROOM_RATE_LIMITED', 'Too many join-room requests'));
+          return;
+        }
+
         if (typeof payload?.roomId !== 'string') {
           throw new Error('Unauthorized access');
         }
@@ -67,12 +93,19 @@ export function registerGameSocketHandlers(io: Server, realtimeMatchService: Rea
           roomId: typeof payload?.roomId === 'string' ? payload.roomId : undefined,
           error,
         });
-        socket.emit('error', getSocketErrorMessage(error));
+        socket.emit('error', getSocketErrorPayload(error));
       }
     });
 
     socket.on('make-move', async (payload: MakeMovePayload) => {
       try {
+        const moveRateLimitKey = `socket:make-move:${socket.data.userId}:${typeof payload?.roomId === 'string' ? payload.roomId : 'unknown'}`;
+        const moveRateLimited = await isSocketRateLimited(moveRateLimitKey, 30, 60_000);
+        if (moveRateLimited) {
+          socket.emit('error', createSocketError('MAKE_MOVE_RATE_LIMITED', 'Too many move requests'));
+          return;
+        }
+
         if (
           typeof payload?.roomId !== 'string' ||
           !Number.isInteger(payload.col) ||
@@ -103,12 +136,13 @@ export function registerGameSocketHandlers(io: Server, realtimeMatchService: Rea
 
         io.to(result.room.roomId).emit('move-made', result.room);
       } catch (error) {
-        socket.emit('error', getSocketErrorMessage(error));
+        socket.emit('error', getSocketErrorPayload(error));
       }
     });
 
     socket.on('disconnect', (reason) => {
-      realtimeMatchService.handleDisconnect(socket.id);
+      clearInterval(heartbeatHandle);
+      void realtimeMatchService.handleDisconnect(socket.id);
       logger.info('socket.disconnected', {
         socketId: socket.id,
         userId: socket.data.userId,

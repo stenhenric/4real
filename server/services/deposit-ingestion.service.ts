@@ -17,6 +17,8 @@ import { UserBalanceRepository } from '../repositories/user-balance.repository.t
 import { UserService } from './user.service.ts';
 import { AuditService } from './audit.service.ts';
 import { getHotWalletRuntime } from './hot-wallet-runtime.service.ts';
+import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
+import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
 import { badRequest, conflict, notFound } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
@@ -26,16 +28,16 @@ const TONCENTER_BASE = getToncenterBaseUrl();
 export interface JettonTransferEvent {
   transaction_hash: string;
   transaction_now: number;
-  comment?: string;
-  jetton_master?: string | null;
+  comment?: string | undefined;
+  jetton_master?: string | null | undefined;
   amount: string | number;
-  source?: string | null;
-  source_owner?: string | null;
-  source_wallet?: string | null;
-  destination?: string | null;
-  decoded_forward_payload?: { comment?: string } | Array<{ comment?: string }> | null;
-  transaction_aborted?: boolean | null;
-  aborted?: boolean | null;
+  source?: string | null | undefined;
+  source_owner?: string | null | undefined;
+  source_wallet?: string | null | undefined;
+  destination?: string | null | undefined;
+  decoded_forward_payload?: { comment?: string | undefined } | Array<{ comment?: string | undefined }> | null | undefined;
+  transaction_aborted?: boolean | null | undefined;
+  aborted?: boolean | null | undefined;
 }
 
 export type DepositReplayDecision =
@@ -73,10 +75,10 @@ export interface DepositReviewItem {
   candidateUserId?: string | null;
   candidateUsername?: string | null;
   resolutionStatus: 'open' | 'credited' | 'dismissed';
-  resolvedAt?: string;
-  resolvedBy?: string | null;
-  resolutionNote?: string | null;
-  resolvedUserId?: string | null;
+  resolvedAt?: string | undefined;
+  resolvedBy?: string | null | undefined;
+  resolutionNote?: string | null | undefined;
+  resolvedUserId?: string | null | undefined;
 }
 
 function toUsdtDisplay(amountRaw: string): string {
@@ -201,7 +203,9 @@ function withReplayCandidateUsernames(
 async function resolveAlreadyResolvedReview(params: {
   txHash: string;
   action: 'credit' | 'dismiss';
-  userId?: string;
+  userId?: string | undefined;
+  note?: string | undefined;
+  actorUserId?: string | undefined;
 }): Promise<DepositReviewItem> {
   const existing = await UnmatchedDepositRepository.findByTxHash(params.txHash);
   if (!existing) {
@@ -400,8 +404,12 @@ export async function fetchIncomingUsdtTransfers(params: {
         throw new Error(`Toncenter error ${res.status}`);
       }
 
-      const data = await res.json();
-      const transfers = data.jetton_transfers ?? [];
+      const data = parseExternalResponse(
+        toncenterTransferListSchema,
+        await res.json(),
+        'toncenter.jetton_transfers',
+      );
+      const transfers = data.jetton_transfers;
       allTransfers = allTransfers.concat(transfers);
 
       if (transfers.length < limit) {
@@ -535,7 +543,6 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
       }, session);
 
       await UserBalanceRepository.creditDeposit(claimedMemo.userId, preview.amountRaw, session);
-      await UserService.syncUserDisplayBalance(claimedMemo.userId, session);
     });
   } catch (error) {
     if (!isDuplicateKeyError(error)) {
@@ -664,8 +671,8 @@ export async function listMerchantDepositReviews(params: {
 export async function reconcileMerchantDeposit(params: {
   txHash: string;
   action: 'credit' | 'dismiss';
-  userId?: string;
-  note?: string;
+  userId?: string | undefined;
+  note?: string | undefined;
   actorUserId: string;
 }): Promise<DepositReviewItem> {
   const existing = await UnmatchedDepositRepository.findByTxHash(params.txHash);
@@ -685,7 +692,7 @@ export async function reconcileMerchantDeposit(params: {
           txHash: params.txHash,
           resolvedBy: params.actorUserId,
           action: 'dismissed',
-          note: params.note,
+          ...(params.note ? { note: params.note } : {}),
         }, session);
         if (!claimed) {
           throw new DepositReviewResolutionRaceError(params.txHash);
@@ -731,7 +738,7 @@ export async function reconcileMerchantDeposit(params: {
           txHash: params.txHash,
           resolvedBy: params.actorUserId,
           action: 'credited',
-          note: params.note,
+          ...(params.note ? { note: params.note } : {}),
           resolvedUserId: targetUserId,
         }, session);
         if (!claimed) {
@@ -754,7 +761,6 @@ export async function reconcileMerchantDeposit(params: {
           }, session);
 
           await UserBalanceRepository.creditDeposit(targetUserId, existing.receivedRaw, session);
-          await UserService.syncUserDisplayBalance(targetUserId, session);
         }
 
         if (existing.comment && existing.candidateUserId === targetUserId) {

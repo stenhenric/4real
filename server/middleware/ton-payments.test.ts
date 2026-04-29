@@ -7,6 +7,10 @@ import { resetEnvCacheForTests } from '../config/env.ts';
 import { USDT_MASTER } from '../lib/jetton.ts';
 import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
 import { DepositRepository } from '../repositories/deposit.repository.ts';
+import {
+  FailedDepositIngestionRepository,
+  type FailedDepositIngestionDocument,
+} from '../repositories/failed-deposit-ingestion.repository.ts';
 import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.repository.ts';
@@ -17,6 +21,8 @@ import { generateDepositMemo } from '../services/deposit-service.ts';
 import { resolveHotWalletRuntime, setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
+import { LockUnavailableError } from '../services/distributed-lock.service.ts';
+import type { JettonTransferEvent } from '../services/deposit-ingestion.service.ts';
 import * as userServiceModule from '../services/user.service.ts';
 import * as withdrawalEngineModule from '../services/withdrawal-engine.ts';
 import { pollDeposits } from '../workers/deposit-poller.ts';
@@ -27,6 +33,12 @@ import {
   setWithdrawalWorkerDependenciesForTests,
   runWithdrawalWorker,
 } from '../workers/withdrawal-worker.ts';
+import {
+  resetFailedDepositReplayWorkerForTests,
+  runFailedDepositReplayWorker,
+  setFailedDepositReplayWorkerDependenciesForTests,
+} from '../workers/failed-deposit-replay-worker.ts';
+import { logger } from '../utils/logger.ts';
 
 const HOT_WALLET_ADDRESS = Address.parse(USDT_MASTER).toString({ bounceable: true });
 const HOT_WALLET_RAW = Address.parse(USDT_MASTER).toRawString();
@@ -36,21 +48,48 @@ const SENDER_JETTON_WALLET = HOT_WALLET_ADDRESS;
 
 function registerBaseCleanup(t: TestContext) {
   const auditMock = mock.method(AuditService, 'record', async () => {});
+  const findFailedByHashesMock = mock.method(FailedDepositIngestionRepository, 'findByTxHashes', async () => []);
+  const findEarliestPendingMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findEarliestPendingTransactionTime',
+    async () => null,
+  );
+  const upsertFailedIngestionMock = mock.method(FailedDepositIngestionRepository, 'upsertFailure', async () => {});
+  setWithdrawalWorkerDependenciesForTests({
+    withLock: async (_resource, _ttlMs, fn) => fn(),
+  });
+
   t.after(() => {
     try {
       auditMock.mock.restore();
     } catch {}
+    try {
+      findFailedByHashesMock.mock.restore();
+    } catch {}
+    try {
+      findEarliestPendingMock.mock.restore();
+    } catch {}
+    try {
+      upsertFailedIngestionMock.mock.restore();
+    } catch {}
     delete process.env.HOT_JETTON_WALLET;
     delete process.env.HOT_WALLET_MIN_USDT_BALANCE;
+    delete process.env.DEPOSIT_INGESTION_MAX_RETRIES;
     process.env.HOT_WALLET_ADDRESS = HOT_WALLET_ADDRESS;
     process.env.JWT_SECRET = 'x'.repeat(32);
     process.env.NODE_ENV = 'test';
     resetEnvCacheForTests();
     setHotWalletRuntimeForTests(null);
     resetWithdrawalWorkerStateForTests();
+    resetFailedDepositReplayWorkerForTests();
   });
 
-  return { auditMock };
+  return {
+    auditMock,
+    findFailedByHashesMock,
+    findEarliestPendingMock,
+    upsertFailedIngestionMock,
+  };
 }
 
 function createSessionMock() {
@@ -272,7 +311,6 @@ test('pollDeposits credits the correct user for a valid memo', async (t) => {
   const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
   const depositCreateMock = mock.method(DepositRepository, 'create', async () => {});
   const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
-  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 2.5);
   const markStateMock = mock.method(PollerStateRepository, 'setLastProcessedTime', async () => {});
 
   t.after(() => fetchMock.mock.restore());
@@ -286,7 +324,6 @@ test('pollDeposits credits the correct user for a valid memo', async (t) => {
   t.after(() => processedCreateMock.mock.restore());
   t.after(() => depositCreateMock.mock.restore());
   t.after(() => creditMock.mock.restore());
-  t.after(() => syncMock.mock.restore());
   t.after(() => markStateMock.mock.restore());
 
   await pollDeposits();
@@ -332,7 +369,6 @@ test('pollDeposits resolves memos from decoded forward payload comments', async 
   const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
   const depositCreateMock = mock.method(DepositRepository, 'create', async () => {});
   const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
-  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 3.3);
   const markStateMock = mock.method(PollerStateRepository, 'setLastProcessedTime', async () => {});
 
   t.after(() => fetchMock.mock.restore());
@@ -346,7 +382,6 @@ test('pollDeposits resolves memos from decoded forward payload comments', async 
   t.after(() => processedCreateMock.mock.restore());
   t.after(() => depositCreateMock.mock.restore());
   t.after(() => creditMock.mock.restore());
-  t.after(() => syncMock.mock.restore());
   t.after(() => markStateMock.mock.restore());
 
   await pollDeposits();
@@ -486,26 +521,374 @@ test('pollDeposits records unmatched deposits when memo resolution fails', async
   assert.equal((processedCreateMock.mock.calls[0].arguments[0] as { type: string }).type, 'deposit_unmatched');
 });
 
+test('transient ingestion failure keeps cursor pinned and replay succeeds on second attempt', async (t) => {
+  const {
+    findFailedByHashesMock,
+    findEarliestPendingMock,
+    upsertFailedIngestionMock,
+  } = registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+
+  let failedRecord: FailedDepositIngestionDocument | null = null;
+  findFailedByHashesMock.mock.restore();
+  const findFailedByHashesCustomMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findByTxHashes',
+    async () => (failedRecord ? [failedRecord] : []),
+  );
+  t.after(() => findFailedByHashesCustomMock.mock.restore());
+
+  findEarliestPendingMock.mock.restore();
+  const findEarliestPendingCustomMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findEarliestPendingTransactionTime',
+    async () => (
+      failedRecord && failedRecord.status === 'pending' && failedRecord.resolvedAt === null
+        ? failedRecord.transferData.transaction_now
+        : null
+    ),
+  );
+  t.after(() => findEarliestPendingCustomMock.mock.restore());
+
+  upsertFailedIngestionMock.mock.restore();
+  const upsertFailureCustomMock = mock.method(FailedDepositIngestionRepository, 'upsertFailure', async (params) => {
+    const now = new Date();
+    failedRecord = {
+      txHash: params.txHash,
+      transferData: params.transferData,
+      failedAt: now,
+      retryCount: failedRecord?.retryCount ?? 0,
+      lastError: params.lastError,
+      status: 'pending',
+      nextRetryAt: failedRecord?.nextRetryAt ?? now,
+      resolvedAt: null,
+      terminalFailureAt: null,
+      updatedAt: now,
+    };
+  });
+  t.after(() => upsertFailureCustomMock.mock.restore());
+
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'transient-failure-hash',
+      transaction_now: 1_700_000_010,
+      comment: 'memo-transient-failure',
+      jetton_master: USDT_MASTER,
+      amount: '1000000',
+      source: ZERO_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+    },
+    {
+      transaction_hash: 'transient-success-hash',
+      transaction_now: 1_700_000_020,
+      comment: 'memo-transient-success',
+      jetton_master: USDT_MASTER,
+      amount: '2000000',
+      source: ZERO_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+    },
+  ]) as Response);
+  const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({
+    key: 'deposit_poller',
+    lastProcessedTime: 1_700_000_000,
+    updatedAt: new Date(),
+  }));
+  const seenMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const findByHashMock = mock.method(ProcessedTransactionRepository, 'findByHash', async () => null);
+  const findUnmatchedMock = mock.method(UnmatchedDepositRepository, 'findByTxHash', async () => null);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async (memos) =>
+    memos[0] === 'memo-transient-failure'
+      ? [{ memo: 'memo-transient-failure', userId: 'user-failed' }]
+      : [{ memo: 'memo-transient-success', userId: 'user-success' }],
+  );
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const claimMemoMock = mock.method(DepositMemoRepository, 'claimActiveMemo', async (memo) => {
+    if (memo === 'memo-transient-failure') {
+      throw new Error('temporary ingest error');
+    }
+
+    return { memo: 'memo-transient-success', userId: 'user-success' };
+  });
+  const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const depositCreateMock = mock.method(DepositRepository, 'create', async () => {});
+  const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
+  const markStateMock = mock.method(PollerStateRepository, 'setLastProcessedTime', async () => {});
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => findStateMock.mock.restore());
+  t.after(() => seenMock.mock.restore());
+  t.after(() => findByHashMock.mock.restore());
+  t.after(() => findUnmatchedMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => claimMemoMock.mock.restore());
+  t.after(() => processedCreateMock.mock.restore());
+  t.after(() => depositCreateMock.mock.restore());
+  t.after(() => creditMock.mock.restore());
+  t.after(() => markStateMock.mock.restore());
+
+  await pollDeposits();
+
+  assert.equal(upsertFailureCustomMock.mock.callCount(), 1);
+  assert.equal(
+    (upsertFailureCustomMock.mock.calls[0].arguments[0] as { txHash: string }).txHash,
+    'transient-failure-hash',
+  );
+  assert.equal(markStateMock.mock.callCount(), 1);
+  assert.equal(markStateMock.mock.calls[0].arguments[1], 1_700_000_010);
+  assert.ok(failedRecord);
+  assert.equal(failedRecord.status, 'pending');
+
+  const findRetryableMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findRetryable',
+    async () => (
+      failedRecord && failedRecord.status === 'pending' && failedRecord.resolvedAt === null
+        ? [failedRecord]
+        : []
+    ),
+  );
+  const markRetryScheduledMock = mock.method(
+    FailedDepositIngestionRepository,
+    'markRetryScheduled',
+    async (params) => {
+      if (!failedRecord || failedRecord.txHash !== params.txHash) {
+        return;
+      }
+
+      failedRecord = {
+        ...failedRecord,
+        retryCount: params.retryCount,
+        lastError: params.lastError,
+        nextRetryAt: new Date(0),
+        updatedAt: new Date(),
+      };
+    },
+  );
+  const markResolvedMock = mock.method(FailedDepositIngestionRepository, 'markResolved', async (txHash) => {
+    if (!failedRecord || failedRecord.txHash !== txHash) {
+      return;
+    }
+
+    failedRecord = {
+      ...failedRecord,
+      status: 'resolved',
+      resolvedAt: new Date(),
+      updatedAt: new Date(),
+    };
+  });
+  const markTerminalFailureMock = mock.method(
+    FailedDepositIngestionRepository,
+    'markTerminalFailure',
+    async () => {},
+  );
+
+  t.after(() => findRetryableMock.mock.restore());
+  t.after(() => markRetryScheduledMock.mock.restore());
+  t.after(() => markResolvedMock.mock.restore());
+  t.after(() => markTerminalFailureMock.mock.restore());
+
+  let replayAttemptCount = 0;
+  setFailedDepositReplayWorkerDependenciesForTests({
+    ingestIncomingTransfer: async (_tx: JettonTransferEvent) => {
+      replayAttemptCount += 1;
+      if (replayAttemptCount === 1) {
+        throw new Error('replay temporary failure');
+      }
+
+      return {
+        txHash: 'transient-failure-hash',
+        decision: 'credit',
+        amountRaw: '1000000',
+        amountUsdt: 1,
+        comment: 'memo-transient-failure',
+        memoStatus: 'active',
+        candidateUserId: 'user-failed',
+        senderJettonWallet: SENDER_JETTON_WALLET,
+        senderOwnerAddress: ZERO_ADDRESS,
+        txTime: new Date().toISOString(),
+      };
+    },
+  });
+
+  await runFailedDepositReplayWorker();
+  assert.ok(failedRecord);
+  assert.equal(failedRecord.status, 'pending');
+  assert.equal(failedRecord.retryCount, 1);
+
+  await runFailedDepositReplayWorker();
+  assert.ok(failedRecord);
+  assert.equal(failedRecord.status, 'resolved');
+  assert.ok(failedRecord.resolvedAt instanceof Date);
+  assert.equal(replayAttemptCount, 2);
+});
+
+test('terminal replay failure emits alert, marks record, and allows cursor to move on', async (t) => {
+  const {
+    findFailedByHashesMock,
+    findEarliestPendingMock,
+    upsertFailedIngestionMock,
+  } = registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+  process.env.DEPOSIT_INGESTION_MAX_RETRIES = '2';
+  resetEnvCacheForTests();
+
+  let failedRecord: FailedDepositIngestionDocument = {
+    txHash: 'terminal-hash',
+    transferData: {
+      transaction_hash: 'terminal-hash',
+      transaction_now: 1_700_000_030,
+      comment: 'memo-terminal',
+      jetton_master: USDT_MASTER,
+      amount: '1000000',
+      source: ZERO_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+    },
+    failedAt: new Date(),
+    retryCount: 1,
+    lastError: 'initial failure',
+    status: 'pending',
+    nextRetryAt: new Date(0),
+    resolvedAt: null,
+    terminalFailureAt: null,
+    updatedAt: new Date(),
+  };
+
+  const findRetryableMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findRetryable',
+    async () => (failedRecord.status === 'pending' ? [failedRecord] : []),
+  );
+  const markTerminalFailureMock = mock.method(
+    FailedDepositIngestionRepository,
+    'markTerminalFailure',
+    async (params) => {
+      failedRecord = {
+        ...failedRecord,
+        status: 'terminal_failure',
+        retryCount: params.retryCount,
+        lastError: params.lastError,
+        terminalFailureAt: new Date(),
+        updatedAt: new Date(),
+      };
+    },
+  );
+  const markResolvedMock = mock.method(FailedDepositIngestionRepository, 'markResolved', async () => {});
+  const markRetryScheduledMock = mock.method(FailedDepositIngestionRepository, 'markRetryScheduled', async () => {});
+
+  t.after(() => findRetryableMock.mock.restore());
+  t.after(() => markTerminalFailureMock.mock.restore());
+  t.after(() => markResolvedMock.mock.restore());
+  t.after(() => markRetryScheduledMock.mock.restore());
+
+  const loggerErrorMock = mock.method(logger, 'error', (_message: string, _context?: Record<string, unknown>) => {});
+  t.after(() => loggerErrorMock.mock.restore());
+
+  setFailedDepositReplayWorkerDependenciesForTests({
+    ingestIncomingTransfer: async () => {
+      throw new Error('still failing');
+    },
+  });
+
+  await runFailedDepositReplayWorker();
+
+  assert.equal(failedRecord.status, 'terminal_failure');
+  assert.equal(loggerErrorMock.mock.callCount(), 1);
+  const alertContext = loggerErrorMock.mock.calls[0].arguments[1] as { alert?: string; txHash?: string } | undefined;
+  assert.equal(alertContext?.alert, 'deposit_unrecoverable');
+  assert.equal(alertContext?.txHash, 'terminal-hash');
+
+  findFailedByHashesMock.mock.restore();
+  const findFailedByHashesCustomMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findByTxHashes',
+    async (txHashes) => txHashes.includes('terminal-hash') ? [failedRecord] : [],
+  );
+  t.after(() => findFailedByHashesCustomMock.mock.restore());
+
+  findEarliestPendingMock.mock.restore();
+  const findEarliestPendingCustomMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findEarliestPendingTransactionTime',
+    async () => null,
+  );
+  t.after(() => findEarliestPendingCustomMock.mock.restore());
+
+  let upsertCalled = false;
+  upsertFailedIngestionMock.mock.restore();
+  const upsertFailureCustomMock = mock.method(FailedDepositIngestionRepository, 'upsertFailure', async () => {
+    upsertCalled = true;
+  });
+  t.after(() => upsertFailureCustomMock.mock.restore());
+
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'terminal-hash',
+      transaction_now: 1_700_000_030,
+      comment: 'memo-terminal',
+      jetton_master: USDT_MASTER,
+      amount: '1000000',
+      source: ZERO_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+    },
+    {
+      transaction_hash: 'latest-seen',
+      transaction_now: 1_700_000_040,
+      comment: 'memo-latest',
+      jetton_master: USDT_MASTER,
+      amount: '1000000',
+      source: ZERO_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+    },
+  ]) as Response);
+  const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({
+    key: 'deposit_poller',
+    lastProcessedTime: 1_700_000_000,
+    updatedAt: new Date(),
+  }));
+  const seenMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => [{ txHash: 'latest-seen' }]);
+  const markStateMock = mock.method(PollerStateRepository, 'setLastProcessedTime', async () => {});
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => findStateMock.mock.restore());
+  t.after(() => seenMock.mock.restore());
+  t.after(() => markStateMock.mock.restore());
+
+  await pollDeposits();
+
+  assert.equal(upsertCalled, false);
+  assert.equal(markStateMock.mock.callCount(), 1);
+  assert.equal(markStateMock.mock.calls[0].arguments[1], 1_700_000_040);
+});
+
 test('requestWithdrawal rejects insufficient balance', async (t) => {
   registerBaseCleanup(t);
 
   const session = createSessionMock();
   const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
-  const balanceMock = mock.method(UserBalanceRepository, 'findByUserId', async () => ({ userId: 'user-4', balanceRaw: '1000', totalDepositedRaw: '0', totalWithdrawnRaw: '0', createdAt: new Date(), updatedAt: new Date() }));
-  const setBalanceMock = mock.method(UserBalanceRepository, 'setBalanceRaw', async () => {});
+  const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => null);
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
+  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumConfirmedRawBetween', async () => 0n);
 
   t.after(() => startSessionMock.mock.restore());
-  t.after(() => balanceMock.mock.restore());
-  t.after(() => setBalanceMock.mock.restore());
+  t.after(() => deductMock.mock.restore());
   t.after(() => createQueuedMock.mock.restore());
+  t.after(() => dailyLimitMock.mock.restore());
 
   await assert.rejects(
     requestWithdrawal({ userId: 'user-4', toAddress: ZERO_ADDRESS, amountUsdt: 1, withdrawalId: 'wd-1' }),
     /Insufficient balance/,
   );
 
-  assert.equal(setBalanceMock.mock.callCount(), 0);
+  assert.equal(deductMock.mock.callCount(), 1);
   assert.equal(createQueuedMock.mock.callCount(), 0);
 });
 
@@ -514,27 +897,30 @@ test('requestWithdrawal queues a withdrawal atomically with balance deduction', 
 
   const session = createSessionMock();
   const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
-  const balanceMock = mock.method(UserBalanceRepository, 'findByUserId', async () => ({ userId: 'user-5', balanceRaw: '2500000', totalDepositedRaw: '0', totalWithdrawnRaw: '0', createdAt: new Date(), updatedAt: new Date() }));
-  const setBalanceMock = mock.method(UserBalanceRepository, 'setBalanceRaw', async () => {});
+  const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-5' } as any));
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 1.5);
+  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumConfirmedRawBetween', async () => 0n);
 
   t.after(() => startSessionMock.mock.restore());
-  t.after(() => balanceMock.mock.restore());
-  t.after(() => setBalanceMock.mock.restore());
+  t.after(() => deductMock.mock.restore());
   t.after(() => createQueuedMock.mock.restore());
-  t.after(() => syncMock.mock.restore());
+  t.after(() => dailyLimitMock.mock.restore());
 
   await requestWithdrawal({ userId: 'user-5', toAddress: ZERO_ADDRESS, amountUsdt: 1, withdrawalId: 'wd-2' });
 
-  assert.equal(setBalanceMock.mock.callCount(), 1);
-  assert.equal(setBalanceMock.mock.calls[0].arguments[1], '1500000');
+  assert.equal(deductMock.mock.callCount(), 1);
   assert.equal(createQueuedMock.mock.callCount(), 1);
   assert.equal((createQueuedMock.mock.calls[0].arguments[0] as { withdrawalId: string }).withdrawalId, 'wd-2');
 });
 
 test('runWithdrawalWorker claims only one queued withdrawal at a time', async (t) => {
   registerBaseCleanup(t);
+  process.env.FEATURE_DISTRIBUTED_LOCK = 'true';
+  resetEnvCacheForTests();
+  t.after(() => {
+    delete process.env.FEATURE_DISTRIBUTED_LOCK;
+    resetEnvCacheForTests();
+  });
   setHotWalletRuntimeForTests({
     hotWalletAddress: HOT_WALLET_ADDRESS,
     hotJettonWallet: HOT_JETTON_WALLET,
@@ -542,12 +928,22 @@ test('runWithdrawalWorker claims only one queued withdrawal at a time', async (t
   });
   await initWorker();
 
-  let releaseClaim: (() => void) | null = null;
-  const firstClaimStarted = new Promise<void>((resolve) => {
-    releaseClaim = resolve;
+  let releaseFirstLock: (() => void) | null = null;
+  const firstLockHeld = new Promise<void>((resolve) => {
+    releaseFirstLock = resolve;
+  });
+  let lockCallCount = 0;
+  setWithdrawalWorkerDependenciesForTests({
+    withLock: async (_resource, _ttlMs, fn) => {
+      lockCallCount += 1;
+      if (lockCallCount === 1) {
+        await firstLockHeld;
+        return fn();
+      }
+      throw new LockUnavailableError('wallet-send:test');
+    },
   });
   const claimMock = mock.method(WithdrawalRepository, 'claimNextQueued', async () => {
-    await firstClaimStarted;
     return null;
   });
 
@@ -555,7 +951,7 @@ test('runWithdrawalWorker claims only one queued withdrawal at a time', async (t
 
   const runOne = runWithdrawalWorker();
   const runTwo = runWithdrawalWorker();
-  releaseClaim?.();
+  releaseFirstLock?.();
 
   await Promise.all([runOne, runTwo]);
 
@@ -641,14 +1037,12 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   const retryStateMock = mock.method(WithdrawalRepository, 'markRetryState', async () => {});
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-refund' } as any));
-  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 0);
 
   t.after(() => claimMock.mock.restore());
   t.after(() => startSessionMock.mock.restore());
   t.after(() => retryStateMock.mock.restore());
   t.after(() => refundMock.mock.restore());
   t.after(() => createTransactionMock.mock.restore());
-  t.after(() => syncMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     sendUsdtWithdrawal: async () => {
       throw new Error('send failed');

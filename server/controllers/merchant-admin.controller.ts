@@ -14,6 +14,7 @@ import type {
   MerchantDepositReplayWindowRequest,
   UpdateMerchantConfigRequest,
 } from '../validation/request-schemas.ts';
+import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 
 function getBackgroundJobs(req: AuthRequest): BackgroundJobState | null {
   const backgroundJobs = req.app.locals.statusProvider?.getBackgroundJobs?.();
@@ -28,7 +29,14 @@ export class MerchantAdminController {
   }
 
   static async updateConfig(req: AuthRequest, res: Response): Promise<void> {
-    const updatedConfig = await updateMerchantConfig(req.body as UpdateMerchantConfigRequest);
+    const body = req.body as UpdateMerchantConfigRequest;
+    const updatedConfig = await updateMerchantConfig({
+      ...(body.mpesaNumber !== undefined ? { mpesaNumber: body.mpesaNumber } : {}),
+      ...(body.walletAddress !== undefined ? { walletAddress: body.walletAddress } : {}),
+      ...(body.instructions !== undefined ? { instructions: body.instructions } : {}),
+      ...(body.buyRateKesPerUsdt !== undefined ? { buyRateKesPerUsdt: body.buyRateKesPerUsdt } : {}),
+      ...(body.sellRateKesPerUsdt !== undefined ? { sellRateKesPerUsdt: body.sellRateKesPerUsdt } : {}),
+    });
     res.json(updatedConfig);
   }
 
@@ -75,16 +83,14 @@ export class MerchantAdminController {
   }
 
   static async reconcileDeposit(req: AuthRequest, res: Response): Promise<void> {
-    if (!req.user?.id) {
-      throw new Error('Authenticated admin is required');
-    }
+    assertAuthenticated(req);
 
     const body = req.body as MerchantDepositReconcileRequest;
     const result = await reconcileMerchantDeposit({
-      txHash: req.params.txHash,
+      txHash: req.params.txHash ?? '',
       action: body.action,
-      userId: body.userId,
-      note: body.note,
+      ...(body.userId ? { userId: body.userId } : {}),
+      ...(body.note ? { note: body.note } : {}),
       actorUserId: req.user.id,
     });
     res.json(result);

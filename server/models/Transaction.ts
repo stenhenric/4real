@@ -1,21 +1,25 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export type LedgerTransactionType =
+  | 'DEPOSIT'
+  | 'WITHDRAW'
+  | 'WITHDRAW_REFUND'
+  | 'MATCH_WIN'
+  | 'MATCH_LOSS'
+  | 'MATCH_DRAW'
+  | 'MATCH_REFUND'
+  | 'MATCH_WAGER'
+  | 'BUY_P2P'
+  | 'SELL_P2P'
+  | 'SELL_P2P_REFUND';
+
+export type LedgerTransactionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED' | 'DONE';
+
 export interface ITransaction extends Document {
   userId: mongoose.Types.ObjectId;
-  type:
-    | 'DEPOSIT'
-    | 'WITHDRAW'
-    | 'WITHDRAW_REFUND'
-    | 'MATCH_WIN'
-    | 'MATCH_LOSS'
-    | 'MATCH_DRAW'
-    | 'MATCH_REFUND'
-    | 'MATCH_WAGER'
-    | 'BUY_P2P'
-    | 'SELL_P2P'
-    | 'SELL_P2P_REFUND';
+  type: LedgerTransactionType;
   amount: number;
-  status: 'PENDING' | 'COMPLETED' | 'REJECTED' | 'DONE';
+  status: LedgerTransactionStatus;
   referenceId?: string;
   createdAt: Date;
   updatedAt: Date;

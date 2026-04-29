@@ -1,10 +1,12 @@
 import type mongoose from 'mongoose';
 
+import { decimalLikeToBigInt } from '../utils/money.ts';
 import { getMongoCollection } from './mongo.repository.ts';
 
 export type WithdrawalStatus = 'queued' | 'processing' | 'sent' | 'confirmed' | 'stuck' | 'failed';
 
 export interface WithdrawalDocument {
+  _id?: mongoose.Types.ObjectId | string;
   withdrawalId: string;
   userId: string;
   toAddress: string;
@@ -21,6 +23,8 @@ export interface WithdrawalDocument {
   txHash?: string;
   lastError?: string;
 }
+
+type WithdrawalDocumentId = mongoose.Types.ObjectId | string;
 
 export class WithdrawalRepository {
   private static collection() {
@@ -56,7 +60,7 @@ export class WithdrawalRepository {
     );
   }
 
-  static async markSent(id: unknown, seqno: number, sentAt: Date = new Date()): Promise<void> {
+  static async markSent(id: WithdrawalDocumentId, seqno: number, sentAt: Date = new Date()): Promise<void> {
     await this.collection().updateOne(
       { _id: id },
       {
@@ -66,7 +70,7 @@ export class WithdrawalRepository {
     );
   }
 
-  static async markStuck(id: unknown, lastError: string, seqno?: number, sentAt?: Date): Promise<void> {
+  static async markStuck(id: WithdrawalDocumentId, lastError: string, seqno?: number, sentAt?: Date): Promise<void> {
     await this.collection().updateOne(
       { _id: id },
       {
@@ -81,7 +85,7 @@ export class WithdrawalRepository {
     );
   }
 
-  static async markRetryState(id: unknown, status: 'queued' | 'failed', lastError: string, session?: mongoose.ClientSession): Promise<void> {
+  static async markRetryState(id: WithdrawalDocumentId, status: 'queued' | 'failed', lastError: string, session?: mongoose.ClientSession): Promise<void> {
     await this.collection().updateOne(
       { _id: id },
       {
@@ -93,7 +97,7 @@ export class WithdrawalRepository {
     );
   }
 
-  static async markConfirmed(id: unknown, txHash: string, confirmedAt: Date, session?: mongoose.ClientSession): Promise<void> {
+  static async markConfirmed(id: WithdrawalDocumentId, txHash: string, confirmedAt: Date, session?: mongoose.ClientSession): Promise<void> {
     await this.collection().updateOne(
       { _id: id, status: { $in: ['sent', 'stuck'] } },
       {
@@ -122,6 +126,33 @@ export class WithdrawalRepository {
       sentAt: { $exists: true },
       txHash: { $exists: false },
     }).sort({ sentAt: 1 }).limit(limit).toArray();
+  }
+
+  static async sumConfirmedRawBetween(userId: string, startAt: Date, endAt: Date): Promise<bigint> {
+    const [row] = await this.collection().aggregate<{ total: { toString: () => string } }>([
+      {
+        $match: {
+          userId,
+          status: 'confirmed',
+          confirmedAt: {
+            $gte: startAt,
+            $lt: endAt,
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: {
+            $sum: {
+              $toDecimal: '$amountRaw',
+            },
+          },
+        },
+      },
+    ]).toArray();
+
+    return row ? decimalLikeToBigInt(row.total) : 0n;
   }
 
   static async requeueByIds(ids: readonly mongoose.Types.ObjectId[]): Promise<void> {

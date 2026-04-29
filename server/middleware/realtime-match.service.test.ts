@@ -8,6 +8,8 @@ import { RealtimeMatchService } from '../services/realtime-match.service.ts';
 import { UserService } from '../services/user.service.ts';
 
 test('RealtimeMatchService.joinRoom refreshes stale cached rooms before checking participation', async (t) => {
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  process.env.NODE_ENV = 'test';
   const roomId = 'room-join';
   const player1Id = new mongoose.Types.ObjectId();
   const player2Id = new mongoose.Types.ObjectId();
@@ -19,7 +21,7 @@ test('RealtimeMatchService.joinRoom refreshes stale cached rooms before checking
   });
   const realtimeMatchService = new RealtimeMatchService(registry);
 
-  registry.set(roomId, {
+  await registry.set(roomId, {
     roomId,
     players: [{
       userId: player1Id.toString(),
@@ -73,7 +75,7 @@ test('RealtimeMatchService.joinRoom refreshes stale cached rooms before checking
     'guest-socket',
   );
   assert.equal(
-    registry.get(roomId)?.players.find((player) => player.userId === player1Id.toString())?.socketId,
+    (await registry.get(roomId))?.players.find((player) => player.userId === player1Id.toString())?.socketId,
     'host-socket',
   );
 });

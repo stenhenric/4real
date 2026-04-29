@@ -4,6 +4,8 @@ import test from 'node:test';
 import { GameRoomRegistry } from '../services/game-room-registry.service.ts';
 
 test('GameRoomRegistry.runExclusive surfaces task errors without leaving an unhandled rejection behind', async (t) => {
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  process.env.NODE_ENV = 'test';
   const registry = new GameRoomRegistry({
     waitingRoomTtlMs: 1_000,
     activeRoomTtlMs: 1_000,

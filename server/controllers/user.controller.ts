@@ -2,11 +2,16 @@ import { Request, Response } from 'express';
 
 import { serializeLeaderboardUser, serializeUserProfile } from '../serializers/api.ts';
 import { UserService } from '../services/user.service.ts';
-import { notFound } from '../utils/http-error.ts';
+import { badRequest, notFound } from '../utils/http-error.ts';
 
 export class UserController {
   static async getProfile(req: Request, res: Response): Promise<void> {
-    const user = await UserService.findById(req.params.userId);
+    const userId = req.params.userId;
+    if (!userId) {
+      throw badRequest('User id is required', 'USER_ID_REQUIRED');
+    }
+
+    const user = await UserService.findById(userId);
     if (!user) {
       throw notFound('User not found');
     }

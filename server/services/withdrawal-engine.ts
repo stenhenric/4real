@@ -3,6 +3,9 @@ import { beginCell, internal, toNano, Address, SendMode } from '@ton/ton';
 import { getEnv } from '../config/env.ts';
 import { addressesEqual, extractJettonTransferComment, USDT_MASTER } from '../lib/jetton.ts';
 import { createTonClient, getHotWallet, getToncenterBaseUrl } from '../lib/ton-client.ts';
+import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
+import { toncenterJettonWalletBalanceSchema } from '../schemas/external/toncenter-balance.schema.ts';
+import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
 import { logger } from '../utils/logger.ts';
 
 export function buildJettonTransferBody(amountRaw: string, destination: string, responseAddress: Address, comment: string) {
@@ -127,8 +130,12 @@ async function fetchJettonTransfers({
       throw new Error(`Toncenter error ${response.status}`);
     }
 
-    const data = await response.json() as { jetton_transfers?: ToncenterJettonTransfer[] };
-    const transfers = data.jetton_transfers ?? [];
+    const data = parseExternalResponse(
+      toncenterTransferListSchema,
+      await response.json(),
+      'toncenter.withdrawal_transfers',
+    );
+    const transfers = data.jetton_transfers as ToncenterJettonTransfer[];
 
     allTransfers = allTransfers.concat(transfers);
 
@@ -204,7 +211,11 @@ export async function getHotWalletUsdtBalanceRaw(ownerAddress: string): Promise<
     throw new Error(`Toncenter error ${response.status}`);
   }
 
-  const data = await response.json() as { jetton_wallets?: Array<{ balance?: string | number }> };
+  const data = parseExternalResponse(
+    toncenterJettonWalletBalanceSchema,
+    await response.json(),
+    'toncenter.jetton_wallets',
+  );
   return BigInt(data.jetton_wallets?.[0]?.balance ?? '0');
 }
 

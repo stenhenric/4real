@@ -2,10 +2,18 @@ import type mongoose from 'mongoose';
 
 import { getMongoCollection } from './mongo.repository.ts';
 
+export type ProcessedTransactionType =
+  | 'deposit'
+  | 'deposit_reconciled_credit'
+  | 'deposit_reconciled_dismiss'
+  | 'deposit_rejected'
+  | 'deposit_unmatched'
+  | 'withdrawal_confirm';
+
 export interface ProcessedTransactionDocument {
   txHash: string;
   processedAt: Date;
-  type: string;
+  type: ProcessedTransactionType;
   updatedAt?: Date;
 }
 
@@ -33,7 +41,7 @@ export class ProcessedTransactionRepository {
     return this.collection().findOne({ txHash }, session ? { session } : undefined);
   }
 
-  static async updateType(txHash: string, type: string, session?: mongoose.ClientSession): Promise<void> {
+  static async updateType(txHash: string, type: ProcessedTransactionType, session?: mongoose.ClientSession): Promise<void> {
     const now = new Date();
     await this.collection().updateOne(
       { txHash },

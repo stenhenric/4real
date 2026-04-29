@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": false,
+    "outDir": "./dist/server",
+    "rootDir": ".",
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "sourceMap": true
+  },
+  "include": [
+    "server.ts",
+    "server/**/*",
+    "shared/types/**/*"
+  ],
+  "exclude": [
+    "server/**/*.test.ts"
+  ]
+}

@@ -42,7 +42,10 @@ export function buildBoardFromMoves(
       continue;
     }
     if (move.row >= 0 && move.row < 6 && move.col >= 0 && move.col < 7) {
-      board[move.row][move.col] = symbol;
+      const boardRow = board[move.row];
+      if (boardRow) {
+        boardRow[move.col] = symbol;
+      }
     }
   }
 
@@ -89,15 +92,15 @@ export async function createRoomStateFromMatch(match: IMatch): Promise<RoomState
     moves: match.moveHistory ?? [],
     wager: match.wager ?? 0,
     isPrivate: match.isPrivate ?? false,
-    dbMatchId: match._id.toString(),
-    winnerId: match.winnerId,
+    ...(match._id ? { dbMatchId: match._id.toString() } : {}),
+    ...(match.winnerId ? { winnerId: match.winnerId } : {}),
     projectedWinnerAmount: calculateProjectedWinnerAmount(match.wager ?? 0),
     commissionRate: MATCH_COMMISSION_RATE,
   };
 }
 
 export function checkWin(board: (string | null)[][], row: number, col: number, symbol: string) {
-  const directions = [
+  const directions: ReadonlyArray<readonly [number, number]> = [
     [0, 1],
     [1, 0],
     [1, 1],
@@ -111,7 +114,8 @@ export function checkWin(board: (string | null)[][], row: number, col: number, s
     for (let i = 1; i < 4; i++) {
       const r = row + dr * i;
       const c = col + dc * i;
-      if (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] === symbol) {
+      const boardRow = board[r];
+      if (r >= 0 && r < 6 && c >= 0 && c < 7 && boardRow?.[c] === symbol) {
         count++;
         line.push([r, c]);
       } else {
@@ -122,7 +126,8 @@ export function checkWin(board: (string | null)[][], row: number, col: number, s
     for (let i = 1; i < 4; i++) {
       const r = row - dr * i;
       const c = col - dc * i;
-      if (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] === symbol) {
+      const boardRow = board[r];
+      if (r >= 0 && r < 6 && c >= 0 && c < 7 && boardRow?.[c] === symbol) {
         count++;
         line.push([r, c]);
       } else {

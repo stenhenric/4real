@@ -46,12 +46,12 @@ function serializeOrderUser(user: unknown): string | OrderUserDTO {
   return serializeId(user);
 }
 
-export function serializeAuthUser(user: IUser): AuthResponseDTO {
+export function serializeAuthUser(user: IUser, balance: number): AuthResponseDTO {
   const authUser: UserDTO = {
     id: user._id.toString(),
     username: user.username,
     email: user.email,
-    balance: user.balance,
+    balance,
     elo: user.elo,
     isAdmin: user.isAdmin,
     stats: serializeStats(user.stats),
@@ -84,19 +84,19 @@ export function serializeMatch(match: IMatch, options?: { inviteUrl?: string }):
     _id: serializeId(match._id),
     roomId: match.roomId,
     p1Username: match.p1Username,
-    p2Username: match.p2Username,
     player1Id: serializeId(match.player1Id),
-    player2Id: match.player2Id ? serializeId(match.player2Id) : undefined,
     status: match.status,
-    winnerId: match.winnerId,
     wager: match.wager ?? 0,
     isPrivate: match.isPrivate ?? false,
     moveHistory: match.moveHistory ?? [],
     projectedWinnerAmount: payout.projectedWinnerAmount,
     commissionRate: payout.commissionRate,
-    settlementReason: match.settlementReason,
-    lastActivityAt: match.lastActivityAt?.toISOString(),
-    createdAt: match.createdAt?.toISOString(),
+    ...(match.p2Username ? { p2Username: match.p2Username } : {}),
+    ...(match.player2Id ? { player2Id: serializeId(match.player2Id) } : {}),
+    ...(match.winnerId ? { winnerId: match.winnerId } : {}),
+    ...(match.settlementReason ? { settlementReason: match.settlementReason } : {}),
+    ...(match.lastActivityAt ? { lastActivityAt: match.lastActivityAt.toISOString() } : {}),
+    ...(match.createdAt ? { createdAt: match.createdAt.toISOString() } : {}),
     ...(options?.inviteUrl ? { inviteUrl: options.inviteUrl } : {}),
   };
 }
@@ -108,17 +108,19 @@ export function serializeOrder(order: IOrder): OrderDTO {
     type: order.type,
     amount: order.amount,
     status: order.status,
-    proof: order.proof ? {
-      provider: 'telegram',
-      url: order.proof.url,
-      messageId: order.proof.messageId,
-      chatId: order.proof.chatId,
-    } : undefined,
-    transactionCode: order.transactionCode,
-    fiatCurrency: order.fiatCurrency,
-    exchangeRate: order.exchangeRate,
-    fiatTotal: order.fiatTotal,
     createdAt: order.createdAt.toISOString(),
+    ...(order.proof ? {
+      proof: {
+        provider: 'telegram' as const,
+        url: order.proof.url,
+        messageId: order.proof.messageId,
+        chatId: order.proof.chatId,
+      },
+    } : {}),
+    ...(order.transactionCode ? { transactionCode: order.transactionCode } : {}),
+    ...(order.fiatCurrency ? { fiatCurrency: order.fiatCurrency } : {}),
+    ...(order.exchangeRate !== undefined ? { exchangeRate: order.exchangeRate } : {}),
+    ...(order.fiatTotal !== undefined ? { fiatTotal: order.fiatTotal } : {}),
   };
 }
 
@@ -129,7 +131,7 @@ export function serializeLedgerTransaction(transaction: ITransaction): Transacti
     amount: transaction.amount,
     status: transaction.status,
     createdAt: transaction.createdAt.toISOString(),
-    referenceId: transaction.referenceId,
+    ...(transaction.referenceId ? { referenceId: transaction.referenceId } : {}),
   };
 }
 
@@ -162,8 +164,8 @@ export function serializeWithdrawalStatus(withdrawal: WithdrawalDocument): Withd
     amountUsdt: Number(withdrawal.amountDisplay),
     toAddress: withdrawal.toAddress,
     createdAt: withdrawal.createdAt.toISOString(),
-    updatedAt: withdrawal.updatedAt?.toISOString(),
-    txHash: withdrawal.txHash,
-    lastError: withdrawal.lastError,
+    ...(withdrawal.updatedAt ? { updatedAt: withdrawal.updatedAt.toISOString() } : {}),
+    ...(withdrawal.txHash ? { txHash: withdrawal.txHash } : {}),
+    ...(withdrawal.lastError ? { lastError: withdrawal.lastError } : {}),
   };
 }

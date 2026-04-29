@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 
 import { AUTH_COOKIE_NAME, getAuthCookieClearOptions, getAuthCookieOptions } from '../config/cookies.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
+import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeAuthUser } from '../serializers/api.ts';
 import { resolveAuthEmail } from '../services/auth-identity.service.ts';
 import { decodeAuthToken, signAuthToken } from '../services/auth-token.service.ts';
@@ -13,7 +14,10 @@ import type { LoginRequest, RegisterRequest } from '../validation/request-schema
 export class AuthController {
   static async register(req: Request, res: Response): Promise<void> {
     const { username, password, email: rawEmail } = req.body as RegisterRequest;
-    const email = resolveAuthEmail({ email: rawEmail, username });
+    const email = resolveAuthEmail({
+      username,
+      ...(rawEmail ? { email: rawEmail } : {}),
+    });
 
     if (!email) {
       throw badRequest('Please provide a valid username or email');
@@ -37,10 +41,10 @@ export class AuthController {
       username,
       email,
       passwordHash,
-      balance: 0,
       elo: 1000,
       isAdmin: false,
     });
+    const balance = await UserService.getDisplayBalance(user._id.toString());
 
     const token = signAuthToken({
       id: user._id.toString(),
@@ -48,12 +52,17 @@ export class AuthController {
       tokenVersion: user.tokenVersion ?? 0,
     });
     res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
-    res.status(201).json(serializeAuthUser(user));
+    res.status(201).json(serializeAuthUser(user, balance));
   }
 
   static async login(req: Request, res: Response): Promise<void> {
-    const { password } = req.body as LoginRequest;
-    const email = resolveAuthEmail(req.body as LoginRequest);
+    const loginRequest = req.body as LoginRequest;
+    const { password } = loginRequest;
+    const email = resolveAuthEmail({
+      ...(loginRequest.email ? { email: loginRequest.email } : {}),
+      ...(loginRequest.username ? { username: loginRequest.username } : {}),
+      ...(loginRequest.identifier ? { identifier: loginRequest.identifier } : {}),
+    });
 
     if (!email) {
       throw badRequest('Please provide email or username');
@@ -74,21 +83,20 @@ export class AuthController {
       isAdmin: user.isAdmin,
       tokenVersion: user.tokenVersion ?? 0,
     });
+    const balance = await UserService.getDisplayBalance(user._id.toString());
     res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
-    res.status(200).json(serializeAuthUser(user));
+    res.status(200).json(serializeAuthUser(user, balance));
   }
 
   static async me(req: AuthRequest, res: Response): Promise<void> {
-    if (!req.user?.id) {
-      throw unauthorized('Unauthenticated');
-    }
+    assertAuthenticated(req);
 
     const user = await UserService.findById(req.user.id);
     if (!user) {
       throw notFound('User not found');
     }
 
-    res.json(serializeAuthUser(user));
+    res.json(serializeAuthUser(user, await UserService.getDisplayBalance(req.user.id)));
   }
 
   static async logout(req: Request, res: Response): Promise<void> {

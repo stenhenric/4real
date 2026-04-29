@@ -1,4 +1,6 @@
 import { pollDeposits } from '../workers/deposit-poller.ts';
+import { runFailedDepositReplayWorker } from '../workers/failed-deposit-replay-worker.ts';
+import { getEnv } from '../config/env.ts';
 import { initializeHotWalletRuntime } from './hot-wallet-runtime.service.ts';
 import { MatchService } from './match.service.ts';
 import {
@@ -8,6 +10,7 @@ import {
   recoverStuckWithdrawals,
   runWithdrawalWorker as runWithdrawalWorkerTask,
 } from '../workers/withdrawal-worker.ts';
+import { startBullmqBackgroundJobs, type BullmqBackgroundJobRuntime } from './bullmq-jobs.service.ts';
 import { logger } from '../utils/logger.ts';
 
 export interface JobSnapshot {
@@ -28,7 +31,7 @@ export interface BackgroundJobState {
 
 export interface BackgroundJobController {
   getStatus: () => BackgroundJobState;
-  stop: () => void;
+  stop: () => Promise<void>;
 }
 
 function createJobRunner(name: keyof BackgroundJobState, state: BackgroundJobState, job: () => Promise<void>) {
@@ -46,7 +49,7 @@ function createJobRunner(name: keyof BackgroundJobState, state: BackgroundJobSta
     try {
       await job();
       state[name].lastSucceededAt = new Date().toISOString();
-      state[name].lastError = undefined;
+      delete state[name].lastError;
     } catch (error) {
       state[name].lastFailedAt = new Date().toISOString();
       state[name].lastError = error instanceof Error ? error.message : String(error);
@@ -58,6 +61,7 @@ function createJobRunner(name: keyof BackgroundJobState, state: BackgroundJobSta
 }
 
 export async function startBackgroundJobs(): Promise<BackgroundJobController> {
+  const env = getEnv();
   await initializeHotWalletRuntime();
 
   const state: BackgroundJobState = {
@@ -80,7 +84,10 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
     logger.error('background_job.initialization_failed', { job: 'withdrawalWorker', error });
   }
 
-  const runDepositPoller = createJobRunner('depositPoller', state, pollDeposits);
+  const runDepositPoller = createJobRunner('depositPoller', state, async () => {
+    await pollDeposits();
+    await runFailedDepositReplayWorker();
+  });
   const runWithdrawalWorker = createJobRunner('withdrawalWorker', state, runWithdrawalWorkerTask);
   const runWithdrawalConfirmation = createJobRunner('withdrawalConfirmation', state, confirmSentWithdrawals);
   const runHotWalletMonitor = createJobRunner('hotWalletMonitor', state, monitorHotWalletBalances);
@@ -90,6 +97,30 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
       logger.warn('background_job.stale_matches_settled', result);
     }
   });
+
+  let bullmqRuntime: BullmqBackgroundJobRuntime | null = null;
+  if (env.FEATURE_BULLMQ_JOBS && env.REDIS_URL) {
+    bullmqRuntime = await startBullmqBackgroundJobs([
+      {
+        queueName: 'deposit-poll',
+        jobName: 'deposit-poll',
+        repeatEveryMs: 15_000,
+        processor: runDepositPoller,
+      },
+      {
+        queueName: 'withdrawal-send',
+        jobName: 'withdrawal-send',
+        repeatEveryMs: 5_000,
+        processor: runWithdrawalWorker,
+      },
+      {
+        queueName: 'withdrawal-confirm',
+        jobName: 'withdrawal-confirm',
+        repeatEveryMs: 20_000,
+        processor: runWithdrawalConfirmation,
+      },
+    ]);
+  }
 
   const depositHandle = setInterval(() => {
     void runDepositPoller();
@@ -124,12 +155,13 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
       hotWalletMonitor: { ...state.hotWalletMonitor },
       staleMatchExpiry: { ...state.staleMatchExpiry },
     }),
-    stop: () => {
+    stop: async () => {
       clearInterval(depositHandle);
       clearInterval(withdrawalHandle);
       clearInterval(confirmationHandle);
       clearInterval(monitorHandle);
       clearInterval(staleMatchHandle);
+      await bullmqRuntime?.stop();
     },
   };
 }

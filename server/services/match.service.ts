@@ -17,7 +17,19 @@ type MatchSettlementReason = NonNullable<IMatch['settlementReason']>;
 
 interface CreateMatchForUserResult {
   match: IMatch;
-  inviteUrl?: string;
+  inviteUrl?: string | undefined;
+}
+
+interface CreateMatchDocumentInput {
+  roomId: string;
+  player1Id: mongoose.Types.ObjectId;
+  p1Username: string;
+  wager: number;
+  isPrivate: boolean;
+  inviteTokenHash?: string | undefined;
+  status: IMatch['status'];
+  moveHistory: MatchMoveDTO[];
+  lastActivityAt?: Date | undefined;
 }
 
 interface MatchSettlementOptions {
@@ -26,12 +38,31 @@ interface MatchSettlementOptions {
   settlementReason: MatchSettlementReason;
   moveHistory: MatchMoveDTO[];
   session: mongoose.ClientSession;
-  requestId?: string;
-  timeoutPlayerId?: string;
+  requestId?: string | undefined;
+  timeoutPlayerId?: string | undefined;
 }
 
 function now(): Date {
   return new Date();
+}
+
+async function runOwnTransaction<T>(work: (session: mongoose.ClientSession) => Promise<T>): Promise<T> {
+  const session = await mongoose.startSession();
+  let result: T | undefined;
+
+  try {
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (result === undefined) {
+    throw new Error('Transaction completed without a result');
+  }
+
+  return result;
 }
 
 export class MatchService {
@@ -39,7 +70,7 @@ export class MatchService {
     return crypto.createHash('sha256').update(inviteToken).digest('hex');
   }
 
-  static async createMatch(matchData: Partial<IMatch>, session?: mongoose.ClientSession): Promise<IMatch> {
+  static async createMatch(matchData: CreateMatchDocumentInput, session?: mongoose.ClientSession): Promise<IMatch> {
     const match = new Match({
       ...matchData,
       lastActivityAt: matchData.lastActivityAt ?? now(),
@@ -52,82 +83,81 @@ export class MatchService {
     wager,
     isPrivate,
     requestId,
+    session,
+    emitPublicEvent = true,
   }: {
     userId: string;
     wager: number;
     isPrivate: boolean;
-    requestId?: string;
+    requestId?: string | undefined;
+    session?: mongoose.ClientSession | undefined;
+    emitPublicEvent?: boolean | undefined;
   }): Promise<CreateMatchForUserResult> {
     const roomId = crypto.randomBytes(3).toString('hex');
     const inviteToken = isPrivate ? crypto.randomBytes(16).toString('base64url') : undefined;
-    const session = await mongoose.startSession();
-    let match: IMatch | null = null;
+    const executeCreateMatch = async (activeSession: mongoose.ClientSession): Promise<IMatch> => {
+      const user = await UserService.findById(userId, activeSession);
+      if (!user) {
+        throw notFound('User not found', 'USER_NOT_FOUND');
+      }
 
-    try {
-      await session.withTransaction(async () => {
-        const user = await UserService.findById(userId, session);
-        if (!user) {
-          throw notFound('User not found', 'USER_NOT_FOUND');
+      if (wager > 0) {
+        const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager, activeSession);
+        if (!updatedUser) {
+          throw badRequest('Insufficient balance to lock wager', 'INSUFFICIENT_BALANCE');
         }
 
-        if (wager > 0) {
-          const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager, session);
-          if (!updatedUser) {
-            throw badRequest('Insufficient balance to lock wager', 'INSUFFICIENT_BALANCE');
-          }
+        await TransactionService.createTransaction({
+          userId: user._id.toString(),
+          type: 'MATCH_WAGER',
+          amount: -wager,
+          referenceId: roomId,
+          session: activeSession,
+        });
+        await AuditService.record({
+          eventType: 'match_wager_locked',
+          actorUserId: userId,
+          targetUserId: userId,
+          resourceType: 'match',
+          resourceId: roomId,
+          requestId,
+          metadata: {
+            role: 'player1',
+            wager,
+          },
+          session: activeSession,
+        });
+      }
 
-          await TransactionService.createTransaction({
-            userId: user._id.toString(),
-            type: 'MATCH_WAGER',
-            amount: -wager,
-            referenceId: roomId,
-            session,
-          });
-          await AuditService.record({
-            eventType: 'match_wager_locked',
-            actorUserId: userId,
-            targetUserId: userId,
-            resourceType: 'match',
-            resourceId: roomId,
-            requestId,
-            metadata: {
-              role: 'player1',
-              wager,
-            },
-            session,
-          });
-        }
+      return this.createMatch({
+        roomId,
+        player1Id: user._id,
+        p1Username: user.username,
+        wager,
+        isPrivate,
+        ...(inviteToken ? { inviteTokenHash: this.hashInviteToken(inviteToken) } : {}),
+        status: 'waiting',
+        moveHistory: [],
+        lastActivityAt: now(),
+      }, activeSession);
+    };
 
-        match = await this.createMatch({
-          roomId,
-          player1Id: user._id,
-          p1Username: user.username,
-          wager,
-          isPrivate,
-          ...(inviteToken ? { inviteTokenHash: this.hashInviteToken(inviteToken) } : {}),
-          status: 'waiting',
-          moveHistory: [],
-          lastActivityAt: now(),
-        }, session);
+    const createdMatch = session
+      ? await executeCreateMatch(session)
+      : await runOwnTransaction((ownSession) => executeCreateMatch(ownSession));
+
+    if (emitPublicEvent) {
+      emitPublicMatchUpdatedEvent({
+        roomId: createdMatch.roomId,
+        status: createdMatch.status,
+        isPrivate: createdMatch.isPrivate,
       });
-    } finally {
-      await session.endSession();
     }
-
-    if (!match) {
-      throw new Error('Unable to create match');
-    }
-
-    emitPublicMatchUpdatedEvent({
-      roomId: match.roomId,
-      status: match.status,
-      isPrivate: match.isPrivate,
-    });
 
     return {
-      match,
+      match: createdMatch,
       ...(inviteToken ? {
-        inviteUrl: `/game/${encodeURIComponent(match.roomId)}?invite=${encodeURIComponent(inviteToken)}`,
+        inviteUrl: `/game/${encodeURIComponent(createdMatch.roomId)}?invite=${encodeURIComponent(inviteToken)}`,
       } : {}),
     };
   }
@@ -137,99 +167,97 @@ export class MatchService {
     userId,
     inviteToken,
     requestId,
+    session,
+    emitPublicEvent = true,
   }: {
     roomId: string;
     userId: string;
-    inviteToken?: string;
-    requestId?: string;
+    inviteToken?: string | undefined;
+    requestId?: string | undefined;
+    session?: mongoose.ClientSession | undefined;
+    emitPublicEvent?: boolean | undefined;
   }): Promise<IMatch> {
-    const session = await mongoose.startSession();
-    let joinedMatch: IMatch | null = null;
+    const executeJoinMatch = async (activeSession: mongoose.ClientSession): Promise<IMatch> => {
+      const [user, match] = await Promise.all([
+        UserService.findById(userId, activeSession),
+        this.getMatchByRoomId(roomId, activeSession),
+      ]);
 
-    try {
-      await session.withTransaction(async () => {
-        const [user, match] = await Promise.all([
-          UserService.findById(userId, session),
-          this.getMatchByRoomId(roomId, session),
-        ]);
+      if (!user) {
+        throw notFound('User not found', 'USER_NOT_FOUND');
+      }
 
-        if (!user) {
-          throw notFound('User not found', 'USER_NOT_FOUND');
+      if (!match) {
+        throw notFound('Match not found', 'MATCH_NOT_FOUND');
+      }
+
+      if (!this.canAccessMatch({ match, userId, inviteToken })) {
+        throw notFound('Match not found', 'MATCH_NOT_FOUND');
+      }
+
+      if (match.status === 'completed') {
+        throw conflict('Match has already been settled', 'MATCH_ALREADY_SETTLED');
+      }
+
+      const player1Id = match.player1Id.toString();
+      const player2Id = match.player2Id?.toString();
+
+      if (userId === player1Id || userId === player2Id) {
+        return match;
+      }
+
+      if (player2Id && player2Id !== userId) {
+        throw conflict('Match is already full', 'MATCH_ALREADY_FULL');
+      }
+
+      if (match.wager > 0) {
+        const updatedUser = await UserService.deductBalanceSafely(userId, match.wager, activeSession);
+        if (!updatedUser) {
+          throw badRequest('Insufficient balance to join this match', 'INSUFFICIENT_BALANCE');
         }
 
-        if (!match) {
-          throw notFound('Match not found', 'MATCH_NOT_FOUND');
-        }
+        await TransactionService.createTransaction({
+          userId,
+          type: 'MATCH_WAGER',
+          amount: -match.wager,
+          referenceId: roomId,
+          session: activeSession,
+        });
+        await AuditService.record({
+          eventType: 'match_wager_locked',
+          actorUserId: userId,
+          targetUserId: userId,
+          resourceType: 'match',
+          resourceId: roomId,
+          requestId,
+          metadata: {
+            role: 'player2',
+            wager: match.wager,
+          },
+          session: activeSession,
+        });
+      }
 
-        if (!this.canAccessMatch({ match, userId, inviteToken })) {
-          throw notFound('Match not found', 'MATCH_NOT_FOUND');
-        }
+      match.player2Id = user._id;
+      match.p2Username = user.username;
+      match.status = 'active';
+      match.lastActivityAt = now();
+      return match.save({ session: activeSession });
+    };
 
-        if (match.status === 'completed') {
-          throw conflict('Match has already been settled', 'MATCH_ALREADY_SETTLED');
-        }
+    const finalJoinedMatch = session
+      ? await executeJoinMatch(session)
+      : await runOwnTransaction((ownSession) => executeJoinMatch(ownSession));
 
-        const player1Id = match.player1Id.toString();
-        const player2Id = match.player2Id?.toString();
-
-        if (userId === player1Id || userId === player2Id) {
-          joinedMatch = match;
-          return;
-        }
-
-        if (player2Id && player2Id !== userId) {
-          throw conflict('Match is already full', 'MATCH_ALREADY_FULL');
-        }
-
-        if (match.wager > 0) {
-          const updatedUser = await UserService.deductBalanceSafely(userId, match.wager, session);
-          if (!updatedUser) {
-            throw badRequest('Insufficient balance to join this match', 'INSUFFICIENT_BALANCE');
-          }
-
-          await TransactionService.createTransaction({
-            userId,
-            type: 'MATCH_WAGER',
-            amount: -match.wager,
-            referenceId: roomId,
-            session,
-          });
-          await AuditService.record({
-            eventType: 'match_wager_locked',
-            actorUserId: userId,
-            targetUserId: userId,
-            resourceType: 'match',
-            resourceId: roomId,
-            requestId,
-            metadata: {
-              role: 'player2',
-              wager: match.wager,
-            },
-            session,
-          });
-        }
-
-        match.player2Id = user._id;
-        match.p2Username = user.username;
-        match.status = 'active';
-        match.lastActivityAt = now();
-        joinedMatch = await match.save({ session });
+    if (emitPublicEvent) {
+      emitPublicMatchUpdatedEvent({
+        roomId: finalJoinedMatch.roomId,
+        status: finalJoinedMatch.status,
+        isPrivate: finalJoinedMatch.isPrivate,
       });
-    } finally {
-      await session.endSession();
     }
 
-    if (!joinedMatch) {
-      throw new Error('Unable to join match');
-    }
-
-    emitPublicMatchUpdatedEvent({
-      roomId: joinedMatch.roomId,
-      status: joinedMatch.status,
-      isPrivate: joinedMatch.isPrivate,
-    });
-
-    return joinedMatch;
+    return finalJoinedMatch;
   }
 
   static async getAccessibleMatch({
@@ -240,8 +268,8 @@ export class MatchService {
   }: {
     roomId: string;
     userId: string;
-    inviteToken?: string;
-    session?: mongoose.ClientSession;
+    inviteToken?: string | undefined;
+    session?: mongoose.ClientSession | undefined;
   }): Promise<IMatch | null> {
     const match = await this.getMatchByRoomId(roomId, session);
     if (!match) {
@@ -255,83 +283,80 @@ export class MatchService {
     roomId,
     userId,
     requestId,
+    session,
+    emitPublicEvent = true,
   }: {
     roomId: string;
     userId: string;
-    requestId?: string;
+    requestId?: string | undefined;
+    session?: mongoose.ClientSession | undefined;
+    emitPublicEvent?: boolean | undefined;
   }): Promise<IMatch> {
-    const session = await mongoose.startSession();
-    let settledMatch: IMatch | null = null;
+    const executeResignMatch = async (activeSession: mongoose.ClientSession): Promise<IMatch> => {
+      const match = await this.getMatchByRoomId(roomId, activeSession);
+      if (!match) {
+        throw notFound('Match not found', 'MATCH_NOT_FOUND');
+      }
 
-    try {
-      await session.withTransaction(async () => {
-        const match = await this.getMatchByRoomId(roomId, session);
-        if (!match) {
-          throw notFound('Match not found', 'MATCH_NOT_FOUND');
+      const player1Id = match.player1Id.toString();
+      const player2Id = match.player2Id?.toString();
+      const isParticipant = userId === player1Id || userId === player2Id;
+
+      if (!isParticipant) {
+        throw conflict('Only match participants can resign', 'MATCH_PARTICIPANT_REQUIRED');
+      }
+
+      if (match.status === 'completed') {
+        return match;
+      }
+
+      if (match.status === 'waiting') {
+        if (match.wager > 0) {
+          await this.refundUserWager({
+            userId: player1Id,
+            amount: match.wager,
+            roomId,
+            session: activeSession,
+            requestId,
+            settlementReason: 'resigned',
+          });
         }
 
-        const player1Id = match.player1Id.toString();
-        const player2Id = match.player2Id?.toString();
-        const isParticipant = userId === player1Id || userId === player2Id;
+        match.status = 'completed';
+        match.winnerId = 'draw';
+        match.settlementReason = 'resigned';
+        match.lastActivityAt = now();
+        return match.save({ session: activeSession });
+      }
 
-        if (!isParticipant) {
-          throw conflict('Only match participants can resign', 'MATCH_PARTICIPANT_REQUIRED');
-        }
+      const winnerId = userId === player1Id ? player2Id : player1Id;
+      if (!winnerId) {
+        throw conflict('Match cannot be resigned without an opponent', 'MATCH_OPPONENT_REQUIRED');
+      }
 
-        if (match.status === 'completed') {
-          settledMatch = match;
-          return;
-        }
-
-        if (match.status === 'waiting') {
-          if (match.wager > 0) {
-            await this.refundUserWager({
-              userId: player1Id,
-              amount: match.wager,
-              roomId,
-              session,
-              requestId,
-              settlementReason: 'resigned',
-            });
-          }
-
-          match.status = 'completed';
-          match.winnerId = 'draw';
-          match.settlementReason = 'resigned';
-          match.lastActivityAt = now();
-          settledMatch = await match.save({ session });
-          return;
-        }
-
-        const winnerId = userId === player1Id ? player2Id : player1Id;
-        if (!winnerId) {
-          throw conflict('Match cannot be resigned without an opponent', 'MATCH_OPPONENT_REQUIRED');
-        }
-
-        settledMatch = await this.finalizeMatch({
-          match,
-          winnerId,
-          settlementReason: 'resigned',
-          moveHistory: match.moveHistory ?? [],
-          session,
-          requestId,
-        });
+      return this.finalizeMatch({
+        match,
+        winnerId,
+        settlementReason: 'resigned',
+        moveHistory: match.moveHistory ?? [],
+        session: activeSession,
+        requestId,
       });
-    } finally {
-      await session.endSession();
+    };
+
+    const finalSettledMatch = session
+      ? await executeResignMatch(session)
+      : await runOwnTransaction((ownSession) => executeResignMatch(ownSession));
+
+    if (emitPublicEvent) {
+      emitPublicMatchUpdatedEvent({
+        roomId: finalSettledMatch.roomId,
+        status: finalSettledMatch.status,
+        isPrivate: finalSettledMatch.isPrivate,
+      });
     }
 
-    if (!settledMatch) {
-      throw new Error('Unable to resign match');
-    }
-
-    emitPublicMatchUpdatedEvent({
-      roomId: settledMatch.roomId,
-      status: settledMatch.status,
-      isPrivate: settledMatch.isPrivate,
-    });
-
-    return settledMatch;
+    return finalSettledMatch;
   }
 
   static async getActiveMatches(): Promise<IMatch[]> {
@@ -364,39 +389,31 @@ export class MatchService {
     moveHistory: MatchMoveDTO[],
     requestId?: string,
   ): Promise<IMatch | null> {
-    const session = await mongoose.startSession();
-    let settledMatch: IMatch | null = null;
-
-    try {
-      await session.withTransaction(async () => {
-        const match = await this.getMatchByRoomId(roomId, session);
-        if (!match) {
-          settledMatch = null;
-          return;
-        }
-
-        settledMatch = await this.finalizeMatch({
-          match,
-          winnerId,
-          settlementReason: winnerId === 'draw' ? 'draw' : 'winner',
-          moveHistory,
-          session,
-          requestId,
-        });
-      });
-
-      if (settledMatch) {
-        emitPublicMatchUpdatedEvent({
-          roomId: settledMatch.roomId,
-          status: settledMatch.status,
-          isPrivate: settledMatch.isPrivate,
-        });
+    const finalSettledMatch = await runOwnTransaction(async (session) => {
+      const match = await this.getMatchByRoomId(roomId, session);
+      if (!match) {
+        return null;
       }
 
-      return settledMatch;
-    } finally {
-      await session.endSession();
+      return this.finalizeMatch({
+        match,
+        winnerId,
+        settlementReason: winnerId === 'draw' ? 'draw' : 'winner',
+        moveHistory,
+        session,
+        requestId,
+      });
+    });
+
+    if (finalSettledMatch) {
+      emitPublicMatchUpdatedEvent({
+        roomId: finalSettledMatch.roomId,
+        status: finalSettledMatch.status,
+        isPrivate: finalSettledMatch.isPrivate,
+      });
     }
+
+    return finalSettledMatch;
   }
 
   static async expireStaleMatches(): Promise<{ waitingExpired: number; activeExpired: number }> {
@@ -491,40 +508,33 @@ export class MatchService {
   }
 
   private static async expireActiveMatch(roomId: string): Promise<boolean> {
-    const session = await mongoose.startSession();
-    let settledMatch: IMatch | null = null;
+    const expiredMatch = await runOwnTransaction(async (session) => {
+      const match = await this.getMatchByRoomId(roomId, session);
+      if (!match || match.status !== 'active') {
+        return null;
+      }
 
-    try {
-      await session.withTransaction(async () => {
-        const match = await this.getMatchByRoomId(roomId, session);
-        if (!match || match.status !== 'active') {
-          return;
-        }
-
-        const moveHistory = match.moveHistory ?? [];
-        const timeoutPlayerId = moveHistory.length % 2 === 0 ? match.player1Id.toString() : match.player2Id?.toString();
-        settledMatch = await this.finalizeMatch({
-          match,
-          winnerId: 'draw',
-          settlementReason: 'active_expired',
-          moveHistory,
-          session,
-          timeoutPlayerId,
-        });
+      const moveHistory = match.moveHistory ?? [];
+      const timeoutPlayerId = moveHistory.length % 2 === 0 ? match.player1Id.toString() : match.player2Id?.toString();
+      return this.finalizeMatch({
+        match,
+        winnerId: 'draw',
+        settlementReason: 'active_expired',
+        moveHistory,
+        session,
+        timeoutPlayerId,
       });
-    } finally {
-      await session.endSession();
-    }
+    });
 
-    if (settledMatch) {
+    if (expiredMatch) {
       emitPublicMatchUpdatedEvent({
-        roomId: settledMatch.roomId,
-        status: settledMatch.status,
-        isPrivate: settledMatch.isPrivate,
+        roomId: expiredMatch.roomId,
+        status: expiredMatch.status,
+        isPrivate: expiredMatch.isPrivate,
       });
     }
 
-    return Boolean(settledMatch);
+    return Boolean(expiredMatch);
   }
 
   private static async finalizeMatch({
@@ -632,12 +642,12 @@ export class MatchService {
     roomId: string;
     wager: number;
     p1IdStr: string;
-    p2IdStr?: string;
+    p2IdStr?: string | undefined;
     winnerId: string;
     settlementReason: MatchSettlementReason;
     session: mongoose.ClientSession;
-    requestId?: string;
-    timeoutPlayerId?: string;
+    requestId?: string | undefined;
+    timeoutPlayerId?: string | undefined;
   }): Promise<void> {
     if (winnerId !== 'draw') {
       const { projectedWinnerAmount, commissionAmount } = calculateMatchPayout(wager);
@@ -727,9 +737,9 @@ export class MatchService {
     amount: number;
     roomId: string;
     session: mongoose.ClientSession;
-    requestId?: string;
+    requestId?: string | undefined;
     settlementReason: MatchSettlementReason;
-    transactionType?: 'MATCH_DRAW' | 'MATCH_REFUND';
+    transactionType?: 'MATCH_DRAW' | 'MATCH_REFUND' | undefined;
   }): Promise<void> {
     await UserService.updateBalance(userId, amount, session);
     await TransactionService.createTransaction({
@@ -762,7 +772,7 @@ export class MatchService {
   }: {
     match: IMatch;
     userId: string;
-    inviteToken?: string;
+    inviteToken?: string | undefined;
   }): boolean {
     if (!match.isPrivate) {
       return true;

@@ -18,7 +18,7 @@ export function createTonClient() {
   const network = env.NETWORK;
   return new TonClient({
     endpoint: ENDPOINT[network] ?? ENDPOINT.mainnet,
-    apiKey: env.TONCENTER_API_KEY,
+    ...(env.TONCENTER_API_KEY ? { apiKey: env.TONCENTER_API_KEY } : {}),
   });
 }
 

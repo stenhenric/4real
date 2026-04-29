@@ -62,10 +62,11 @@ export class UnmatchedDepositRepository {
     txHash: string;
     resolvedBy: string;
     action: UnmatchedDepositResolutionAction;
-    note?: string;
-    resolvedUserId?: string | null;
+    note?: string | undefined;
+    resolvedUserId?: string | null | undefined;
   }, session?: mongoose.ClientSession): Promise<boolean> {
     const now = new Date();
+    const trimmedNote = params.note?.trim();
     const result = await this.collection().updateOne(
       { txHash: params.txHash, resolved: { $ne: true } },
       {
@@ -74,8 +75,8 @@ export class UnmatchedDepositRepository {
           resolvedAt: now,
           resolvedBy: params.resolvedBy,
           resolutionAction: params.action,
-          resolutionNote: params.note?.trim() || undefined,
-          resolvedUserId: params.resolvedUserId ?? undefined,
+          resolutionNote: trimmedNote || null,
+          resolvedUserId: params.resolvedUserId ?? null,
           updatedAt: now,
         },
       },

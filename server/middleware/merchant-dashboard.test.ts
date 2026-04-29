@@ -264,7 +264,7 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
 
     throw new Error(`Unexpected Order.find filter: ${JSON.stringify(filter)}`);
   }) as any);
-  const sumBalanceMock = mock.method(UserBalanceRepository, 'sumBalanceRaw', async () => 0n);
+  const sumBalanceMock = mock.method(UserBalanceRepository, 'sumBalanceRawForLedger', async () => 0n);
   const tonBalanceMock = mock.method(TonClient.prototype as TonClient, 'getBalance', async () => 2_500_000_000n);
   const fetchMock = mock.method(globalThis, 'fetch', async () => ({
     status: 200,
@@ -276,7 +276,14 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
     },
   }) as any);
   const configMock = mock.method(MerchantConfigModel, 'findOne', (() => createLeanQuery(expectedConfig)) as any);
-  const userFindByIdMock = mock.method(User, 'findById', (() => createLeanQuery({ balance: 0 })) as any);
+  const commissionBalanceMock = mock.method(UserBalanceRepository, 'findByUserId', async () => ({
+    userId: SYSTEM_COMMISSION_ACCOUNT_ID,
+    balanceRaw: '0',
+    totalDepositedRaw: '0',
+    totalWithdrawnRaw: '0',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }));
   const originalDb = mongoose.connection.db;
   Object.defineProperty(mongoose.connection, 'db', {
     configurable: true,
@@ -359,7 +366,7 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
   t.after(() => tonBalanceMock.mock.restore());
   t.after(() => fetchMock.mock.restore());
   t.after(() => configMock.mock.restore());
-  t.after(() => userFindByIdMock.mock.restore());
+  t.after(() => commissionBalanceMock.mock.restore());
   t.after(() => {
     Object.defineProperty(mongoose.connection, 'db', {
       configurable: true,

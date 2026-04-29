@@ -4,9 +4,20 @@ import type { ApiErrorDTO } from '../../shared/types/api.ts';
 import { AUTH_COOKIE_NAME } from '../config/cookies.ts';
 import { verifyAuthToken } from '../services/auth-token.service.ts';
 import type { JwtUser } from '../types/api.ts';
+import { unauthorized } from '../utils/http-error.ts';
 
 export interface AuthRequest extends Request {
   user?: JwtUser;
+}
+
+export interface AuthenticatedRequest extends AuthRequest {
+  user: JwtUser;
+}
+
+export function assertAuthenticated(req: AuthRequest): asserts req is AuthenticatedRequest {
+  if (!req.user?.id) {
+    throw unauthorized('Unauthenticated', 'UNAUTHENTICATED');
+  }
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction): void => {

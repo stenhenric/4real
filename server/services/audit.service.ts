@@ -19,22 +19,22 @@ export type AuditEventType =
 export class AuditService {
   static async record(params: {
     eventType: AuditEventType;
-    actorUserId?: string | null;
-    targetUserId?: string | null;
+    actorUserId?: string | null | undefined;
+    targetUserId?: string | null | undefined;
     resourceType: string;
     resourceId: string;
-    requestId?: string;
-    metadata?: Record<string, unknown>;
-    session?: mongoose.ClientSession;
+    requestId?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
+    session?: mongoose.ClientSession | undefined;
   }): Promise<void> {
     await AuditEventRepository.create({
       eventType: params.eventType,
-      actorUserId: params.actorUserId ?? undefined,
-      targetUserId: params.targetUserId ?? undefined,
       resourceType: params.resourceType,
       resourceId: params.resourceId,
-      requestId: params.requestId,
-      metadata: params.metadata,
+      ...(params.actorUserId != null ? { actorUserId: params.actorUserId } : {}),
+      ...(params.targetUserId != null ? { targetUserId: params.targetUserId } : {}),
+      ...(params.requestId !== undefined ? { requestId: params.requestId } : {}),
+      ...(params.metadata !== undefined ? { metadata: params.metadata } : {}),
       createdAt: new Date(),
     }, params.session);
   }

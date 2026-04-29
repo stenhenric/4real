@@ -198,7 +198,6 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
   const createDepositMock = mock.method(DepositRepository, 'create', async () => {});
   const createUnmatchedMock = mock.method(UnmatchedDepositRepository, 'create', async () => {});
   const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
-  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 2.5);
   const auditMock = mock.method(AuditService, 'record', async () => {});
   const userFindMock = mock.method(User, 'find', (() => createLeanQuery([
     {
@@ -217,7 +216,6 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
   t.after(() => createDepositMock.mock.restore());
   t.after(() => createUnmatchedMock.mock.restore());
   t.after(() => creditMock.mock.restore());
-  t.after(() => syncMock.mock.restore());
   t.after(() => auditMock.mock.restore());
   t.after(() => userFindMock.mock.restore());
 
@@ -283,7 +281,6 @@ test('reconcileMerchantDeposit credits an open unmatched deposit and marks it re
   const findDepositMock = mock.method(DepositRepository, 'findByTxHash', async () => null);
   const createDepositMock = mock.method(DepositRepository, 'create', async () => {});
   const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
-  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 4.1);
   const markUsedMock = mock.method(DepositMemoRepository, 'markUsed', async () => {});
   const markResolvedMock = mock.method(UnmatchedDepositRepository, 'markResolved', async () => true);
   const updateProcessedMock = mock.method(ProcessedTransactionRepository, 'updateType', async () => {});
@@ -296,7 +293,6 @@ test('reconcileMerchantDeposit credits an open unmatched deposit and marks it re
   t.after(() => findDepositMock.mock.restore());
   t.after(() => createDepositMock.mock.restore());
   t.after(() => creditMock.mock.restore());
-  t.after(() => syncMock.mock.restore());
   t.after(() => markUsedMock.mock.restore());
   t.after(() => markResolvedMock.mock.restore());
   t.after(() => updateProcessedMock.mock.restore());
@@ -357,7 +353,6 @@ test('reconcileMerchantDeposit does not credit when another operator resolves th
   const findDepositMock = mock.method(DepositRepository, 'findByTxHash', async () => null);
   const createDepositMock = mock.method(DepositRepository, 'create', async () => {});
   const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
-  const syncMock = mock.method(userServiceModule.UserService, 'syncUserDisplayBalance', async () => 4.1);
   const markUsedMock = mock.method(DepositMemoRepository, 'markUsed', async () => {});
   const updateProcessedMock = mock.method(ProcessedTransactionRepository, 'updateType', async () => {});
   const auditMock = mock.method(AuditService, 'record', async () => {});
@@ -369,7 +364,6 @@ test('reconcileMerchantDeposit does not credit when another operator resolves th
   t.after(() => findDepositMock.mock.restore());
   t.after(() => createDepositMock.mock.restore());
   t.after(() => creditMock.mock.restore());
-  t.after(() => syncMock.mock.restore());
   t.after(() => markUsedMock.mock.restore());
   t.after(() => updateProcessedMock.mock.restore());
   t.after(() => auditMock.mock.restore());
@@ -394,7 +388,6 @@ test('reconcileMerchantDeposit does not credit when another operator resolves th
   assert.equal(findDepositMock.mock.callCount(), 0);
   assert.equal(createDepositMock.mock.callCount(), 0);
   assert.equal(creditMock.mock.callCount(), 0);
-  assert.equal(syncMock.mock.callCount(), 0);
   assert.equal(markUsedMock.mock.callCount(), 0);
   assert.equal(updateProcessedMock.mock.callCount(), 0);
   assert.equal(auditMock.mock.callCount(), 0);

@@ -18,79 +18,88 @@ export class OrderService {
     exchangeRate,
     fiatTotal,
     requestId,
+    session,
   }: {
     userId: mongoose.Types.ObjectId;
     type: 'BUY' | 'SELL';
     amount: number;
-    proof?: TelegramOrderProof;
-    transactionCode?: string;
+    proof?: TelegramOrderProof | undefined;
+    transactionCode?: string | undefined;
     fiatCurrency: 'KES';
     exchangeRate: number;
     fiatTotal: number;
-    requestId?: string;
+    requestId?: string | undefined;
+    session?: mongoose.ClientSession | undefined;
   }): Promise<IOrder> {
-    const session = await mongoose.startSession();
     let savedOrder: IOrder | null = null;
+    const runCreateOrder = async (activeSession: mongoose.ClientSession) => {
+      const userIdString = userId.toString();
 
-    try {
-      await session.withTransaction(async () => {
-        const userIdString = userId.toString();
-
-        if (type === 'SELL') {
-          const updatedUser = await UserService.deductBalanceSafely(userIdString, amount, session);
-          if (!updatedUser) {
-            throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
-          }
+      if (type === 'SELL') {
+        const updatedUser = await UserService.deductBalanceSafely(userIdString, amount, activeSession);
+        if (!updatedUser) {
+          throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
         }
+      }
 
-        const createdOrders = await Order.create([{
-          userId,
-          type,
-          amount,
-          proof,
-          transactionCode,
-          fiatCurrency,
-          exchangeRate,
-          fiatTotal,
-          status: 'PENDING',
-        }], { session });
-        savedOrder = createdOrders[0] ?? null;
+      const createdOrders = await Order.create([{
+        userId,
+        type,
+        amount,
+        fiatCurrency,
+        exchangeRate,
+        fiatTotal,
+        status: 'PENDING',
+        ...(proof ? { proof } : {}),
+        ...(transactionCode ? { transactionCode } : {}),
+      }], { session: activeSession });
+      savedOrder = createdOrders[0] ?? null;
 
-        if (!savedOrder) {
-          throw new Error('Unable to create order');
-        }
+      if (!savedOrder) {
+        throw new Error('Unable to create order');
+      }
 
-        await TransactionService.createTransaction({
-          userId: savedOrder.userId.toString(),
-          type: savedOrder.type === 'BUY' ? 'BUY_P2P' : 'SELL_P2P',
-          amount: savedOrder.type === 'BUY' ? savedOrder.amount : -savedOrder.amount,
-          status: 'PENDING',
-          referenceId: savedOrder._id.toString(),
-          session,
-        });
-
-        await AuditService.record({
-          eventType: 'order_created',
-          actorUserId: savedOrder.userId.toString(),
-          targetUserId: savedOrder.userId.toString(),
-          resourceType: 'order',
-          resourceId: savedOrder._id.toString(),
-          requestId,
-          metadata: {
-            type: savedOrder.type,
-            amount: savedOrder.amount,
-            transactionCode: savedOrder.transactionCode,
-            fiatCurrency: savedOrder.fiatCurrency,
-            exchangeRate: savedOrder.exchangeRate,
-            fiatTotal: savedOrder.fiatTotal,
-            proofProvider: savedOrder.proof?.provider,
-            proofUrl: savedOrder.proof?.url,
-          },
-          session,
-        });
+      await TransactionService.createTransaction({
+        userId: savedOrder.userId.toString(),
+        type: savedOrder.type === 'BUY' ? 'BUY_P2P' : 'SELL_P2P',
+        amount: savedOrder.type === 'BUY' ? savedOrder.amount : -savedOrder.amount,
+        status: 'PENDING',
+        referenceId: savedOrder._id.toString(),
+        session: activeSession,
       });
-    } finally {
-      await session.endSession();
+
+      await AuditService.record({
+        eventType: 'order_created',
+        actorUserId: savedOrder.userId.toString(),
+        targetUserId: savedOrder.userId.toString(),
+        resourceType: 'order',
+        resourceId: savedOrder._id.toString(),
+        ...(requestId ? { requestId } : {}),
+        metadata: {
+          type: savedOrder.type,
+          amount: savedOrder.amount,
+          transactionCode: savedOrder.transactionCode,
+          fiatCurrency: savedOrder.fiatCurrency,
+          exchangeRate: savedOrder.exchangeRate,
+          fiatTotal: savedOrder.fiatTotal,
+          proofProvider: savedOrder.proof?.provider,
+          proofUrl: savedOrder.proof?.url,
+        },
+        session: activeSession,
+      });
+    };
+
+    if (session) {
+      await runCreateOrder(session);
+    } else {
+      const ownSession = await mongoose.startSession();
+      try {
+        await ownSession.withTransaction(async () => {
+          await runCreateOrder(ownSession);
+        });
+      } finally {
+        await ownSession.endSession();
+      }
     }
 
     if (!savedOrder) {
@@ -108,8 +117,8 @@ export class OrderService {
   static async updateOrderStatus(
     orderId: string,
     status: 'PENDING' | 'DONE' | 'REJECTED',
-    actorUserId?: string,
-    requestId?: string,
+    actorUserId?: string | undefined,
+    requestId?: string | undefined,
   ): Promise<IOrder | null> {
     const session = await mongoose.startSession();
     let savedOrder: IOrder | null = null;
@@ -161,11 +170,11 @@ export class OrderService {
         if (status === 'DONE' || status === 'REJECTED') {
           await AuditService.record({
             eventType: status === 'DONE' ? 'order_approved' : 'order_rejected',
-            actorUserId,
+            ...(actorUserId ? { actorUserId } : {}),
             targetUserId: order.userId.toString(),
             resourceType: 'order',
             resourceId: order._id.toString(),
-            requestId,
+            ...(requestId ? { requestId } : {}),
             metadata: {
               type: order.type,
               amount: order.amount,
