@@ -6,7 +6,7 @@ import { Match } from '../models/Match.ts';
 import type { IMatch } from '../models/Match.ts';
 import type { MatchMoveDTO } from '../types/api.ts';
 import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
-import { badRequest, conflict, notFound } from '../utils/http-error.ts';
+import { badRequest, conflict, internalServerError, notFound } from '../utils/http-error.ts';
 import { calculateMatchPayout, calculateDrawPayout } from './match-payout.service.ts';
 import { UserService } from './user.service.ts';
 import { AuditService } from './audit.service.ts';
@@ -59,7 +59,7 @@ async function runOwnTransaction<T>(work: (session: mongoose.ClientSession) => P
   }
 
   if (result === undefined) {
-    throw new Error('Transaction completed without a result');
+    throw internalServerError('Transaction completed without a result', 'TRANSACTION_NO_RESULT');
   }
 
   return result;

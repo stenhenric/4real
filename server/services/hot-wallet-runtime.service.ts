@@ -2,6 +2,7 @@ import { Address } from '@ton/ton';
 
 import { getEnv } from '../config/env.ts';
 import { addressesEqual, deriveJettonWallet } from '../lib/jetton.ts';
+import { serviceUnavailable } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 
 export interface HotWalletRuntimeState {
@@ -76,7 +77,7 @@ export async function initializeHotWalletRuntime(): Promise<HotWalletRuntimeStat
 
 export function getHotWalletRuntime(): HotWalletRuntimeState {
   if (!runtimeState) {
-    throw new Error('Hot wallet runtime has not been initialized');
+    throw serviceUnavailable('Hot wallet runtime has not been initialized', 'HOT_WALLET_NOT_INITIALIZED');
   }
 
   return runtimeState;

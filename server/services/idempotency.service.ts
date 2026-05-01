@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import type { ClientSession } from 'mongoose';
 
 import { IdempotencyKeyRepository } from '../repositories/idempotency-key.repository.ts';
-import { conflict } from '../utils/http-error.ts';
+import { conflict, internalServerError } from '../utils/http-error.ts';
 import { HttpError } from '../utils/http-error.ts';
 
 interface IdempotentMutationResult<TBody> {
@@ -222,7 +222,7 @@ export async function executeIdempotentMutationV2<TBody>({
       }, executed.statusCode, executed.body, session);
 
       if (!markedCompleted) {
-        throw new Error('Failed to atomically mark idempotency completion');
+        throw internalServerError('Failed to atomically mark idempotency completion', 'IDEMPOTENCY_MARK_FAILED');
       }
 
       response = {
@@ -235,7 +235,7 @@ export async function executeIdempotentMutationV2<TBody>({
   }
 
   if (!response) {
-    throw new Error('Idempotent mutation did not produce a response');
+    throw internalServerError('Idempotent mutation did not produce a response', 'IDEMPOTENCY_NO_RESPONSE');
   }
 
   return response;

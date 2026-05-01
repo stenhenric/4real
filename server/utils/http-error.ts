@@ -50,6 +50,11 @@ export const unsupportedMediaType = (
   code = deriveErrorCode(message, 'UNSUPPORTED_MEDIA_TYPE'),
   details?: unknown,
 ) => new HttpError(415, code, message, true, details);
+export const internalServerError = (
+  message: string,
+  code = deriveErrorCode(message, 'INTERNAL_SERVER_ERROR'),
+  details?: unknown,
+) => new HttpError(500, code, message, true, details);
 export const serviceUnavailable = (
   message: string,
   code = deriveErrorCode(message, 'SERVICE_UNAVAILABLE'),
