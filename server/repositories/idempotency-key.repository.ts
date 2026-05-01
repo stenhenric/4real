@@ -63,7 +63,6 @@ export class IdempotencyKeyRepository {
           ...document,
           status: 'processing',
           createdAt: now,
-          updatedAt: now,
         },
         $set: {
           updatedAt: now,

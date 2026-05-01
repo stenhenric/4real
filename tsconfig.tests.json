@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    "server/middleware/idempotency-key.repository.test.ts"
+  ],
+  "exclude": []
+}
