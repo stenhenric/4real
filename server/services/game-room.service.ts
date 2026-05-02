@@ -63,6 +63,12 @@ export function determineCurrentTurn(match: IMatch): string | null {
 }
 
 export async function createRoomStateFromMatch(match: IMatch): Promise<RoomState> {
+  const normalizedMoves = (match.moveHistory ?? []).map((m) => ({
+    userId: m.userId,
+    col: m.col,
+    row: m.row,
+  }));
+
   const player1Id = match.player1Id.toString();
   const player2Id = match.player2Id?.toString();
   const [player1, player2] = await Promise.all([
@@ -86,14 +92,10 @@ export async function createRoomStateFromMatch(match: IMatch): Promise<RoomState
         elo: player2?.elo ?? 1000,
       }] : []),
     ],
-    board: buildBoardFromMoves((match.moveHistory ?? []).map((m) => ({ userId: m.userId, col: m.col, row: m.row })), player1Id, player2Id),
+    board: buildBoardFromMoves(normalizedMoves, player1Id, player2Id),
     currentTurn: determineCurrentTurn(match),
     status: match.status,
-    moves: (match.moveHistory ?? []).map((move) => ({
-      userId: move.userId,
-      col: move.col,
-      row: move.row,
-    })),
+    moves: normalizedMoves,
     wager: match.wager ?? 0,
     isPrivate: match.isPrivate ?? false,
     ...(match._id ? { dbMatchId: match._id.toString() } : {}),
