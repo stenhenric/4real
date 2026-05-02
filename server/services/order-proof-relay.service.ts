@@ -80,7 +80,7 @@ async function persistProofOnOrder(
         throw error;
       }
 
-      if (order.proof) {
+      if (order.proof && order.proof.url) {
         settledProof = order.proof;
       } else {
         order.proof = proof;
@@ -99,7 +99,7 @@ async function persistProofOnOrder(
 async function processClaimedOrderProofRelay(
   document: OrderProofRelayDocument,
 ): Promise<TelegramOrderProof | undefined> {
-  if (document.proof) {
+  if (document.proof && document.proof.url) {
     return document.proof;
   }
 
@@ -190,7 +190,7 @@ export async function settleOrderProofRelay(params: {
     return undefined;
   }
 
-  if (current.proof) {
+  if (current.proof && current.proof.url) {
     return current.proof;
   }
 
@@ -205,7 +205,7 @@ export async function settleOrderProofRelay(params: {
       params.routeKey,
       params.requestHash,
     );
-    return latest?.proof;
+    return latest && latest.proof && latest.proof.url ? latest.proof : undefined;
   }
 
   return processClaimedOrderProofRelay(claimed);

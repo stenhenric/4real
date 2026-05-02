@@ -136,7 +136,7 @@ export class MatchService {
         wager,
         isPrivate,
         ...(inviteToken ? { inviteTokenHash: this.hashInviteToken(inviteToken) } : {}),
-        status: 'waiting',
+        status: 'waiting' as const,
         moveHistory: [],
         lastActivityAt: now(),
       }, activeSession);
@@ -360,7 +360,7 @@ export class MatchService {
   }
 
   static async getActiveMatches(): Promise<IMatch[]> {
-    return Match.find({ status: 'waiting', isPrivate: false })
+    return Match.find({ status: 'waiting' as const, isPrivate: false })
       .sort({ createdAt: -1 })
       .limit(20)
       .select('-__v');
@@ -423,11 +423,11 @@ export class MatchService {
 
     const [waitingMatches, activeMatches] = await Promise.all([
       Match.find(trustFilter({
-        status: 'waiting',
+        status: 'waiting' as const,
         lastActivityAt: { $lt: waitingCutoff },
       })).select('roomId'),
       Match.find(trustFilter({
-        status: 'active',
+        status: 'active' as const,
         lastActivityAt: { $lt: activeCutoff },
       })).select('roomId'),
     ]);
@@ -454,7 +454,7 @@ export class MatchService {
   static async getUserHistory(userId: string, limit: number = 5): Promise<IMatch[]> {
     return Match.find(trustFilter({
       $or: [{ player1Id: userId }, { player2Id: userId }],
-      status: 'completed',
+      status: 'completed' as const,
     }))
       .sort({ createdAt: -1 })
       .limit(limit)

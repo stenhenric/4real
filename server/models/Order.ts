@@ -31,10 +31,13 @@ const OrderSchema: Schema = new Schema({
   exchangeRate: { type: Number, min: 0 },
   fiatTotal: { type: Number, min: 0 },
   proof: {
-    provider: { type: String, enum: ['telegram'] },
-    url: { type: String, trim: true },
-    messageId: { type: String, trim: true },
-    chatId: { type: String, trim: true },
+    type: {
+      provider: { type: String, enum: ['telegram'] },
+      url: { type: String, trim: true },
+      messageId: { type: String, trim: true },
+      chatId: { type: String, trim: true },
+    },
+    default: undefined,
   }
 }, {
   timestamps: true

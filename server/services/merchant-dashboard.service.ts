@@ -483,8 +483,8 @@ export class MerchantDashboardService {
       systemCommissionBalance,
       merchantConfig,
     ] = await Promise.all([
-      fetchOrders({ filter: { status: 'PENDING' } }),
-      Order.find(trustFilter({ status: 'DONE', createdAt: { $gte: since24h } }))
+      fetchOrders({ filter: { status: 'PENDING' as const } }),
+      Order.find(trustFilter({ status: 'DONE' as const, createdAt: { $gte: since24h } }))
         .select('amount createdAt')
         .sort({ createdAt: 1 })
         .lean<Array<{ amount: number; createdAt: Date }>>(),
