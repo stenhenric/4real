@@ -6,13 +6,17 @@ import helmet from 'helmet';
 import mongoose from 'mongoose';
 
 import { getCorsOptions } from './config/cors.ts';
-import { getEnv, getTrustProxySetting } from './config/env.ts';
+import { getEnv, getPublicAppOrigin, getTrustProxySetting } from './config/env.ts';
 import { csrfProtectionMiddleware } from './middleware/csrf.middleware.ts';
 import { errorHandler, notFoundApiHandler } from './middleware/error.middleware.ts';
 import { createGeneralRateLimiter } from './middleware/rate-limit.middleware.ts';
 import { requestContextMiddleware } from './middleware/request-context.middleware.ts';
 import { registerApiRoutes } from './routes/index.ts';
 import { registerFrontendMiddleware } from './http/frontend.ts';
+import { renderMetrics } from './services/metrics.service.ts';
+import { probeBullmq } from './services/bullmq-jobs.service.ts';
+import { getHotWalletRuntime } from './services/hot-wallet-runtime.service.ts';
+import { probeRedis } from './services/redis.service.ts';
 
 interface AppStatusProvider {
   isShuttingDown: () => boolean;
@@ -22,6 +26,7 @@ interface AppStatusProvider {
 export async function createApp(statusProvider: AppStatusProvider) {
   const env = getEnv();
   const trustProxy = getTrustProxySetting();
+  const publicAppOrigin = getPublicAppOrigin();
   const app = express();
 
   if (env.NODE_ENV === 'production') {
@@ -50,29 +55,48 @@ export async function createApp(statusProvider: AppStatusProvider) {
     res.json({ status: 'ok' });
   });
 
-  app.get('/api/health/ready', (_req, res) => {
-    const isReady = mongoose.connection.readyState === 1 && !statusProvider.isShuttingDown();
+  app.get('/api/health/ready', async (_req, res) => {
+    const redis = await probeRedis();
+    const bullmq = await probeBullmq();
+    const hotWalletRuntime = (() => {
+      try {
+        getHotWalletRuntime();
+        return 'up' as const;
+      } catch {
+        return 'down' as const;
+      }
+    })();
+    const checks = {
+      database: mongoose.connection.readyState === 1 ? 'up' : 'down',
+      redis,
+      bullmq,
+      shutdown: statusProvider.isShuttingDown() ? 'draining' : 'accepting',
+      hotWalletRuntime,
+      backgroundJobs: statusProvider.getBackgroundJobs(),
+    };
+    const isReady = checks.database === 'up'
+      && checks.shutdown === 'accepting'
+      && (checks.redis === 'up' || checks.redis === 'disabled')
+      && (checks.bullmq === 'up' || checks.bullmq === 'disabled')
+      && checks.hotWalletRuntime === 'up';
     res.status(isReady ? 200 : 503).json({
       status: isReady ? 'ready' : 'not_ready',
-      checks: {
-        database: mongoose.connection.readyState === 1 ? 'up' : 'down',
-        shuttingDown: statusProvider.isShuttingDown(),
-        backgroundJobs: statusProvider.getBackgroundJobs(),
-      },
+      checks,
+      uptimeSeconds: Math.floor(process.uptime()),
     });
   });
 
-  app.get('/tonconnect-manifest.json', (req, res) => {
-    const host = req.get('x-forwarded-host')?.split(',')[0]?.trim() || req.get('host');
-    const proto = req.get('x-forwarded-proto')?.split(',')[0]?.trim() || req.protocol;
-    const origin = `${proto}://${host}`;
+  app.get('/api/metrics', async (_req, res) => {
+    res.type('text/plain; version=0.0.4').send(await renderMetrics());
+  });
 
+  app.get('/tonconnect-manifest.json', (_req, res) => {
     res.json({
-      url: origin,
+      url: publicAppOrigin,
       name: '4real',
-      iconUrl: `${origin}/tonconnect-icon.svg`,
-      privacyPolicyUrl: `${origin}/privacy-policy.html`,
-      termsOfUseUrl: `${origin}/terms-of-use.html`,
+      iconUrl: `${publicAppOrigin}/tonconnect-icon.svg`,
+      privacyPolicyUrl: `${publicAppOrigin}/privacy-policy.html`,
+      termsOfUseUrl: `${publicAppOrigin}/terms-of-use.html`,
     });
   });
 

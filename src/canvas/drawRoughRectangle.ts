@@ -26,7 +26,7 @@ export function drawRoughRectangle(canvas: HTMLCanvasElement, options: DrawRough
   generator.rectangle(options.x, options.y, options.width, options.height, {
     fill: options.fill,
     fillStyle: options.fillStyle,
-    fillWeight: options.fillWeight,
+    ...(options.fillWeight !== undefined ? { fillWeight: options.fillWeight } : {}),
     hachureGap: options.hachureGap,
     roughness: options.roughness,
     stroke: options.stroke,

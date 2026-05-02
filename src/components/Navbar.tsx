@@ -7,12 +7,16 @@ import { LogOut, Home, Landmark, ShieldCheck, User } from 'lucide-react';
 const Navbar = () => {
   const { userData, user, logout } = useAuth();
   const navigate = useNavigate();
-  const { info } = useToast();
+  const { error, info } = useToast();
 
   const handleLogout = async () => {
-    await logout();
-    info('Logged out successfully.');
-    navigate('/auth');
+    try {
+      await logout();
+      info('Logged out successfully.');
+      navigate('/auth');
+    } catch (logoutError) {
+      error(logoutError instanceof Error ? logoutError.message : 'Unable to log out right now.');
+    }
   };
 
   return (
@@ -127,4 +131,3 @@ const Navbar = () => {
 };
 
 export default Navbar;
-

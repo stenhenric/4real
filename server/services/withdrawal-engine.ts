@@ -6,6 +6,7 @@ import { createTonClient, getHotWallet, getToncenterBaseUrl } from '../lib/ton-c
 import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
 import { toncenterJettonWalletBalanceSchema } from '../schemas/external/toncenter-balance.schema.ts';
 import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
+import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
 import { logger } from '../utils/logger.ts';
 
 export function buildJettonTransferBody(amountRaw: string, destination: string, responseAddress: Address, comment: string) {
@@ -40,47 +41,52 @@ export class SeqnoTimeoutError extends Error {
 }
 
 export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, hotJettonWallet }: { toAddress: string, amountRaw: string, withdrawalId: string, hotJettonWallet: string }) {
-  const { wallet, keyPair } = await getHotWallet();
-  const client = createTonClient();
-  const contract = client.open(wallet);
+  return runProtectedDependencyCall({
+    dependency: 'ton_wallet_rpc',
+    operation: async () => {
+      const { wallet, keyPair } = await getHotWallet();
+      const client = createTonClient();
+      const contract = client.open(wallet);
 
-  const body = buildJettonTransferBody(
-    amountRaw,
-    toAddress,
-    wallet.address,
-    `wd-${withdrawalId}`,
-  );
+      const body = buildJettonTransferBody(
+        amountRaw,
+        toAddress,
+        wallet.address,
+        `wd-${withdrawalId}`,
+      );
 
-  const seqno = await contract.getSeqno();
-  const validUntil = Math.floor(Date.now() / 1000) + 300; // 5 minutes expiration
+      const seqno = await contract.getSeqno();
+      const validUntil = Math.floor(Date.now() / 1000) + 300; // 5 minutes expiration
 
-  await contract.sendTransfer({
-    seqno,
-    secretKey: keyPair.secretKey,
-    sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
-    timeout: validUntil,
-    messages: [
-      internal({
-        to: Address.parse(hotJettonWallet),
-        value: toNano('0.07'),
-        bounce: true,
-        body,
-      }),
-    ],
+      await contract.sendTransfer({
+        seqno,
+        secretKey: keyPair.secretKey,
+        sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+        timeout: validUntil,
+        messages: [
+          internal({
+            to: Address.parse(hotJettonWallet),
+            value: toNano('0.07'),
+            bounce: true,
+            body,
+          }),
+        ],
+      });
+
+      const sentAt = new Date();
+
+      try {
+        await pollUntilSeqnoChanges(contract, seqno, 90_000);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Seqno stuck')) {
+          throw new SeqnoTimeoutError(seqno, 90_000, sentAt);
+        }
+        throw error;
+      }
+
+      return { seqno, sentAt };
+    },
   });
-
-  const sentAt = new Date();
-
-  try {
-    await pollUntilSeqnoChanges(contract, seqno, 90_000);
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Seqno stuck')) {
-      throw new SeqnoTimeoutError(seqno, 90_000, sentAt);
-    }
-    throw error;
-  }
-
-  return { seqno, sentAt };
 }
 
 interface ToncenterJettonTransfer {
@@ -116,18 +122,32 @@ async function fetchJettonTransfers({
     url.searchParams.set('offset', String(offset));
     url.searchParams.set('sort', 'asc');
 
-    const response = await fetch(url.toString(), {
-      headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
-      signal: AbortSignal.timeout(10_000),
-    });
+    let response: Response;
+    try {
+      response = await runProtectedDependencyCall({
+        dependency: 'toncenter',
+        retries: getEnv().TONCENTER_MAX_RETRIES,
+        baseDelayMs: getEnv().TONCENTER_RETRY_BASE_DELAY_MS,
+        operation: async () => {
+          const nextResponse = await fetch(url.toString(), {
+            headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
+            signal: AbortSignal.timeout(getEnv().TONCENTER_REQUEST_TIMEOUT_MS),
+          });
 
-    if (response.status === 429) {
-      logger.warn('withdrawal.confirmation_rate_limited');
-      break; // Return what we have so far
-    }
+          if (!nextResponse.ok) {
+            throw createDependencyHttpError('toncenter', nextResponse.status);
+          }
 
-    if (!response.ok) {
-      throw new Error(`Toncenter error ${response.status}`);
+          return nextResponse;
+        },
+      });
+    } catch (error) {
+      if (error && typeof error === 'object' && 'status' in error && error.status === 429) {
+        logger.warn('withdrawal.confirmation_rate_limited');
+        break;
+      }
+
+      throw error;
     }
 
     const data = parseExternalResponse(
@@ -188,8 +208,14 @@ export async function findWithdrawalTransferOnChain({
 }
 
 export async function getHotWalletTonBalance(address: string): Promise<bigint> {
-  const client = createTonClient();
-  return client.getBalance(Address.parse(address));
+  return runProtectedDependencyCall({
+    dependency: 'ton_wallet_rpc',
+    retries: 1,
+    operation: async () => {
+      const client = createTonClient();
+      return client.getBalance(Address.parse(address));
+    },
+  });
 }
 
 export async function getHotWalletUsdtBalanceRaw(ownerAddress: string): Promise<bigint | null> {
@@ -197,18 +223,32 @@ export async function getHotWalletUsdtBalanceRaw(ownerAddress: string): Promise<
   url.searchParams.set('owner_address', ownerAddress);
   url.searchParams.set('jetton_address', USDT_MASTER);
 
-  const response = await fetch(url.toString(), {
-    headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
-    signal: AbortSignal.timeout(10_000),
-  });
+  let response: Response;
+  try {
+    response = await runProtectedDependencyCall({
+      dependency: 'toncenter',
+      retries: getEnv().TONCENTER_MAX_RETRIES,
+      baseDelayMs: getEnv().TONCENTER_RETRY_BASE_DELAY_MS,
+      operation: async () => {
+        const nextResponse = await fetch(url.toString(), {
+          headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
+          signal: AbortSignal.timeout(getEnv().TONCENTER_REQUEST_TIMEOUT_MS),
+        });
 
-  if (response.status === 429) {
-    logger.warn('wallet_monitor.rate_limited');
-    return null;
-  }
+        if (!nextResponse.ok) {
+          throw createDependencyHttpError('toncenter', nextResponse.status);
+        }
 
-  if (!response.ok) {
-    throw new Error(`Toncenter error ${response.status}`);
+        return nextResponse;
+      },
+    });
+  } catch (error) {
+    if (error && typeof error === 'object' && 'status' in error && error.status === 429) {
+      logger.warn('wallet_monitor.rate_limited');
+      return null;
+    }
+
+    throw error;
   }
 
   const data = parseExternalResponse(

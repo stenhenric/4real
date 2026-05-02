@@ -44,7 +44,7 @@ const WithdrawPanel = () => {
       await createWithdrawal({ amountUsdt: Number(amount), toAddress });
       addToast('Withdrawal queued successfully. Track it in transaction history.', 'success');
       setAmount('');
-      setToAddress('');
+      setToAddress(connectedWalletAddress || '');
       await refreshUser();
     } catch (error) {
       addToast(error instanceof Error ? error.message : 'Withdrawal failed', 'error');

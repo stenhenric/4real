@@ -31,18 +31,15 @@ test('csrfProtectionMiddleware blocks state-changing requests from disallowed or
     get: (header: string) => (header.toLowerCase() === 'origin' ? 'https://evil.example' : undefined),
   } as any;
   const res = createResponseMock() as any;
-  let nextCalled = false;
+  let capturedError: { statusCode?: number; code?: string; message?: string } | undefined;
 
-  csrfProtectionMiddleware(req, res, () => {
-    nextCalled = true;
+  csrfProtectionMiddleware(req, res, (error?: { statusCode?: number; code?: string; message?: string }) => {
+    capturedError = error;
   });
 
-  assert.equal(nextCalled, false);
-  assert.equal(res.statusCode, 403);
-  assert.deepEqual(res.body, {
-    code: 'INVALID_REQUEST_ORIGIN',
-    message: 'Invalid request origin',
-  });
+  assert.equal(capturedError?.statusCode, 403);
+  assert.equal(capturedError?.code, 'INVALID_REQUEST_ORIGIN');
+  assert.equal(capturedError?.message, 'Invalid request origin');
 
   if (previousAllowedOrigins === undefined) {
     delete process.env.ALLOWED_ORIGINS;
@@ -91,4 +88,20 @@ test('validateBody parses and replaces the request body', () => {
 
   assert.equal(nextCalled, true);
   assert.deepEqual(req.body, { amount: 12.5 });
+});
+
+test('validateBody forwards schema failures to the error middleware', () => {
+  const middleware = validateBody(z.object({ amount: z.coerce.number().positive() }));
+  const req = { body: { amount: '-1' } } as any;
+  const res = createResponseMock() as any;
+  let capturedError: { statusCode?: number; code?: string; message?: string; details?: unknown } | undefined;
+
+  middleware(req, res, (error?: { statusCode?: number; code?: string; message?: string; details?: unknown }) => {
+    capturedError = error;
+  });
+
+  assert.equal(capturedError?.statusCode, 400);
+  assert.equal(capturedError?.code, 'INVALID_REQUEST_PAYLOAD');
+  assert.equal(capturedError?.message, 'Too small: expected number to be >0');
+  assert.ok(Array.isArray(capturedError?.details));
 });

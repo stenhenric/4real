@@ -9,11 +9,12 @@ import { serializeOrder } from '../serializers/api.ts';
 import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
 import { getMerchantConfig } from '../services/merchant-config.service.ts';
 import { OrderService } from '../services/order.service.ts';
-import { getOrRelayOrderProof } from '../services/order-proof-relay.service.ts';
+import { enqueueOrderProofRelay, settleOrderProofRelay } from '../services/order-proof-relay.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
 import { parseMultipartForm } from '../utils/multipart.ts';
 import { badRequest, notFound, payloadTooLarge, serviceUnavailable, unsupportedMediaType } from '../utils/http-error.ts';
+import { logger } from '../utils/logger.ts';
 import {
   createOrderRequestSchema,
   type UpdateOrderStatusRequest,
@@ -93,6 +94,21 @@ export class OrderController {
     const proofDigest = proofImage
       ? crypto.createHash('sha256').update(proofImage.data).digest('hex')
       : undefined;
+    const proofRelay = parsedBody.type === 'BUY' && proofImage
+      ? {
+          orderType: parsedBody.type,
+          amount: parsedBody.amount,
+          fiatCurrency: merchantConfig.fiatCurrency,
+          exchangeRate,
+          fiatTotal,
+          transactionCode: parsedBody.transactionCode ?? '',
+          username: user.username,
+          userId: user._id.toString(),
+          mimeType: proofImage.contentType,
+          filename: proofImage.filename,
+          fileBytes: proofImage.data,
+        }
+      : undefined;
     const result = await executeIdempotentMutationV2({
       userId,
       routeKey: 'orders:create',
@@ -108,32 +124,11 @@ export class OrderController {
         proofMimeType: proofImage?.contentType,
       },
       execute: async ({ requestHash, session }: { requestHash: string; session: ClientSession }) => {
-        const proof = parsedBody.type === 'BUY' && proofImage
-          ? await getOrRelayOrderProof({
-              userId: user._id.toString(),
-              routeKey: 'orders:create',
-              requestHash,
-              relay: {
-                orderType: parsedBody.type,
-                amount: parsedBody.amount,
-                fiatCurrency: merchantConfig.fiatCurrency,
-                exchangeRate,
-                fiatTotal,
-                transactionCode: parsedBody.transactionCode ?? '',
-                username: user.username,
-                userId: user._id.toString(),
-                mimeType: proofImage.contentType,
-                filename: proofImage.filename,
-                fileBytes: proofImage.data,
-              },
-            })
-          : undefined;
-
         const order = await OrderService.createOrder({
           userId: user._id,
           type: parsedBody.type,
           amount: parsedBody.amount,
-          ...(proof ? { proof } : {}),
+          proofRelayQueued: Boolean(proofRelay),
           ...(parsedBody.transactionCode ? { transactionCode: parsedBody.transactionCode } : {}),
           fiatCurrency: merchantConfig.fiatCurrency,
           exchangeRate,
@@ -142,6 +137,17 @@ export class OrderController {
           session,
         });
 
+        if (proofRelay) {
+          await enqueueOrderProofRelay({
+            userId: user._id.toString(),
+            routeKey: 'orders:create',
+            requestHash,
+            orderId: order._id.toString(),
+            relay: proofRelay,
+            session,
+          });
+        }
+
         return {
           statusCode: 201,
           body: serializeOrder(order),
@@ -149,7 +155,30 @@ export class OrderController {
       },
     });
 
-    res.status(result.statusCode).json(result.body);
+    let responseBody = result.body;
+    if (proofRelay) {
+      try {
+        const proof = await settleOrderProofRelay({
+          userId: user._id.toString(),
+          routeKey: 'orders:create',
+          requestHash: result.requestHash,
+        });
+        if (proof) {
+          responseBody = {
+            ...responseBody,
+            proof,
+          };
+        }
+      } catch (error) {
+        logger.error('order.proof_relay_immediate_settlement_failed', {
+          userId: user._id.toString(),
+          requestHash: result.requestHash,
+          error,
+        });
+      }
+    }
+
+    res.status(result.statusCode).json(responseBody);
   }
 
   static async updateOrder(req: AuthRequest, res: Response): Promise<void> {

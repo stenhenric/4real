@@ -1,9 +1,13 @@
 import type { ApiErrorDTO } from '../../types/api';
 
+interface ApiRequestOptions extends RequestInit {
+  skipAuthRefresh?: boolean;
+}
+
 export class ApiClientError extends Error {
   readonly status: number;
-  readonly code?: string;
-  readonly details?: unknown;
+  readonly code: string | undefined;
+  readonly details: unknown;
 
   constructor({
     status,
@@ -28,24 +32,69 @@ function isApiErrorPayload(value: unknown): value is ApiErrorDTO {
   return (
     typeof value === 'object'
     && value !== null
-    && 'message' in value
-    && typeof (value as { message?: unknown }).message === 'string'
+    && (
+      ('message' in value && typeof (value as { message?: unknown }).message === 'string')
+      || ('detail' in value && typeof (value as { detail?: unknown }).detail === 'string')
+    )
   );
 }
 
-const request = async <T = unknown>(endpoint: string, options: RequestInit = {}): Promise<T> => {
-  const headers = new Headers(options.headers ?? {});
-  const hasBody = options.body !== undefined && options.body !== null;
+let activeSessionRefresh: Promise<void> | null = null;
 
-  if (hasBody && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+async function refreshAuthSession(): Promise<void> {
+  if (!activeSessionRefresh) {
+    activeSessionRefresh = (async () => {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new ApiClientError({
+          status: response.status,
+          message: 'Session refresh failed',
+        });
+      }
+    })().finally(() => {
+      activeSessionRefresh = null;
+    });
+  }
+
+  await activeSessionRefresh;
+}
+
+const request = async <T = unknown>(endpoint: string, options?: ApiRequestOptions): Promise<T> => {
+  const { skipAuthRefresh, ...fetchOptions } = options ?? {};
+  const headers = new Headers(fetchOptions.headers ?? {});
+  const hasBody = fetchOptions.body !== undefined && fetchOptions.body !== null;
+
+  if (hasBody && !(fetchOptions.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
   const response = await fetch(`/api${endpoint}`, {
-    ...options,
+    ...fetchOptions,
     headers,
     credentials: 'include',
   });
+
+  if (
+    response.status === 401
+    && !skipAuthRefresh
+    && endpoint !== '/auth/refresh'
+    && endpoint !== '/auth/login'
+    && endpoint !== '/auth/register'
+  ) {
+    try {
+      await refreshAuthSession();
+      return request<T>(endpoint, {
+        ...fetchOptions,
+        skipAuthRefresh: true,
+      });
+    } catch {
+      // Fall through and surface the original 401 response.
+    }
+  }
 
   if (response.status === 204) {
     return null as T;
@@ -69,7 +118,7 @@ const request = async <T = unknown>(endpoint: string, options: RequestInit = {})
       throw new ApiClientError({
         status: response.status,
         code: data.code,
-        message: data.message,
+        message: data.detail ?? data.message,
         details: data.details,
       });
     }

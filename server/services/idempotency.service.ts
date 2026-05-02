@@ -29,6 +29,7 @@ interface ExecuteIdempotentMutationV2Options<TBody> {
 
 export interface IdempotentMutationResponse<TBody> extends IdempotentMutationResult<TBody> {
   replayed: boolean;
+  requestHash: string;
 }
 
 export class IdempotencyConflictError extends HttpError {
@@ -96,6 +97,7 @@ function replayStoredResponse<TBody>(stored: {
     statusCode: stored.responseStatusCode,
     body: stored.responseBody as TBody,
     replayed: true,
+    requestHash,
   };
 }
 
@@ -152,6 +154,7 @@ export async function executeIdempotentMutation<TBody>({
     return {
       ...response,
       replayed: false,
+      requestHash,
     };
   } catch (error) {
     await IdempotencyKeyRepository.deleteProcessing(userId, routeKey, idempotencyKey, requestHash);
@@ -206,6 +209,7 @@ export async function executeIdempotentMutationV2<TBody>({
             statusCode: existing.responseStatusCode,
             body: existing.responseBody as TBody,
             replayed: true,
+            requestHash,
           };
           return;
         }
@@ -228,6 +232,7 @@ export async function executeIdempotentMutationV2<TBody>({
       response = {
         ...executed,
         replayed: false,
+        requestHash,
       };
     });
   } finally {

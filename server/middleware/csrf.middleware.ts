@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express';
-import type { ApiErrorDTO } from '../../shared/types/api.ts';
 
 import { isAllowedOrigin } from '../config/cors.ts';
+import { forbidden } from '../utils/http-error.ts';
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -17,7 +17,7 @@ function getOriginFromReferrer(referrer?: string): string | null {
   }
 }
 
-export const csrfProtectionMiddleware: RequestHandler = (req, res, next) => {
+export const csrfProtectionMiddleware: RequestHandler = (req, _res, next) => {
   if (!UNSAFE_METHODS.has(req.method)) {
     next();
     return;
@@ -30,17 +30,12 @@ export const csrfProtectionMiddleware: RequestHandler = (req, res, next) => {
   }
 
   if (!origin) {
-    const payload: ApiErrorDTO = {
-      code: 'MISSING_REQUEST_ORIGIN',
-      message: 'Origin header is required for state-changing requests',
-    };
-    res.status(403).json(payload);
+    next(forbidden(
+      'Origin header is required for state-changing requests',
+      'MISSING_REQUEST_ORIGIN',
+    ));
     return;
   }
 
-  const payload: ApiErrorDTO = {
-    code: 'INVALID_REQUEST_ORIGIN',
-    message: 'Invalid request origin',
-  };
-  res.status(403).json(payload);
+  next(forbidden('Invalid request origin', 'INVALID_REQUEST_ORIGIN'));
 };

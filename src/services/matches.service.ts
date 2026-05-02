@@ -13,7 +13,7 @@ function normalizeInviteToken(inviteToken?: string): string | undefined {
 }
 
 export function getActiveMatches(signal?: AbortSignal) {
-  return request<MatchDTO[]>('/matches/active', { signal });
+  return request<MatchDTO[]>('/matches/active', signal ? { signal } : undefined);
 }
 
 export function createMatch(payload: CreateMatchPayload) {
@@ -27,13 +27,13 @@ export function createMatch(payload: CreateMatchPayload) {
 }
 
 export function getUserMatches(userId: string, signal?: AbortSignal) {
-  return request<MatchDTO[]>(`/matches/user/${userId}`, { signal });
+  return request<MatchDTO[]>(`/matches/user/${userId}`, signal ? { signal } : undefined);
 }
 
 export function getMatch(roomId: string, signal?: AbortSignal, inviteToken?: string) {
   const normalizedInviteToken = normalizeInviteToken(inviteToken);
   const query = normalizedInviteToken ? `?invite=${encodeURIComponent(normalizedInviteToken)}` : '';
-  return request<MatchDTO>(`/matches/${roomId}${query}`, { signal });
+  return request<MatchDTO>(`/matches/${roomId}${query}`, signal ? { signal } : undefined);
 }
 
 export function joinMatch(roomId: string, inviteToken?: string) {

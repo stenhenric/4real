@@ -33,9 +33,9 @@ const GamePage = () => {
   const inviteToken = searchParams.get('invite')?.trim() || undefined;
 
   const { gameOver, makeMove, room } = useGameRoom({
-    roomId,
-    userId: user?.id,
-    enabled: roomAccessReady,
+    ...(roomId ? { roomId } : {}),
+    ...(user?.id ? { userId: user.id } : {}),
+    enabled: roomAccessReady && Boolean(roomId && user?.id),
     onRoomError: (message) => {
       warning(message);
       navigate('/');

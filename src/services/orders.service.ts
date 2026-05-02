@@ -17,11 +17,11 @@ type CreateOrderPayload =
 type OrderStatus = OrderDTO['status'];
 
 export function getOrders(signal?: AbortSignal) {
-  return request<OrderDTO[]>('/orders', { signal });
+  return request<OrderDTO[]>('/orders', signal ? { signal } : undefined);
 }
 
 export function getMerchantConfig(signal?: AbortSignal) {
-  return request<MerchantConfigDTO>('/orders/config', { signal });
+  return request<MerchantConfigDTO>('/orders/config', signal ? { signal } : undefined);
 }
 
 export function createOrder(payload: CreateOrderPayload) {

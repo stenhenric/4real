@@ -7,6 +7,12 @@ export interface JwtUser {
 export interface ApiErrorDTO {
   code: string;
   message: string;
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  instance?: string;
+  requestId?: string;
   details?: unknown;
 }
 
@@ -102,6 +108,7 @@ export type MerchantAlertSeverity = 'critical' | 'warning' | 'info';
 export type MerchantAlertCategory = 'orders' | 'liquidity' | 'operations' | 'deposits' | 'withdrawals';
 export type MerchantJobKey =
   | 'depositPoller'
+  | 'orderProofRelay'
   | 'withdrawalWorker'
   | 'withdrawalConfirmation'
   | 'hotWalletMonitor'

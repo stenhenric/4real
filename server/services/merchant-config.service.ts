@@ -1,6 +1,7 @@
 import { MerchantConfig as MerchantConfigModel } from '../models/MerchantConfig.ts';
 import { getEnv } from '../config/env.ts';
 import type { MerchantConfigDTO, UpdateMerchantConfigRequestDTO } from '../types/api.ts';
+import { AuditService } from './audit.service.ts';
 
 export type MerchantConfig = MerchantConfigDTO;
 
@@ -52,6 +53,10 @@ export async function getMerchantConfig(): Promise<MerchantConfig> {
 
 export async function updateMerchantConfig(
   updates: UpdateMerchantConfigRequestDTO,
+  options?: {
+    actorUserId?: string;
+    requestId?: string;
+  },
 ): Promise<MerchantConfig> {
   const current = await getMerchantConfig();
   const nextConfig = {
@@ -74,6 +79,21 @@ export async function updateMerchantConfig(
       setDefaultsOnInsert: true,
     },
   );
+
+  if (options?.actorUserId || options?.requestId) {
+    await AuditService.record({
+      eventType: 'merchant_config_updated',
+      ...(options.actorUserId ? { actorUserId: options.actorUserId } : {}),
+      resourceType: 'merchant_config',
+      resourceId: MERCHANT_CONFIG_KEY,
+      ...(options.requestId ? { requestId: options.requestId } : {}),
+      metadata: {
+        changedFields: Object.keys(updates),
+        previous: current,
+        next: nextConfig,
+      },
+    });
+  }
 
   return nextConfig;
 }

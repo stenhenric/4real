@@ -1,6 +1,8 @@
 import { Queue, Worker, type JobsOptions } from 'bullmq';
 
+import { getEnv } from '../config/env.ts';
 import { getRedisClient } from './redis.service.ts';
+import { registerMetricsCollector, setBullmqQueueDepth } from './metrics.service.ts';
 import { logger } from '../utils/logger.ts';
 
 interface BullmqJobDefinition {
@@ -12,6 +14,8 @@ interface BullmqJobDefinition {
 
 export interface BullmqBackgroundJobRuntime {
   stop: () => Promise<void>;
+  probe: () => Promise<void>;
+  getQueueDepths: () => Promise<Record<string, number>>;
 }
 
 const defaultJobOptions: JobsOptions = {
@@ -23,6 +27,18 @@ const defaultJobOptions: JobsOptions = {
   removeOnComplete: 100,
   removeOnFail: 500,
 };
+let activeBullmqRuntime: BullmqBackgroundJobRuntime | null = null;
+
+registerMetricsCollector('bullmq_queue_depth', async () => {
+  const queueDepths = await activeBullmqRuntime?.getQueueDepths();
+  if (!queueDepths) {
+    return;
+  }
+
+  for (const [queue, depth] of Object.entries(queueDepths)) {
+    setBullmqQueueDepth(queue, depth);
+  }
+});
 
 async function enqueueDlqEntry(
   dlqQueue: Queue<Record<string, unknown>>,
@@ -133,12 +149,66 @@ export async function startBullmqBackgroundJobs(
     workerConnections.push(workerConnection);
   }
 
-  return {
+  const runtime: BullmqBackgroundJobRuntime = {
+    probe: async () => {
+      await Promise.all(queues.map(async (queue) => {
+        await Promise.all([
+          queue.getWaitingCount(),
+          queue.getDelayedCount(),
+          queue.getActiveCount(),
+        ]);
+      }));
+    },
+    getQueueDepths: async () => {
+      const entries = await Promise.all(
+        queues.map(async (queue) => {
+          const [waiting, delayed, active] = await Promise.all([
+            queue.getWaitingCount(),
+            queue.getDelayedCount(),
+            queue.getActiveCount(),
+          ]);
+
+          return [queue.name, waiting + delayed + active] as const;
+        }),
+      );
+
+      return Object.fromEntries(entries);
+    },
     stop: async () => {
+      const queueNames = queues.map((queue) => queue.name);
       await Promise.all(workers.map((worker) => worker.close()));
       await Promise.all(queues.map((queue) => queue.close()));
       await Promise.all(dlqQueues.map((queue) => queue.close()));
       await Promise.all(workerConnections.map((connection) => connection.quit()));
+
+      for (const queueName of queueNames) {
+        setBullmqQueueDepth(queueName, 0);
+      }
+
+      if (activeBullmqRuntime === runtime) {
+        activeBullmqRuntime = null;
+      }
     },
   };
+
+  activeBullmqRuntime = runtime;
+  return runtime;
+}
+
+export async function probeBullmq(): Promise<'up' | 'down' | 'disabled'> {
+  const env = getEnv();
+  if (!(env.FEATURE_BULLMQ_JOBS && env.REDIS_URL)) {
+    return 'disabled';
+  }
+
+  if (!activeBullmqRuntime) {
+    return 'down';
+  }
+
+  try {
+    await activeBullmqRuntime.probe();
+    return 'up';
+  } catch {
+    return 'down';
+  }
 }

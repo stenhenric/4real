@@ -6,6 +6,7 @@ import { UserBalanceRepository } from '../repositories/user-balance.repository.t
 import { TransactionService } from './transaction.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
 import { rawAmountToUsdtNumber, usdtNumberToRawAmount } from '../utils/money.ts';
+import { conflict } from '../utils/http-error.ts';
 
 export interface CreateUserInput {
   username: string;
@@ -71,6 +72,20 @@ export class UserService {
       return saved;
     } catch (error) {
       await session.abortTransaction();
+      if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+        const duplicateKeyError = error as { keyPattern?: Record<string, unknown>; keyValue?: Record<string, unknown> };
+        const duplicateField = Object.keys(duplicateKeyError.keyPattern ?? duplicateKeyError.keyValue ?? {})[0];
+
+        if (duplicateField === 'email') {
+          throw conflict('Email already exists', 'EMAIL_ALREADY_EXISTS', { field: duplicateField });
+        }
+
+        if (duplicateField === 'username') {
+          throw conflict('Username already exists', 'USERNAME_ALREADY_EXISTS', { field: duplicateField });
+        }
+
+        throw conflict('User already exists', 'USER_ALREADY_EXISTS');
+      }
       throw error;
     } finally {
       await session.endSession();
@@ -162,12 +177,24 @@ export class UserService {
   }
 
   static async getTokenVersion(id: string): Promise<number | null> {
-    const user = await User.findById(id).select('tokenVersion').lean();
+    const authState = await this.getAuthState(id);
+    if (!authState) {
+      return null;
+    }
+
+    return authState.tokenVersion;
+  }
+
+  static async getAuthState(id: string): Promise<{ tokenVersion: number; isAdmin: boolean } | null> {
+    const user = await User.findById(id).select('tokenVersion isAdmin').lean();
     if (!user) {
       return null;
     }
 
-    return typeof user.tokenVersion === 'number' ? user.tokenVersion : 0;
+    return {
+      tokenVersion: typeof user.tokenVersion === 'number' ? user.tokenVersion : 0,
+      isAdmin: user.isAdmin === true,
+    };
   }
 
   static async bumpTokenVersionIfCurrent(id: string, currentTokenVersion: number): Promise<boolean> {

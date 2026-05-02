@@ -4,6 +4,13 @@ import { decimalLikeToBigInt } from '../utils/money.ts';
 import { getMongoCollection } from './mongo.repository.ts';
 
 export type WithdrawalStatus = 'queued' | 'processing' | 'sent' | 'confirmed' | 'stuck' | 'failed';
+export const ACCOUNTED_WITHDRAWAL_STATUSES: readonly WithdrawalStatus[] = [
+  'queued',
+  'processing',
+  'sent',
+  'stuck',
+  'confirmed',
+];
 
 export interface WithdrawalDocument {
   _id?: mongoose.Types.ObjectId | string;
@@ -129,12 +136,22 @@ export class WithdrawalRepository {
   }
 
   static async sumConfirmedRawBetween(userId: string, startAt: Date, endAt: Date): Promise<bigint> {
+    return this.sumAccountedRawBetween(userId, startAt, endAt, ['confirmed'], 'confirmedAt');
+  }
+
+  static async sumAccountedRawBetween(
+    userId: string,
+    startAt: Date,
+    endAt: Date,
+    statuses: readonly WithdrawalStatus[] = ACCOUNTED_WITHDRAWAL_STATUSES,
+    timestampField: 'createdAt' | 'confirmedAt' = 'createdAt',
+  ): Promise<bigint> {
     const [row] = await this.collection().aggregate<{ total: { toString: () => string } }>([
       {
         $match: {
           userId,
-          status: 'confirmed',
-          confirmedAt: {
+          status: { $in: [...statuses] },
+          [timestampField]: {
             $gte: startAt,
             $lt: endAt,
           },

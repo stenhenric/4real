@@ -124,7 +124,9 @@ const ProfilePage = () => {
 
             {isOwnProfile && (
               <div className="px-6">
-                <SketchyButton className="w-full text-sm uppercase font-bold">Refine Avatar</SketchyButton>
+                <SketchyButton className="w-full text-sm uppercase font-bold" disabled>
+                  Avatar Editing Coming Soon
+                </SketchyButton>
               </div>
             )}
           </div>

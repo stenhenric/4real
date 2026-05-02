@@ -49,7 +49,7 @@ export class MatchController {
     assertAuthenticated(req);
     const inviteToken = getInviteTokenFromQuery(req);
     const match = await MatchService.getAccessibleMatch({
-      roomId: this.getRequiredRoomId(req),
+      roomId: MatchController.getRequiredRoomId(req),
       userId: req.user.id,
       ...(inviteToken ? { inviteToken } : {}),
     });
@@ -104,7 +104,7 @@ export class MatchController {
     assertAuthenticated(req);
     const userId = req.user.id;
     const idempotencyKey = getRequiredIdempotencyKey(req);
-    const roomId = this.getRequiredRoomId(req);
+    const roomId = MatchController.getRequiredRoomId(req);
     const inviteToken = getInviteTokenFromHeader(req);
     const result = await executeIdempotentMutationV2({
       userId,
@@ -145,7 +145,7 @@ export class MatchController {
     assertAuthenticated(req);
     const userId = req.user.id;
     const idempotencyKey = getRequiredIdempotencyKey(req);
-    const roomId = this.getRequiredRoomId(req);
+    const roomId = MatchController.getRequiredRoomId(req);
     const result = await executeIdempotentMutationV2({
       userId,
       routeKey: `matches:resign:${roomId}`,

@@ -50,7 +50,7 @@ export default function DepositsPage() {
       const nextDeposits = await getMerchantDeposits({
         status: statusFilter,
         limit: 100,
-        signal,
+        ...(signal ? { signal } : {}),
       });
 
       startTransition(() => {
@@ -99,8 +99,8 @@ export default function DepositsPage() {
     try {
       const updated = await reconcileMerchantDeposit(deposit.txHash, {
         action,
-        userId: action === 'credit' ? userId : undefined,
-        note: note || undefined,
+        ...(action === 'credit' ? { userId } : {}),
+        ...(note ? { note } : {}),
       });
 
       success(action === 'credit' ? 'Deposit credited.' : 'Deposit dismissed.');

@@ -7,6 +7,12 @@ import { UserBalanceRepository } from '../repositories/user-balance.repository.t
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { AuditService } from '../services/audit.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
+import {
+  recordWithdrawalConfirmation,
+  setWalletReserveDeltaUsdt,
+  setWalletTonBalance,
+  setWalletUsdtBalance,
+} from '../services/metrics.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { LockUnavailableError, withLock } from '../services/distributed-lock.service.ts';
 import {
@@ -274,6 +280,7 @@ export async function confirmSentWithdrawals() {
             txHash: confirmed.txHash,
             confirmedAt: confirmed.confirmedAt.toISOString(),
           });
+          recordWithdrawalConfirmation('confirmed');
         } catch (error) {
           if (!isDuplicateKeyError(error)) {
             throw error;
@@ -292,6 +299,7 @@ export async function confirmSentWithdrawals() {
           logger.warn('withdrawal.confirmation_delayed', {
             withdrawalId: withdrawal.withdrawalId,
           });
+          recordWithdrawalConfirmation('stuck');
         } catch (err) {
           logger.error('withdrawal.expire_error', { withdrawalId: withdrawal.withdrawalId, err });
         }
@@ -328,6 +336,7 @@ export async function monitorHotWalletBalances() {
     });
 
     const failures: string[] = [];
+    setWalletTonBalance(tonBalance);
 
     if (tonBalance < env.HOT_WALLET_MIN_TON_BALANCE) {
       logger.warn('wallet_monitor.low_ton_balance', {
@@ -343,6 +352,8 @@ export async function monitorHotWalletBalances() {
       return;
     }
 
+    setWalletUsdtBalance(Number(formatUsdtRaw(onChainUsdtRaw)));
+
     if (onChainUsdtRaw < minimumUsdtBalanceRaw) {
       logger.warn('wallet_monitor.low_usdt_balance', {
         onChainUsdt: formatUsdtRaw(onChainUsdtRaw),
@@ -356,6 +367,9 @@ export async function monitorHotWalletBalances() {
     const deltaUsdtRaw = onChainUsdtRaw >= ledgerUsdtRaw
       ? onChainUsdtRaw - ledgerUsdtRaw
       : ledgerUsdtRaw - onChainUsdtRaw;
+    setWalletReserveDeltaUsdt(
+      Number(formatUsdtRaw(onChainUsdtRaw)) - Number(formatUsdtRaw(ledgerUsdtRaw)),
+    );
 
     if (onChainUsdtRaw < ledgerUsdtRaw) {
       logger.error('wallet_monitor.ledger_shortfall', {
@@ -442,6 +456,7 @@ export async function recoverStuckWithdrawals() {
                 recovered: true,
               },
             });
+            recordWithdrawalConfirmation('recovered_confirmed');
           } catch (error) {
             if (!isDuplicateKeyError(error)) {
                logger.error('withdrawal.stuck_recover_error', { withdrawalId: withdrawal.withdrawalId, error });
@@ -457,6 +472,7 @@ export async function recoverStuckWithdrawals() {
             withdrawal.startedAt,
           );
           logger.warn('withdrawal.processing_stuck', { withdrawalId: withdrawal.withdrawalId });
+          recordWithdrawalConfirmation('processing_stuck');
         }
       } catch (err) {
         logger.error('withdrawal.stuck_check_error', { withdrawalId: withdrawal.withdrawalId, err });
@@ -466,6 +482,7 @@ export async function recoverStuckWithdrawals() {
           withdrawal.seqno,
           withdrawal.startedAt,
         );
+        recordWithdrawalConfirmation('processing_reconcile_failed');
       }
     }
   }

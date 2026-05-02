@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import mongoose from 'mongoose';
 
+import { Order } from '../models/Order.ts';
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { IdempotencyKeyRepository } from '../repositories/idempotency-key.repository.ts';
 import { OrderProofRelayRepository } from '../repositories/order-proof-relay.repository.ts';
 import {
-  executeIdempotentMutation,
   executeIdempotentMutationV2,
   IdempotencyConflictError,
 } from '../services/idempotency.service.ts';
-import { getOrRelayOrderProof } from '../services/order-proof-relay.service.ts';
+import { enqueueOrderProofRelay, settleOrderProofRelay } from '../services/order-proof-relay.service.ts';
 
 interface StoredIdempotencyRecord {
   userId: string;
@@ -40,67 +40,87 @@ function createProofRelayParams() {
   };
 }
 
-test('BUY proof relay is not duplicated across an idempotent retry after a post-relay failure', async (t) => {
+function createSessionMock() {
+  return {
+    async withTransaction(work: () => Promise<void>) {
+      await work();
+    },
+    async endSession() {},
+  };
+}
+
+test('settleOrderProofRelay relays once and reuses the stored proof on subsequent retries', async (t) => {
   process.env.JWT_SECRET = 'x'.repeat(32);
   process.env.NODE_ENV = 'test';
   process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
   process.env.TELEGRAM_PROOF_CHANNEL_ID = '-100123';
   resetEnvCacheForTests();
 
-  const idempotencyStore = new Map<string, StoredIdempotencyRecord>();
-  const proofStore = new Map<string, { proof: { provider: 'telegram'; url: string; messageId: string; chatId: string } }>();
-  const createKey = (userId: string, routeKey: string, idempotencyKey: string) => `${userId}:${routeKey}:${idempotencyKey}`;
+  const proofStore = new Map<string, {
+    _id: string;
+    userId: string;
+    routeKey: string;
+    requestHash: string;
+    orderId: string;
+    relay?: ReturnType<typeof createProofRelayParams> & { fileBase64: string };
+    proof?: { provider: 'telegram'; url: string; messageId: string; chatId: string };
+    status?: 'pending' | 'processing' | 'completed' | 'terminal_failure';
+    attempts?: number;
+  }>();
   const proofKey = (userId: string, routeKey: string, requestHash: string) => `${userId}:${routeKey}:${requestHash}`;
-
-  const findKeyMock = mock.method(IdempotencyKeyRepository, 'findByKey', async (userId, routeKey, idempotencyKey) =>
-    idempotencyStore.get(createKey(userId, routeKey, idempotencyKey)) ?? null,
-  );
-  const createProcessingMock = mock.method(IdempotencyKeyRepository, 'createProcessing', async (document) => {
-    const key = createKey(document.userId, document.routeKey, document.idempotencyKey);
-    if (idempotencyStore.has(key)) {
-      throw { code: 11000 };
-    }
-
-    idempotencyStore.set(key, {
-      ...document,
-      status: 'processing',
-    });
-  });
-  const markCompletedMock = mock.method(
-    IdempotencyKeyRepository,
-    'markCompleted',
-    async (userId, routeKey, idempotencyKey, responseStatusCode, responseBody) => {
-      const key = createKey(userId, routeKey, idempotencyKey);
-      const current = idempotencyStore.get(key);
-      if (!current) {
-        throw new Error('missing idempotency record');
-      }
-
-      idempotencyStore.set(key, {
-        ...current,
-        status: 'completed',
-        responseStatusCode,
-        responseBody,
-      });
-    },
-  );
-  const deleteProcessingMock = mock.method(
-    IdempotencyKeyRepository,
-    'deleteProcessing',
-    async (userId, routeKey, idempotencyKey, requestHash) => {
-      const key = createKey(userId, routeKey, idempotencyKey);
-      const current = idempotencyStore.get(key);
-      if (current?.status === 'processing' && current.requestHash === requestHash) {
-        idempotencyStore.delete(key);
-      }
-    },
-  );
+  const sessionMock = createSessionMock();
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => sessionMock as any);
   const findProofMock = mock.method(OrderProofRelayRepository, 'findByRequest', async (userId, routeKey, requestHash) =>
     proofStore.get(proofKey(userId, routeKey, requestHash)) ?? null,
   );
-  const createProofMock = mock.method(OrderProofRelayRepository, 'create', async (document) => {
-    proofStore.set(proofKey(document.userId, document.routeKey, document.requestHash), { proof: document.proof });
+  const createProofMock = mock.method(OrderProofRelayRepository, 'createPending', async (document) => {
+    proofStore.set(proofKey(document.userId, document.routeKey, document.requestHash), {
+      _id: 'proof-1',
+      ...document,
+      status: 'pending',
+      attempts: 0,
+    });
   });
+  const claimProofMock = mock.method(OrderProofRelayRepository, 'claimPendingByRequest', async (userId, routeKey, requestHash) => {
+    const key = proofKey(userId, routeKey, requestHash);
+    const current = proofStore.get(key);
+    if (!current || current.status !== 'pending') {
+      return null;
+    }
+
+    const claimed = {
+      ...current,
+      status: 'processing' as const,
+      attempts: (current.attempts ?? 0) + 1,
+    };
+    proofStore.set(key, claimed);
+    return claimed as any;
+  });
+  const markCompletedMock = mock.method(OrderProofRelayRepository, 'markCompleted', async (id, proof) => {
+    for (const [key, value] of proofStore.entries()) {
+      if (value._id !== id) {
+        continue;
+      }
+
+      proofStore.set(key, {
+        ...value,
+        status: 'completed',
+        proof,
+        relay: undefined,
+      });
+    }
+  });
+  const markRetryMock = mock.method(OrderProofRelayRepository, 'markRetry', async () => {});
+  const markTerminalFailureMock = mock.method(OrderProofRelayRepository, 'markTerminalFailure', async () => {});
+  let orderProof: { provider: 'telegram'; url: string; messageId: string; chatId: string } | undefined;
+  const orderDocument = {
+    proof: undefined as typeof orderProof,
+    async save() {
+      orderProof = this.proof;
+      return this;
+    },
+  };
+  const findOrderMock = mock.method(Order, 'findById', async () => orderDocument as any);
   const fetchMock = mock.method(globalThis, 'fetch', async () => ({
     ok: true,
     status: 200,
@@ -117,70 +137,49 @@ test('BUY proof relay is not duplicated across an idempotent retry after a post-
     },
   }) as Response);
 
-  t.after(() => findKeyMock.mock.restore());
-  t.after(() => createProcessingMock.mock.restore());
-  t.after(() => markCompletedMock.mock.restore());
-  t.after(() => deleteProcessingMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
   t.after(() => findProofMock.mock.restore());
   t.after(() => createProofMock.mock.restore());
+  t.after(() => claimProofMock.mock.restore());
+  t.after(() => markCompletedMock.mock.restore());
+  t.after(() => markRetryMock.mock.restore());
+  t.after(() => markTerminalFailureMock.mock.restore());
+  t.after(() => findOrderMock.mock.restore());
   t.after(() => fetchMock.mock.restore());
 
-  const requestPayload = {
-    type: 'BUY',
-    amount: 15,
-    transactionCode: 'TX123',
-    proofDigest: 'abc123',
-  };
-
-  await assert.rejects(
-    executeIdempotentMutation({
-      userId: 'user-1',
-      routeKey: 'orders:create',
-      idempotencyKey: 'idem-1',
-      requestPayload,
-      execute: async ({ requestHash }) => {
-        await getOrRelayOrderProof({
-          userId: 'user-1',
-          routeKey: 'orders:create',
-          requestHash,
-          relay: createProofRelayParams(),
-        });
-
-        throw new Error('order persistence failed');
-      },
-    }),
-    /order persistence failed/,
-  );
-
-  const result = await executeIdempotentMutation({
+  await enqueueOrderProofRelay({
     userId: 'user-1',
     routeKey: 'orders:create',
-    idempotencyKey: 'idem-1',
-    requestPayload,
-    execute: async ({ requestHash }) => {
-      const proof = await getOrRelayOrderProof({
-        userId: 'user-1',
-        routeKey: 'orders:create',
-        requestHash,
-        relay: createProofRelayParams(),
-      });
+    requestHash: 'hash-1',
+    orderId: 'order-1',
+    relay: createProofRelayParams(),
+  });
 
-      return {
-        statusCode: 201,
-        body: { proofUrl: proof.url },
-      };
-    },
+  const first = await settleOrderProofRelay({
+    userId: 'user-1',
+    routeKey: 'orders:create',
+    requestHash: 'hash-1',
+  });
+  const second = await settleOrderProofRelay({
+    userId: 'user-1',
+    routeKey: 'orders:create',
+    requestHash: 'hash-1',
   });
 
   assert.equal(fetchMock.mock.callCount(), 1);
-  assert.equal(result.replayed, false);
-  assert.equal(result.body.proofUrl, 'https://t.me/c/123/1');
-  assert.equal(findProofMock.mock.callCount() >= 2, true);
   assert.equal(createProofMock.mock.callCount(), 1);
-  assert.equal(findKeyMock.mock.callCount() >= 2, true);
-  assert.equal(createProcessingMock.mock.callCount(), 2);
+  assert.equal(claimProofMock.mock.callCount(), 1);
   assert.equal(markCompletedMock.mock.callCount(), 1);
-  assert.equal(deleteProcessingMock.mock.callCount(), 1);
+  assert.equal(markRetryMock.mock.callCount(), 0);
+  assert.equal(markTerminalFailureMock.mock.callCount(), 0);
+  assert.deepEqual(first, {
+    provider: 'telegram',
+    url: 'https://t.me/c/123/1',
+    messageId: '1',
+    chatId: '-100123',
+  });
+  assert.deepEqual(second, first);
+  assert.deepEqual(orderProof, first);
 });
 
 test('executeIdempotentMutationV2 commits once and replays subsequent retries', async (t) => {

@@ -7,7 +7,7 @@ interface AuthCredentials {
 }
 
 export function getCurrentUser(signal?: AbortSignal) {
-  return request<AuthResponseDTO>('/auth/me', { signal });
+  return request<AuthResponseDTO>('/auth/me', signal ? { signal } : undefined);
 }
 
 export function login(credentials: AuthCredentials) {
@@ -26,4 +26,8 @@ export function register(credentials: AuthCredentials) {
 
 export function logout() {
   return request('/auth/logout', { method: 'POST' });
+}
+
+export function refreshSession() {
+  return request<AuthResponseDTO>('/auth/refresh', { method: 'POST', skipAuthRefresh: true });
 }

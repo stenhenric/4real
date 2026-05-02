@@ -13,6 +13,7 @@ export class OrderService {
     type,
     amount,
     proof,
+    proofRelayQueued,
     transactionCode,
     fiatCurrency,
     exchangeRate,
@@ -24,6 +25,7 @@ export class OrderService {
     type: 'BUY' | 'SELL';
     amount: number;
     proof?: TelegramOrderProof | undefined;
+    proofRelayQueued?: boolean | undefined;
     transactionCode?: string | undefined;
     fiatCurrency: 'KES';
     exchangeRate: number;
@@ -84,6 +86,7 @@ export class OrderService {
           fiatTotal: savedOrder.fiatTotal,
           proofProvider: savedOrder.proof?.provider,
           proofUrl: savedOrder.proof?.url,
+          proofRelayQueued: proofRelayQueued === true,
         },
         session: activeSession,
       });

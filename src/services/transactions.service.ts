@@ -15,7 +15,7 @@ interface PrepareTonConnectDepositPayload {
 }
 
 export function getTransactions(signal?: AbortSignal) {
-  return request<TransactionDTO[]>('/transactions', { signal });
+  return request<TransactionDTO[]>('/transactions', signal ? { signal } : undefined);
 }
 
 export function createDepositMemo() {

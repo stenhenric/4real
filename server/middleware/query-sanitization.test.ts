@@ -65,9 +65,14 @@ function createResponseDouble() {
     headersSent: false,
     locals: { requestId: 'req-1' },
     statusCode: 200,
+    contentType: undefined as string | undefined,
     body: null as unknown,
     status(code: number) {
       this.statusCode = code;
+      return this;
+    },
+    type(value: string) {
+      this.contentType = value;
       return this;
     },
     json(payload: unknown) {
@@ -162,13 +167,13 @@ test('errorHandler returns INVALID_IDENTIFIER only for identifier cast errors', 
   }
 
   assert.equal(idRes.statusCode, 400);
-  assert.deepEqual(idRes.body, {
-    code: 'INVALID_IDENTIFIER',
-    message: 'Invalid identifier',
-  });
+  assert.equal((idRes.body as { code?: string }).code, 'INVALID_IDENTIFIER');
+  assert.equal((idRes.body as { message?: string }).message, 'Invalid identifier');
+  assert.equal((idRes.body as { detail?: string }).detail, 'Invalid identifier');
+  assert.equal((idRes.body as { status?: number }).status, 400);
   assert.equal(dateRes.statusCode, 500);
-  assert.deepEqual(dateRes.body, {
-    code: 'INTERNAL_SERVER_ERROR',
-    message: 'Server error',
-  });
+  assert.equal((dateRes.body as { code?: string }).code, 'INTERNAL_SERVER_ERROR');
+  assert.equal((dateRes.body as { message?: string }).message, 'Internal Server Error');
+  assert.equal((dateRes.body as { detail?: string }).detail, 'Internal Server Error');
+  assert.equal((dateRes.body as { status?: number }).status, 500);
 });

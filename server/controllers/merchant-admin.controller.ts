@@ -29,6 +29,7 @@ export class MerchantAdminController {
   }
 
   static async updateConfig(req: AuthRequest, res: Response): Promise<void> {
+    assertAuthenticated(req);
     const body = req.body as UpdateMerchantConfigRequest;
     const updatedConfig = await updateMerchantConfig({
       ...(body.mpesaNumber !== undefined ? { mpesaNumber: body.mpesaNumber } : {}),
@@ -36,6 +37,9 @@ export class MerchantAdminController {
       ...(body.instructions !== undefined ? { instructions: body.instructions } : {}),
       ...(body.buyRateKesPerUsdt !== undefined ? { buyRateKesPerUsdt: body.buyRateKesPerUsdt } : {}),
       ...(body.sellRateKesPerUsdt !== undefined ? { sellRateKesPerUsdt: body.sellRateKesPerUsdt } : {}),
+    }, {
+      actorUserId: req.user.id,
+      ...(typeof res.locals.requestId === 'string' ? { requestId: res.locals.requestId } : {}),
     });
     res.json(updatedConfig);
   }

@@ -14,6 +14,11 @@ export function getRedisClient(): Redis {
     sharedRedisClient = new Redis(env.REDIS_URL, {
       maxRetriesPerRequest: null,
       enableReadyCheck: true,
+      connectTimeout: env.REDIS_CONNECT_TIMEOUT_MS,
+      retryStrategy: (attempt) => Math.min(
+        env.REDIS_RETRY_MAX_DELAY_MS,
+        env.REDIS_RETRY_BASE_DELAY_MS * Math.max(1, attempt),
+      ),
     });
   }
 
@@ -27,4 +32,18 @@ export async function disconnectRedis(): Promise<void> {
 
   await sharedRedisClient.quit();
   sharedRedisClient = null;
+}
+
+export async function probeRedis(): Promise<'up' | 'down' | 'disabled'> {
+  const env = getEnv();
+  if (!env.REDIS_URL) {
+    return 'disabled';
+  }
+
+  try {
+    const pong = await getRedisClient().ping();
+    return pong === 'PONG' ? 'up' : 'down';
+  } catch {
+    return 'down';
+  }
 }

@@ -11,6 +11,7 @@ const router = Router();
 
 router.post('/register', createAuthRateLimiter(), validateBody(registerRequestSchema), asyncHandler(AuthController.register));
 router.post('/login', createAuthRateLimiter(), validateBody(loginRequestSchema), asyncHandler(AuthController.login));
+router.post('/refresh', createAuthRateLimiter(), asyncHandler(AuthController.refreshSession));
 router.get('/me', authenticateToken, asyncHandler(AuthController.me));
 router.post('/logout', asyncHandler(AuthController.logout));
 

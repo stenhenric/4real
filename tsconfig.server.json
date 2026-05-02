@@ -18,7 +18,7 @@
     "sourceMap": true
   },
   "include": [
-    "server.ts",
+    "main.ts",
     "server/**/*",
     "shared/types/**/*"
   ],

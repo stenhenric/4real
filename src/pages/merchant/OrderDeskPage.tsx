@@ -37,7 +37,7 @@ export default function OrderDeskPage() {
         pageSize: 25,
         status: statusFilter,
         type: typeFilter,
-        signal,
+        ...(signal ? { signal } : {}),
       });
 
       startTransition(() => {

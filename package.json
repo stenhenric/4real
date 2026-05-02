@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "start": "node ./dist/server/server.js",
+    "dev": "tsx main.ts",
+    "start": "node ./dist/server/main.js",
     "build": "vite build && tsc --project tsconfig.server.json",
     "preview": "vite preview",
     "test": "tsx --test server/middleware/*.test.ts",

@@ -876,7 +876,7 @@ test('requestWithdrawal rejects insufficient balance', async (t) => {
   const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => null);
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumConfirmedRawBetween', async () => 0n);
+  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => deductMock.mock.restore());
@@ -899,7 +899,7 @@ test('requestWithdrawal queues a withdrawal atomically with balance deduction', 
   const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-5' } as any));
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumConfirmedRawBetween', async () => 0n);
+  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => deductMock.mock.restore());

@@ -2,8 +2,9 @@ import mongoose from 'mongoose';
 import type { ClientSession } from 'mongoose';
 
 import { getEnv } from '../config/env.ts';
-import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { ACCOUNTED_WITHDRAWAL_STATUSES, WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { badRequest } from '../utils/http-error.ts';
+import { recordWithdrawalBalanceHoldFailure } from './metrics.service.ts';
 import { UserService } from './user.service.ts';
 import { usdtNumberToRawAmount } from '../utils/money.ts';
 
@@ -33,6 +34,7 @@ export async function requestWithdrawal({
   const executeWithdrawalMutation = async (activeSession: ClientSession) => {
     const updatedUser = await UserService.deductBalanceSafely(userId, amountUsdt, activeSession);
     if (!updatedUser) {
+      recordWithdrawalBalanceHoldFailure('insufficient_balance');
       throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
     }
 
@@ -47,9 +49,16 @@ export async function requestWithdrawal({
       0,
     ));
     const nextDayStart = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-    const confirmedTodayRaw = await WithdrawalRepository.sumConfirmedRawBetween(userId, dayStart, nextDayStart);
+    const accountedTodayRaw = await WithdrawalRepository.sumAccountedRawBetween(
+      userId,
+      dayStart,
+      nextDayStart,
+      ACCOUNTED_WITHDRAWAL_STATUSES,
+      'createdAt',
+    );
     const dailyLimitRaw = usdtNumberToRawAmount(getEnv().DAILY_WITHDRAWAL_LIMIT_USDT);
-    if (confirmedTodayRaw + BigInt(amountRaw) > dailyLimitRaw) {
+    if (accountedTodayRaw + BigInt(amountRaw) > dailyLimitRaw) {
+      recordWithdrawalBalanceHoldFailure('daily_limit_exceeded');
       throw badRequest('Daily withdrawal limit exceeded', 'DAILY_WITHDRAWAL_LIMIT_EXCEEDED');
     }
 

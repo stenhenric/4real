@@ -41,8 +41,14 @@ async function assertMongoTransactionSupport(connection: mongoose.Connection): P
 }
 
 export async function connectDB() {
-  const { MONGODB_URI } = getEnv();
-  const connection = await mongoose.connect(MONGODB_URI);
+  const env = getEnv();
+  const connection = await mongoose.connect(env.MONGODB_URI, {
+    maxPoolSize: env.MONGODB_MAX_POOL_SIZE,
+    minPoolSize: env.MONGODB_MIN_POOL_SIZE,
+    connectTimeoutMS: env.MONGODB_CONNECT_TIMEOUT_MS,
+    serverSelectionTimeoutMS: env.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+    socketTimeoutMS: env.MONGODB_SOCKET_TIMEOUT_MS,
+  });
   await assertMongoTransactionSupport(connection.connection);
 
   logger.info('database.connected', {

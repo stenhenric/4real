@@ -57,12 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshUser]);
 
   const logout = useCallback(async () => {
-    try {
-      await logoutRequest();
-    } catch {
-      // Local auth state must still clear if the request fails.
-    }
-
+    await logoutRequest();
     setUser(null);
     setUserData(null);
     setLoading(false);

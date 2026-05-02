@@ -127,6 +127,14 @@ export async function startServer() {
   process.on('SIGINT', () => {
     void shutdown('SIGINT');
   });
+  process.on('unhandledRejection', (error) => {
+    logger.error('process.unhandled_rejection', { error });
+    void shutdown('unhandledRejection');
+  });
+  process.on('uncaughtException', (error) => {
+    logger.error('process.uncaught_exception', { error });
+    void shutdown('uncaughtException');
+  });
 
   return { app, httpServer, io };
 }

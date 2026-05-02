@@ -16,7 +16,9 @@ import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.re
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { UserService } from './user.service.ts';
 import { AuditService } from './audit.service.ts';
+import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
 import { getHotWalletRuntime } from './hot-wallet-runtime.service.ts';
+import { recordDepositIngestionDecision, registerMetricsCollector, setUnmatchedDepositsOpen } from './metrics.service.ts';
 import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
 import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
@@ -24,6 +26,10 @@ import { badRequest, conflict, notFound } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 
 const TONCENTER_BASE = getToncenterBaseUrl();
+
+registerMetricsCollector('unmatched_deposits_open', async () => {
+  setUnmatchedDepositsOpen(await UnmatchedDepositRepository.countOpen());
+});
 
 export interface JettonTransferEvent {
   transaction_hash: string;
@@ -362,6 +368,11 @@ function buildTransferPreview(
   };
 }
 
+function finalizeIngestionResult(result: DepositReplayTransferResult): DepositReplayTransferResult {
+  recordDepositIngestionDecision(result.decision);
+  return result;
+}
+
 export async function fetchIncomingUsdtTransfers(params: {
   ownerAddress: string;
   sinceTime: number;
@@ -386,22 +397,36 @@ export async function fetchIncomingUsdtTransfers(params: {
 
     try {
       const env = getEnv();
-      const res = await fetch(url.toString(), {
-        headers: { 'X-API-Key': env.TONCENTER_API_KEY ?? '' },
-        signal: AbortSignal.timeout(10_000),
-      });
+      let res: Response;
+      try {
+        res = await runProtectedDependencyCall({
+          dependency: 'toncenter',
+          retries: env.TONCENTER_MAX_RETRIES,
+          baseDelayMs: env.TONCENTER_RETRY_BASE_DELAY_MS,
+          operation: async () => {
+            const nextResponse = await fetch(url.toString(), {
+              headers: { 'X-API-Key': env.TONCENTER_API_KEY ?? '' },
+              signal: AbortSignal.timeout(env.TONCENTER_REQUEST_TIMEOUT_MS),
+            });
 
-      if (res.status === 429) {
-        if (allTransfers.length === 0) {
-          throw new Error('Toncenter rate limited deposit polling before any transfers were fetched');
+            if (!nextResponse.ok) {
+              throw createDependencyHttpError('toncenter', nextResponse.status);
+            }
+
+            return nextResponse;
+          },
+        });
+      } catch (error) {
+        if (error && typeof error === 'object' && 'status' in error && error.status === 429) {
+          if (allTransfers.length === 0) {
+            throw new Error('Toncenter rate limited deposit polling before any transfers were fetched');
+          }
+
+          logger.warn('deposit_poller.rate_limited_partial');
+          break;
         }
 
-        logger.warn('deposit_poller.rate_limited_partial');
-        break;
-      }
-
-      if (!res.ok) {
-        throw new Error(`Toncenter error ${res.status}`);
+        throw error;
       }
 
       const data = parseExternalResponse(
@@ -442,12 +467,12 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
   });
 
   if (preview.decision !== 'credit' && preview.decision !== 'unmatched' && preview.decision !== 'rejected') {
-    return preview;
+    return finalizeIngestionResult(preview);
   }
 
   if (preview.decision === 'rejected') {
     if (preview.reason !== 'transaction_aborted') {
-      return preview;
+      return finalizeIngestionResult(preview);
     }
 
     const rejectionSession = await mongoose.startSession();
@@ -480,7 +505,7 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
       await rejectionSession.endSession();
     }
 
-    return preview;
+    return finalizeIngestionResult(preview);
   }
 
   const session = await mongoose.startSession();
@@ -572,7 +597,7 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
     });
   }
 
-  return outcome;
+  return finalizeIngestionResult(outcome);
 }
 
 export async function replayDepositWindow(params: {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { getEnv } from '../config/env.ts';
 import { getRedisClient } from './redis.service.ts';
 import type { RoomState } from './game-room.service.ts';
 
@@ -24,14 +25,6 @@ const ROOM_LOCK_TTL_MS = 5_000;
 const ROOM_LOCK_RETRY_DELAY_MS = 50;
 const ROOM_LOCK_MAX_ATTEMPTS = 100;
 
-function isTruthyEnvFlag(value: string | undefined): boolean {
-  if (!value) {
-    return false;
-  }
-
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-}
-
 function cloneRoomState(state: RoomState): RoomState {
   return structuredClone(state);
 }
@@ -54,8 +47,9 @@ export class GameRoomRegistry {
   private readonly distributedMode: boolean;
 
   constructor(options: GameRoomRegistryOptions) {
+    const env = getEnv();
     this.options = options;
-    this.distributedMode = isTruthyEnvFlag(process.env.FEATURE_REDIS_SOCKET_ADAPTER) && Boolean(process.env.REDIS_URL);
+    this.distributedMode = Boolean(env.FEATURE_REDIS_SOCKET_ADAPTER && env.REDIS_URL);
   }
 
   start(): void {

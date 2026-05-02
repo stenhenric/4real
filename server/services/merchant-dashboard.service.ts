@@ -70,6 +70,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const JOB_LABELS: Record<MerchantJobKey, string> = {
   depositPoller: 'Deposit poller',
+  orderProofRelay: 'Order proof relay',
   withdrawalWorker: 'Withdrawal worker',
   withdrawalConfirmation: 'Withdrawal confirmation',
   hotWalletMonitor: 'Hot wallet monitor',
@@ -137,6 +138,7 @@ function getJobState(snapshot: JobSnapshot): MerchantJobStatusDTO['state'] {
 function buildJobStatuses(backgroundJobs: BackgroundJobState | null): MerchantJobStatusDTO[] {
   const fallbacks: BackgroundJobState = backgroundJobs ?? {
     depositPoller: { enabled: false, lastError: 'Status unavailable' },
+    orderProofRelay: { enabled: false, lastError: 'Status unavailable' },
     withdrawalWorker: { enabled: false, lastError: 'Status unavailable' },
     withdrawalConfirmation: { enabled: false, lastError: 'Status unavailable' },
     hotWalletMonitor: { enabled: false, lastError: 'Status unavailable' },

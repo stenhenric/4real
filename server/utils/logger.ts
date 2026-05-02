@@ -1,4 +1,5 @@
 import { redact } from './redact.ts';
+import { getTraceContext } from '../services/trace-context.service.ts';
 
 type LogLevel = 'info' | 'warn' | 'error';
 
@@ -42,7 +43,10 @@ function serializeRedactedValue(value: unknown): unknown {
 }
 
 function write(level: LogLevel, message: string, context: LogContext = {}): void {
-  const serializedContext = serializeValue(context);
+  const serializedContext = serializeValue({
+    ...getTraceContext(),
+    ...context,
+  });
   const payload = {
     timestamp: new Date().toISOString(),
     level,

@@ -2,6 +2,7 @@ import { getEnv } from '../config/env.ts';
 import type { TelegramOrderProof } from '../models/Order.ts';
 import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
 import { telegramSendPhotoResponseSchema } from '../schemas/external/telegram-proof.schema.ts';
+import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
 import { serviceUnavailable } from '../utils/http-error.ts';
 
 function buildTelegramMessageUrl(chatId: string, messageId: string, username?: string): string {
@@ -62,10 +63,23 @@ export async function relayOrderProofToTelegram(params: {
     params.filename,
   );
 
-  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-    method: 'POST',
-    body: form,
-    signal: AbortSignal.timeout(15_000),
+  const response = await runProtectedDependencyCall({
+    dependency: 'telegram',
+    retries: env.TELEGRAM_MAX_RETRIES,
+    baseDelayMs: env.TELEGRAM_RETRY_BASE_DELAY_MS,
+    operation: async () => {
+      const nextResponse = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(env.TELEGRAM_REQUEST_TIMEOUT_MS),
+      });
+
+      if (!nextResponse.ok && nextResponse.status !== 400) {
+        throw createDependencyHttpError('telegram', nextResponse.status);
+      }
+
+      return nextResponse;
+    },
   });
 
   const payload = parseExternalResponse(

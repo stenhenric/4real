@@ -7,8 +7,14 @@ const rawEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   MONGODB_URI: z.string().trim().optional(),
+  MONGODB_MAX_POOL_SIZE: z.coerce.number().int().positive().default(20),
+  MONGODB_MIN_POOL_SIZE: z.coerce.number().int().nonnegative().default(2),
+  MONGODB_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  MONGODB_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  MONGODB_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
   JWT_SECRET: z.string().trim().min(1),
   ALLOWED_ORIGINS: z.string().optional(),
+  PUBLIC_APP_ORIGIN: z.string().trim().url().optional(),
   DISABLE_HMR: z
     .union([z.boolean(), z.string(), z.number()])
     .optional()
@@ -29,8 +35,14 @@ const rawEnvSchema = z.object({
   HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT: z.coerce.number().nonnegative().default(1),
   DEPOSIT_INGESTION_MAX_RETRIES: z.coerce.number().int().positive().default(5),
   REDIS_URL: z.string().trim().url().optional(),
+  REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  REDIS_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(250),
+  REDIS_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(5_000),
   TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
   TELEGRAM_PROOF_CHANNEL_ID: z.string().trim().optional(),
+  TELEGRAM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  TELEGRAM_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+  TELEGRAM_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(500),
   PROOF_MAX_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
   PROOF_ALLOWED_MIME_TYPES: z.string().trim().default('image/jpeg,image/png,image/webp'),
   MERCHANT_MPESA_NUMBER: z.string().trim().optional(),
@@ -52,6 +64,11 @@ const rawEnvSchema = z.object({
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   KEEP_ALIVE_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   HEADERS_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  TONCENTER_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  TONCENTER_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+  TONCENTER_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(500),
+  DEPENDENCY_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(3),
+  DEPENDENCY_CIRCUIT_RESET_MS: z.coerce.number().int().positive().default(30_000),
   WAITING_ROOM_TTL_MS: z.coerce.number().int().positive().default(900_000),
   ACTIVE_ROOM_TTL_MS: z.coerce.number().int().positive().default(3_600_000),
   COMPLETED_ROOM_TTL_MS: z.coerce.number().int().positive().default(600_000),
@@ -199,6 +216,24 @@ export function getTrustProxySetting(): boolean | number | string | undefined {
   if (/^\d+$/.test(normalized)) return Number(normalized);
 
   return value;
+}
+
+export function getPublicAppOrigin(): string {
+  const env = getEnv();
+
+  if (env.PUBLIC_APP_ORIGIN) {
+    return new URL(env.PUBLIC_APP_ORIGIN).origin;
+  }
+
+  if (env.VITE_TON_MANIFEST_URL) {
+    return new URL(env.VITE_TON_MANIFEST_URL).origin;
+  }
+
+  if (env.NODE_ENV !== 'production') {
+    return env.allowedOrigins[0] ?? `http://localhost:${env.PORT}`;
+  }
+
+  throw new Error('PUBLIC_APP_ORIGIN or VITE_TON_MANIFEST_URL must be configured in production');
 }
 
 export function resetEnvCacheForTests(): void {

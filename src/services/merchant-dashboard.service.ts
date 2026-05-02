@@ -17,7 +17,7 @@ interface MerchantOrderQuery {
 }
 
 export function getMerchantDashboard(signal?: AbortSignal) {
-  return request<MerchantDashboardDTO>('/admin/merchant/dashboard', { signal });
+  return request<MerchantDashboardDTO>('/admin/merchant/dashboard', signal ? { signal } : undefined);
 }
 
 export function getMerchantOrders(query: MerchantOrderQuery = {}) {
@@ -44,7 +44,7 @@ export function getMerchantOrders(query: MerchantOrderQuery = {}) {
     ? `/admin/merchant/orders?${queryString}`
     : '/admin/merchant/orders';
 
-  return request<MerchantOrderDeskResponseDTO>(endpoint, { signal: query.signal });
+  return request<MerchantOrderDeskResponseDTO>(endpoint, query.signal ? { signal: query.signal } : undefined);
 }
 
 export function getMerchantDeposits(query: {
@@ -67,7 +67,7 @@ export function getMerchantDeposits(query: {
     ? `/admin/merchant/deposits?${queryString}`
     : '/admin/merchant/deposits';
 
-  return request<MerchantDepositReviewItemDTO[]>(endpoint, { signal: query.signal });
+  return request<MerchantDepositReviewItemDTO[]>(endpoint, query.signal ? { signal: query.signal } : undefined);
 }
 
 export function replayMerchantDeposits(body: MerchantDepositReplayRequestDTO) {

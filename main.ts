@@ -1,4 +1,4 @@
-import { startServer } from './server/server.ts';
+import { startServer } from './server/runtime.ts';
 import { logger } from './server/utils/logger.ts';
 
 startServer().catch((error) => {

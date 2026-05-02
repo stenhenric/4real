@@ -80,7 +80,10 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
     };
 
     const handleGameOverEvent = async ({ room: nextRoom, winnerId, winningLine }: GameOverPayload) => {
-      const nextGameOver = { winnerId, winningLine };
+      const nextGameOver = {
+        winnerId,
+        ...(winningLine ? { winningLine } : {}),
+      };
       setRoom(nextRoom);
       setGameOver(nextGameOver);
       await handleGameOver(nextGameOver, nextRoom);
