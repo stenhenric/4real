@@ -54,6 +54,8 @@ test('settleOrderProofRelay relays once and reuses the stored proof on subsequen
   process.env.NODE_ENV = 'test';
   process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
   process.env.TELEGRAM_PROOF_CHANNEL_ID = '-100123';
+  process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/4real';
+  process.env.MONGODB_DATABASE = '4real';
   resetEnvCacheForTests();
 
   const proofStore = new Map<string, {

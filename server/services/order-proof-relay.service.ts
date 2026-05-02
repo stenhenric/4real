@@ -205,7 +205,7 @@ export async function settleOrderProofRelay(params: {
       params.routeKey,
       params.requestHash,
     );
-    return latest?.proof;
+    return latest && latest.proof && latest.proof.url ? latest.proof : undefined;
   }
 
   return processClaimedOrderProofRelay(claimed);
