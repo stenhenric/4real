@@ -24,7 +24,7 @@ function isCursorLike(value: unknown): value is { toArray: () => Promise<unknown
   );
 }
 
-function wrapCursor<TCursor extends object>(cursor: TCursor, collectionName: string, operation: string): TCursor {
+function wrapCursor<TCursor extends object>(cursor: TCursor, collectionName: string, operation: string, startedAt: number): TCursor {
   return new Proxy(cursor, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -33,8 +33,6 @@ function wrapCursor<TCursor extends object>(cursor: TCursor, collectionName: str
       }
 
       return (...args: unknown[]) => {
-        const startedAt = performance.now();
-
         try {
           const result = value.apply(target, args);
 
@@ -60,7 +58,7 @@ function wrapCursor<TCursor extends object>(cursor: TCursor, collectionName: str
           }
 
           if (isCursorLike(result)) {
-            return wrapCursor(result, collectionName, operation);
+            return wrapCursor(result, collectionName, operation, startedAt);
           }
 
           return result;
@@ -77,9 +75,8 @@ function wrapCursor<TCursor extends object>(cursor: TCursor, collectionName: str
   });
 }
 
-function wrapResult<T>(collectionName: string, operation: string, result: T): T {
+function wrapResult<T>(collectionName: string, operation: string, result: T, startedAt: number): T {
   if (isPromiseLike(result)) {
-    const startedAt = performance.now();
     return Promise.resolve(result).then(
       (resolved) => {
         recordMongoOperation({
@@ -101,7 +98,7 @@ function wrapResult<T>(collectionName: string, operation: string, result: T): T 
   }
 
   if (isCursorLike(result)) {
-    return wrapCursor(result, collectionName, operation) as T;
+    return wrapCursor(result, collectionName, operation, startedAt) as T;
   }
 
   return result;
@@ -118,14 +115,15 @@ export function getMongoCollection<TSchema extends object>(name: string): mongoo
       }
 
       return (...args: unknown[]) => {
+        const startedAt = performance.now();
         try {
           const result = value.apply(target, args);
-          return wrapResult(name, String(property), result);
+          return wrapResult(name, String(property), result, startedAt);
         } catch (error) {
           recordMongoOperation({
             collection: name,
             operation: String(property),
-            durationMs: 0,
+            durationMs: performance.now() - startedAt,
           });
           throw error;
         }
