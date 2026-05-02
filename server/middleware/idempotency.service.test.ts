@@ -50,10 +50,35 @@ function createSessionMock() {
 }
 
 test('settleOrderProofRelay relays once and reuses the stored proof on subsequent retries', async (t) => {
+  const originalEnv = {
+    JWT_SECRET: process.env.JWT_SECRET,
+    NODE_ENV: process.env.NODE_ENV,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    TELEGRAM_PROOF_CHANNEL_ID: process.env.TELEGRAM_PROOF_CHANNEL_ID,
+    MONGODB_URI: process.env.MONGODB_URI,
+    MONGODB_DATABASE: process.env.MONGODB_DATABASE,
+  };
+  t.after(() => {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    resetEnvCacheForTests();
+  });
+
   process.env.JWT_SECRET = 'x'.repeat(32);
   process.env.NODE_ENV = 'test';
   process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
   process.env.TELEGRAM_PROOF_CHANNEL_ID = '-100123';
+  process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/4real';
+  process.env.MONGODB_DATABASE = '4real';
+  process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/test';
+  process.env.MONGODB_DATABASE = 'test';
+  process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/4real';
+  process.env.MONGODB_DATABASE = '4real';
   resetEnvCacheForTests();
 
   const proofStore = new Map<string, {
