@@ -283,10 +283,13 @@ export class GameRoomRegistry {
 
     const redis = getRedisClient();
     const bindings = new Map<string, string | null>();
-    await Promise.all(state.players.map(async (player) => {
-      const members = await redis.sismember(this.getRoomMembersKey(state.roomId), player.userId);
-      bindings.set(player.userId, members === 1 ? player.socketId : null);
-    }));
+    const members = await redis.smembers(this.getRoomMembersKey(state.roomId));
+    const memberSet = new Set(members);
+
+    for (const player of state.players) {
+      bindings.set(player.userId, memberSet.has(player.userId) ? player.socketId : null);
+    }
+
     return bindings;
   }
 
