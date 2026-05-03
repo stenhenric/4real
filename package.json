@@ -20,7 +20,6 @@
     "backfill:balance-atomic": "tsx server/scripts/backfill-balance-atomic.ts"
   },
   "dependencies": {
-    "@marsidev/react-turnstile": "^1.5.1",
     "@socket.io/redis-adapter": "^8.3.0",
     "@tailwindcss/vite": "^4.2.4",
     "@ton/crypto": "^3.3.0",
