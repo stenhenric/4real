@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AuthTurnstile } from '../../features/auth/AuthTurnstile';
+import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
@@ -15,6 +15,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
+  const turnstileRef = useRef<AuthTurnstileRef>(null);
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -28,6 +30,8 @@ export default function RegisterPage() {
       });
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Unable to create your account right now.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
     } finally {
       setLoading(false);
     }
@@ -91,9 +95,9 @@ export default function RegisterPage() {
             value={password}
           />
 
-          <AuthTurnstile onSuccess={setTurnstileToken} />
+          <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
 
-          <SketchyButton className="w-full py-3 text-base" disabled={loading} type="submit">
+          <SketchyButton className="w-full py-3 text-base" disabled={loading || (!!siteKey && !turnstileToken)} type="submit">
             {loading ? 'Creating your account...' : 'Create account'}
           </SketchyButton>
         </form>

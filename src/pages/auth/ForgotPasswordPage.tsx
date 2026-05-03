@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { AuthTurnstile } from '../../features/auth/AuthTurnstile';
+import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
@@ -12,6 +12,8 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
+  const turnstileRef = useRef<AuthTurnstileRef>(null);
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -23,6 +25,8 @@ export default function ForgotPasswordPage() {
       info(response.message ?? 'If the account exists, a reset link is on the way.');
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Unable to start password reset.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
     } finally {
       setLoading(false);
     }
@@ -56,9 +60,9 @@ export default function ForgotPasswordPage() {
             value={email}
           />
 
-          <AuthTurnstile onSuccess={setTurnstileToken} />
+          <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
 
-          <SketchyButton className="w-full py-3 text-base" disabled={loading} type="submit">
+          <SketchyButton className="w-full py-3 text-base" disabled={loading || (!!siteKey && !turnstileToken)} type="submit">
             {loading ? 'Sending reset link...' : 'Send reset link'}
           </SketchyButton>
         </form>
