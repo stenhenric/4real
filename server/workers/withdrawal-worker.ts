@@ -78,7 +78,7 @@ async function refundFailedWithdrawal({
       await TransactionService.createTransaction({
         userId,
         type: 'WITHDRAW_REFUND',
-        amount: Number(amountDisplay),
+        amount: amountDisplay,
         referenceId: withdrawalId,
         session,
       });

@@ -1,23 +1,27 @@
-export function formatMoney(value: number | null | undefined): string {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
+import { moneyToNumber, type MoneyLike } from '../../utils/exact-money.ts';
+
+export function formatMoney(value: MoneyLike): string {
+  const amount = moneyToNumber(value);
+  if (!Number.isFinite(amount)) {
     return 'Unavailable';
   }
 
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(amount);
 }
 
-export function formatCompactNumber(value: number | null | undefined): string {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
+export function formatCompactNumber(value: MoneyLike): string {
+  const amount = moneyToNumber(value);
+  if (!Number.isFinite(amount)) {
     return 'Unavailable';
   }
 
   return new Intl.NumberFormat('en-US', {
     notation: 'compact',
     maximumFractionDigits: 1,
-  }).format(value);
+  }).format(amount);
 }
 
 export function formatDateTime(value: string | undefined): string {

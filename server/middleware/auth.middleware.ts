@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 
-import { AUTH_COOKIE_NAME } from '../config/cookies.ts';
+import { getAuthCookieName } from '../config/cookies.ts';
 import { assignTraceContext } from '../services/trace-context.service.ts';
 import { AuthMfaService } from '../services/auth-mfa.service.ts';
 import { AuthSessionService } from '../services/auth-session.service.ts';
@@ -22,7 +22,7 @@ export function assertAuthenticated(req: AuthRequest): asserts req is Authentica
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction): void => {
-  const token = req.cookies?.[AUTH_COOKIE_NAME];
+  const token = req.cookies?.[getAuthCookieName()];
 
   if (!token) {
     next(unauthorized('Access token required', 'UNAUTHENTICATED'));

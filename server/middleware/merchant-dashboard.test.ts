@@ -8,6 +8,7 @@ import { MerchantConfig as MerchantConfigModel } from '../models/MerchantConfig.
 import { Order } from '../models/Order.ts';
 import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { resetCacheServiceForTests } from '../services/cache.service.ts';
 import { MerchantDashboardService } from '../services/merchant-dashboard.service.ts';
 import { setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
 
@@ -67,6 +68,7 @@ function registerEnvCleanup(t: TestContext) {
   process.env.HOT_WALLET_MIN_USDT_BALANCE = '2';
   process.env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT = '0.5';
   resetEnvCacheForTests();
+  resetCacheServiceForTests();
 
   t.after(() => {
     if (previous.HOT_WALLET_MIN_TON_BALANCE === undefined) {
@@ -100,6 +102,7 @@ function registerEnvCleanup(t: TestContext) {
     }
 
     resetEnvCacheForTests();
+    resetCacheServiceForTests();
     setHotWalletRuntimeForTests(null);
   });
 }
@@ -124,7 +127,7 @@ test('getOrderDesk applies pagination metadata and derives risk flags for admin 
         _id: orderId,
         userId: recentUser,
         type: 'BUY',
-        amount: 6_000,
+        amount: '6000.000000',
         status: 'PENDING',
         proof: {
           provider: 'telegram',
@@ -134,8 +137,8 @@ test('getOrderDesk applies pagination metadata and derives risk flags for admin 
         },
         transactionCode: 'QWE123ABC',
         fiatCurrency: 'KES',
-        exchangeRate: 140,
-        fiatTotal: 840000,
+        exchangeRate: '140.000000',
+        fiatTotal: '840000.00',
         createdAt: new Date(Date.now() - 20 * 60 * 1000),
       },
     ]);
@@ -168,8 +171,8 @@ test('getOrderDesk applies pagination metadata and derives risk flags for admin 
   });
   assert.equal(result.orders[0].transactionCode, 'QWE123ABC');
   assert.equal(result.orders[0].fiatCurrency, 'KES');
-  assert.equal(result.orders[0].exchangeRate, 140);
-  assert.equal(result.orders[0].fiatTotal, 840000);
+  assert.equal(result.orders[0].exchangeRate, '140.000000');
+  assert.equal(result.orders[0].fiatTotal, '840000.00');
   assert.match(result.orders[0].riskFlags.join(' '), /Large ticket size/);
   assert.match(result.orders[0].riskFlags.join(' '), /New account/);
 });
@@ -193,7 +196,7 @@ test('getOrderDesk keeps established small-ticket traders in the low-risk bucket
         _id: orderId,
         userId: establishedUser,
         type: 'SELL',
-        amount: 25,
+        amount: '25.000000',
         status: 'DONE',
         proof: {
           provider: 'telegram',
@@ -241,8 +244,8 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
     walletAddress: 'UQTestWallet',
     instructions: 'Send exact amount and upload screenshot.',
     fiatCurrency: 'KES' as const,
-    buyRateKesPerUsdt: 132.5,
-    sellRateKesPerUsdt: 128.75,
+    buyRateKesPerUsdt: '132.500000',
+    sellRateKesPerUsdt: '128.750000',
   };
 
   const orderFilters: Record<string, unknown>[] = [];
@@ -256,7 +259,7 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
     if (filter.status === 'DONE') {
       return createLeanQuery([
         {
-          amount: 45,
+          amount: '45.000000',
           createdAt: new Date('2026-04-25T10:00:00.000Z'),
         },
       ]);

@@ -9,6 +9,7 @@ import { getLeaderboard } from '../services/users.service';
 import { createGameSocket } from '../sockets/gameSocket';
 import { PUBLIC_MATCHES_UPDATED_EVENT } from '../../shared/socket-events';
 import { isAbortError } from '../utils/isAbortError';
+import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
 import type { LeaderboardUserDTO, MatchDTO } from '../types/api';
 
 type DashboardTab = 'lobby' | 'leaderboard' | 'archives' | 'stats';
@@ -118,7 +119,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
     }
 
     try {
-      const match = await createMatch({ wager: parsedWager, isPrivate });
+      const match = await createMatch({ wager: parsedWager.toFixed(6), isPrivate });
       if (parsedWager > 0) {
         await refreshUser();
       }
@@ -140,8 +141,8 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
     setWager('0');
   };
 
-  const freeMatches = activeMatches.filter((m) => m.wager === 0);
-  const paidMatches = activeMatches.filter((m) => m.wager > 0);
+  const freeMatches = activeMatches.filter((m) => moneyToNumber(m.wager) === 0);
+  const paidMatches = activeMatches.filter((m) => moneyToNumber(m.wager) > 0);
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -304,7 +305,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                         step="0.1"
                         autoFocus
                       />
-                      <p className="text-xs opacity-50 mt-2 font-bold uppercase">Available balance: {userData?.balance ?? 0} USDT</p>
+                      <p className="text-xs opacity-50 mt-2 font-bold uppercase">Available balance: {formatMoneyValue(userData?.balance)} USDT</p>
                     </div>
                     
                     <div className="flex justify-between mt-6">
@@ -373,7 +374,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                           className="group relative p-5 bg-white rough-border border-amber-500/30 hover:border-amber-500 hover:-translate-y-1 hover:shadow-xl transition-all duration-300"
                         >
                           <div className="absolute -left-2 -top-2 bg-amber-400 text-black font-bold text-[10px] px-2 py-1 rotate-[-5deg] rough-border shadow-sm z-10">
-                            {match.wager} USDT
+                            {formatMoneyValue(match.wager)} USDT
                           </div>
                           <div className="absolute top-2 right-2 flex items-center gap-1 opacity-20">
                             <Clock size={10} /> <span className="text-[9px] font-mono">LIVE</span>

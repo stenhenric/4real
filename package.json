@@ -8,7 +8,12 @@
     "start": "node ./dist/server/main.js",
     "build": "vite build && tsc --project tsconfig.server.json",
     "preview": "vite preview",
-    "test": "tsx --test server/middleware/*.test.ts",
+    "test": "npm run test:integration",
+    "test:unit": "node --test --test-isolation=none --experimental-strip-types server/middleware/auth-security.test.ts server/middleware/frontend-contracts.test.ts server/middleware/logging-and-schemas.test.ts server/middleware/migration-services.test.ts server/middleware/security.middleware.test.ts server/middleware/static-files.test.ts",
+    "test:integration": "node --test --test-isolation=none --experimental-strip-types server/middleware/*.test.ts",
+    "test:e2e": "npm run build && playwright test",
+    "test:all": "npm run lint && npm run test:unit && npm run test:integration && npm run test:e2e",
+    "docs:architecture": "node scripts/generate-architecture-map.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit && tsc --project tsconfig.server.json --noEmit",
     "seed": "tsx server/seed.ts",
@@ -24,7 +29,6 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.25",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.19.17",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -41,7 +45,6 @@
     "express-rate-limit": "^8.4.0",
     "helmet": "^8.1.0",
     "ioredis": "^5.10.1",
-    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",
     "mongoose": "^9.6.1",
     "rate-limit-redis": "^4.3.1",
@@ -59,6 +62,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "typescript": "^6.0.3"
   }
 }

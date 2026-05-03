@@ -3,6 +3,7 @@ import { TonConnectButton } from '@tonconnect/ui-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { LogOut, Home, Landmark, ShieldCheck, User } from 'lucide-react';
+import { formatMoneyValue } from '../utils/exact-money.ts';
 
 const Navbar = () => {
   const { userData, user, logout } = useAuth();
@@ -51,7 +52,7 @@ const Navbar = () => {
             {/* Balance — compact on mobile */}
             <div className="flex flex-col items-end mr-1 md:mr-4">
               <span className="text-[8px] md:text-[10px] uppercase font-bold opacity-50 tracking-tighter">Balance</span>
-              <span className="font-bold text-base md:text-xl">${userData?.balance?.toFixed(2) || '0.00'}</span>
+              <span className="font-bold text-base md:text-xl">${formatMoneyValue(userData?.balance)}</span>
             </div>
 
             {userData?.isAdmin && (

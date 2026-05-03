@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import test, { mock } from 'node:test';
+import test, { mock, type TestContext } from 'node:test';
 import mongoose from 'mongoose';
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { MerchantConfig as MerchantConfigModel } from '../models/MerchantConfig.ts';
 import { serializeMatch, serializeOrder } from '../serializers/api.ts';
-import { resolveAuthEmail } from '../services/auth-identity.service.ts';
+import { cleanUsername, normalizeEmail, normalizeUsername } from '../services/auth-identity.service.ts';
+import { resetCacheServiceForTests } from '../services/cache.service.ts';
 import { calculateMatchPayout } from '../services/match-payout.service.ts';
 import { getMerchantConfig, updateMerchantConfig } from '../services/merchant-config.service.ts';
-import { createOrderRequestSchema, loginRequestSchema } from '../validation/request-schemas.ts';
+import { createOrderRequestSchema, loginPasswordRequestSchema } from '../validation/request-schemas.ts';
 
 const restoreEnv = (key: keyof NodeJS.ProcessEnv, value: string | undefined) => {
   if (value === undefined) {
@@ -17,25 +18,52 @@ const restoreEnv = (key: keyof NodeJS.ProcessEnv, value: string | undefined) => 
   }
 };
 
-test('resolveAuthEmail derives the synthetic account email from username logins', () => {
-  assert.equal(resolveAuthEmail({ username: 'SketchMaster' }), 'sketchmaster@4real.app');
-  assert.equal(resolveAuthEmail({ identifier: 'InkPlayer' }), 'inkplayer@4real.app');
-  assert.equal(resolveAuthEmail({ email: 'Player@Example.com' }), 'player@example.com');
+function forceMemoryOnlyCacheForTest(t: TestContext) {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'test';
+  resetEnvCacheForTests();
+  resetCacheServiceForTests();
+
+  t.after(() => {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    resetEnvCacheForTests();
+    resetCacheServiceForTests();
+  });
+}
+
+test('auth identity helpers normalize email and username inputs deterministically', () => {
+  assert.equal(normalizeEmail('Player@Example.com '), 'player@example.com');
+  assert.equal(normalizeUsername(' SketchMaster '), 'sketchmaster');
+  assert.equal(cleanUsername(' SketchMaster '), 'SketchMaster');
 });
 
-test('loginRequestSchema accepts username-only login payloads', () => {
-  const parsed = loginRequestSchema.safeParse({ username: 'SketchMaster', password: 'password123' });
-  assert.equal(parsed.success, true);
+test('loginPasswordRequestSchema accepts email login payloads and rejects username-only payloads', () => {
+  const valid = loginPasswordRequestSchema.safeParse({
+    email: 'player@example.com',
+    password: 'password123',
+  });
+  const invalid = loginPasswordRequestSchema.safeParse({
+    username: 'SketchMaster',
+    password: 'password123',
+  });
+
+  assert.equal(valid.success, true);
+  assert.equal(invalid.success, false);
 });
 
 test('createOrderRequestSchema validates type and amount without trusting proof URLs', () => {
   const valid = createOrderRequestSchema.safeParse({
     type: 'BUY',
-    amount: 10,
+    amount: '10.000000',
   });
   const invalid = createOrderRequestSchema.safeParse({
     type: 'BUY',
-    amount: -1,
+    amount: '-1.000000',
   });
 
   assert.equal(valid.success, true);
@@ -45,10 +73,10 @@ test('createOrderRequestSchema validates type and amount without trusting proof 
 test('calculateMatchPayout keeps commission math on the backend', () => {
   const payout = calculateMatchPayout(10);
 
-  assert.equal(payout.totalPot, 20);
-  assert.equal(payout.commissionAmount, 2);
-  assert.equal(payout.projectedWinnerAmount, 18);
-  assert.equal(payout.commissionRate, 0.1);
+  assert.equal(payout.totalPot, '20.000000');
+  assert.equal(payout.commissionAmount, '2.000000');
+  assert.equal(payout.projectedWinnerAmount, '18.000000');
+  assert.equal(payout.commissionRate, '0.100000');
 });
 
 function createLeanQuery<T>(value: T) {
@@ -62,18 +90,14 @@ function createLeanQuery<T>(value: T) {
   };
 }
 
-test('getMerchantConfig prefers server env values and falls back to legacy VITE values', async (t) => {
+test('getMerchantConfig prefers server env values and falls back to server-owned defaults', async (t) => {
+  forceMemoryOnlyCacheForTest(t);
   const previous = {
     MERCHANT_MPESA_NUMBER: process.env.MERCHANT_MPESA_NUMBER,
     MERCHANT_WALLET_ADDRESS: process.env.MERCHANT_WALLET_ADDRESS,
     MERCHANT_INSTRUCTIONS: process.env.MERCHANT_INSTRUCTIONS,
     MERCHANT_BUY_RATE_KES_PER_USDT: process.env.MERCHANT_BUY_RATE_KES_PER_USDT,
     MERCHANT_SELL_RATE_KES_PER_USDT: process.env.MERCHANT_SELL_RATE_KES_PER_USDT,
-    VITE_MERCHANT_MPESA_NUMBER: process.env.VITE_MERCHANT_MPESA_NUMBER,
-    VITE_MERCHANT_WALLET_ADDRESS: process.env.VITE_MERCHANT_WALLET_ADDRESS,
-    VITE_MERCHANT_INSTRUCTIONS: process.env.VITE_MERCHANT_INSTRUCTIONS,
-    VITE_MERCHANT_BUY_RATE_KES_PER_USDT: process.env.VITE_MERCHANT_BUY_RATE_KES_PER_USDT,
-    VITE_MERCHANT_SELL_RATE_KES_PER_USDT: process.env.VITE_MERCHANT_SELL_RATE_KES_PER_USDT,
   };
   const findOneMock = mock.method(MerchantConfigModel, 'findOne', (() => createLeanQuery(null)) as any);
   t.after(() => findOneMock.mock.restore());
@@ -83,20 +107,16 @@ test('getMerchantConfig prefers server env values and falls back to legacy VITE 
   process.env.MERCHANT_INSTRUCTIONS = 'Server instructions';
   process.env.MERCHANT_BUY_RATE_KES_PER_USDT = '141.5';
   process.env.MERCHANT_SELL_RATE_KES_PER_USDT = '137.25';
-  process.env.VITE_MERCHANT_MPESA_NUMBER = 'LEGACY-123';
-  process.env.VITE_MERCHANT_WALLET_ADDRESS = 'LEGACY-WALLET';
-  process.env.VITE_MERCHANT_INSTRUCTIONS = 'Legacy instructions';
-  process.env.VITE_MERCHANT_BUY_RATE_KES_PER_USDT = '132.5';
-  process.env.VITE_MERCHANT_SELL_RATE_KES_PER_USDT = '129.75';
   resetEnvCacheForTests();
+  resetCacheServiceForTests();
 
   assert.deepEqual(await getMerchantConfig(), {
     mpesaNumber: 'SERVER-123',
     walletAddress: 'SERVER-WALLET',
     instructions: 'Server instructions',
     fiatCurrency: 'KES',
-    buyRateKesPerUsdt: 141.5,
-    sellRateKesPerUsdt: 137.25,
+    buyRateKesPerUsdt: '141.500000',
+    sellRateKesPerUsdt: '137.250000',
   });
 
   delete process.env.MERCHANT_MPESA_NUMBER;
@@ -105,14 +125,15 @@ test('getMerchantConfig prefers server env values and falls back to legacy VITE 
   delete process.env.MERCHANT_BUY_RATE_KES_PER_USDT;
   delete process.env.MERCHANT_SELL_RATE_KES_PER_USDT;
   resetEnvCacheForTests();
+  resetCacheServiceForTests();
 
   assert.deepEqual(await getMerchantConfig(), {
-    mpesaNumber: 'LEGACY-123',
-    walletAddress: 'LEGACY-WALLET',
-    instructions: 'Legacy instructions',
+    mpesaNumber: 'Not configured',
+    walletAddress: 'Not configured',
+    instructions: 'Follow merchant instructions provided by support.',
     fiatCurrency: 'KES',
-    buyRateKesPerUsdt: 132.5,
-    sellRateKesPerUsdt: 129.75,
+    buyRateKesPerUsdt: '0.000000',
+    sellRateKesPerUsdt: '0.000000',
   });
 
   restoreEnv('MERCHANT_MPESA_NUMBER', previous.MERCHANT_MPESA_NUMBER);
@@ -120,21 +141,18 @@ test('getMerchantConfig prefers server env values and falls back to legacy VITE 
   restoreEnv('MERCHANT_INSTRUCTIONS', previous.MERCHANT_INSTRUCTIONS);
   restoreEnv('MERCHANT_BUY_RATE_KES_PER_USDT', previous.MERCHANT_BUY_RATE_KES_PER_USDT);
   restoreEnv('MERCHANT_SELL_RATE_KES_PER_USDT', previous.MERCHANT_SELL_RATE_KES_PER_USDT);
-  restoreEnv('VITE_MERCHANT_MPESA_NUMBER', previous.VITE_MERCHANT_MPESA_NUMBER);
-  restoreEnv('VITE_MERCHANT_WALLET_ADDRESS', previous.VITE_MERCHANT_WALLET_ADDRESS);
-  restoreEnv('VITE_MERCHANT_INSTRUCTIONS', previous.VITE_MERCHANT_INSTRUCTIONS);
-  restoreEnv('VITE_MERCHANT_BUY_RATE_KES_PER_USDT', previous.VITE_MERCHANT_BUY_RATE_KES_PER_USDT);
-  restoreEnv('VITE_MERCHANT_SELL_RATE_KES_PER_USDT', previous.VITE_MERCHANT_SELL_RATE_KES_PER_USDT);
   resetEnvCacheForTests();
+  resetCacheServiceForTests();
 });
 
 test('updateMerchantConfig merges and persists merchant rates and settlement details', async (t) => {
+  forceMemoryOnlyCacheForTest(t);
   const findOneMock = mock.method(MerchantConfigModel, 'findOne', (() => createLeanQuery({
     mpesaNumber: '900100',
     walletAddress: 'EQ123',
     instructions: 'Existing instructions',
-    buyRateKesPerUsdt: 140,
-    sellRateKesPerUsdt: 135,
+    buyRateKesPerUsdt: '140.000000',
+    sellRateKesPerUsdt: '135.000000',
   })) as any);
   const findOneAndUpdateMock = mock.method(MerchantConfigModel, 'findOneAndUpdate', async () => null as any);
 
@@ -142,8 +160,8 @@ test('updateMerchantConfig merges and persists merchant rates and settlement det
   t.after(() => findOneAndUpdateMock.mock.restore());
 
   const updated = await updateMerchantConfig({
-    buyRateKesPerUsdt: 150,
-    sellRateKesPerUsdt: 145,
+    buyRateKesPerUsdt: '150.000000',
+    sellRateKesPerUsdt: '145.000000',
     instructions: 'Updated instructions',
   });
 
@@ -152,14 +170,14 @@ test('updateMerchantConfig merges and persists merchant rates and settlement det
     walletAddress: 'EQ123',
     instructions: 'Updated instructions',
     fiatCurrency: 'KES',
-    buyRateKesPerUsdt: 150,
-    sellRateKesPerUsdt: 145,
+    buyRateKesPerUsdt: '150.000000',
+    sellRateKesPerUsdt: '145.000000',
   });
 
   assert.equal(findOneAndUpdateMock.mock.callCount(), 1);
   const updatePayload = findOneAndUpdateMock.mock.calls[0].arguments[1] as { $set: Record<string, unknown> };
-  assert.equal(updatePayload.$set.buyRateKesPerUsdt, 150);
-  assert.equal(updatePayload.$set.sellRateKesPerUsdt, 145);
+  assert.equal(updatePayload.$set.buyRateKesPerUsdt, '150.000000');
+  assert.equal(updatePayload.$set.sellRateKesPerUsdt, '145.000000');
   assert.equal(updatePayload.$set.instructions, 'Updated instructions');
 });
 
@@ -184,8 +202,9 @@ test('serializeMatch returns the shared DTO shape with string identifiers', () =
   assert.equal(typeof dto._id, 'string');
   assert.equal(typeof dto.player1Id, 'string');
   assert.equal(typeof dto.player2Id, 'string');
-  assert.equal(dto.projectedWinnerAmount, 21.6);
-  assert.equal(dto.commissionRate, 0.1);
+  assert.equal(dto.wager, '12.000000');
+  assert.equal(dto.projectedWinnerAmount, '21.600000');
+  assert.equal(dto.commissionRate, '0.100000');
   assert.equal(dto.createdAt, '2026-01-01T00:00:00.000Z');
 });
 
@@ -229,6 +248,7 @@ test('serializeOrder returns a stable DTO for populated and unpopulated users', 
   assert.equal(populated.createdAt, '2026-01-02T00:00:00.000Z');
   assert.equal(populated.proof?.provider, 'telegram');
   assert.equal(populated.transactionCode, 'QWE123ABC');
-  assert.equal(populated.exchangeRate, 140);
-  assert.equal(populated.fiatTotal, 700);
+  assert.equal(populated.amount, '5.000000');
+  assert.equal(populated.exchangeRate, '140.000000');
+  assert.equal(populated.fiatTotal, '700.00');
 });

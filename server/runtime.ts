@@ -23,6 +23,13 @@ export async function startServer() {
   const host = '0.0.0.0';
   let isShuttingDown = false;
 
+  if (env.REDIS_URL) {
+    const redisPing = await getRedisClient().ping();
+    if (redisPing !== 'PONG') {
+      throw new Error('Redis is required for production auth/session flows and did not respond to PING');
+    }
+  }
+
   await connectDB();
   await setupIndexes();
   await UserService.ensureSystemCommissionAccountExists();

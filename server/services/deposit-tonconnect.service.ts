@@ -3,12 +3,11 @@ import { getOrDeriveJettonWallet } from '../lib/jetton.ts';
 import { getEnv } from '../config/env.ts';
 import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
 import { badRequest, notFound, serviceUnavailable } from '../utils/http-error.ts';
+import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 
 const TONCONNECT_TRANSACTION_TTL_SECONDS = 360;
 const TONCONNECT_GAS_AMOUNT = '0.05';
 const TONCONNECT_FORWARD_AMOUNT = '0.01';
-
-const toUsdtRawAmount = (amountUsdt: number): string => BigInt(Math.round(amountUsdt * 1_000_000)).toString();
 
 function buildTonConnectPayload({
   amountRaw,
@@ -42,7 +41,7 @@ function buildTonConnectPayload({
 export interface PreparedTonConnectDeposit {
   memo: string;
   address: string;
-  amountUsdt: number;
+  amountUsdt: string;
   amountRaw: string;
   userJettonWalletAddress: string;
   transaction: {
@@ -64,7 +63,7 @@ export async function prepareTonConnectDeposit({
   userId: string;
   memo: string;
   walletAddress: string;
-  amountUsdt: number;
+  amountUsdt: string;
 }): Promise<PreparedTonConnectDeposit> {
   const { HOT_WALLET_ADDRESS: hotWalletAddress } = getEnv();
   if (!hotWalletAddress) {
@@ -85,7 +84,7 @@ export async function prepareTonConnectDeposit({
   const ownerAddress = Address.parse(walletAddress).toString({ bounceable: true });
   const normalizedHotWallet = Address.parse(hotWalletAddress).toString({ bounceable: true });
   const userJettonWalletAddress = await getOrDeriveJettonWallet(ownerAddress);
-  const amountRaw = toUsdtRawAmount(amountUsdt);
+  const amountRaw = parseUsdtAmount(amountUsdt).toString();
   const payload = buildTonConnectPayload({
     amountRaw,
     destinationAddress: normalizedHotWallet,
@@ -96,7 +95,7 @@ export async function prepareTonConnectDeposit({
   return {
     memo,
     address: normalizedHotWallet,
-    amountUsdt,
+    amountUsdt: formatUsdtAmount(amountRaw),
     amountRaw,
     userJettonWalletAddress,
     transaction: {

@@ -14,6 +14,7 @@ import {
 } from '../../services/orders.service';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
+import { formatMoneyValue, moneyToNumber } from '../../utils/exact-money.ts';
 import type { MerchantConfigDTO, OrderDTO } from '../../types/api';
 
 type MerchantTab = 'buy' | 'sell';
@@ -26,12 +27,8 @@ function roundMoney(value: number): number {
   return Number(value.toFixed(2));
 }
 
-function formatMoney(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return '0.00';
-  }
-
-  return value.toFixed(2);
+function formatMoney(value: string | number | null | undefined): string {
+  return formatMoneyValue(value);
 }
 
 const MerchantPanel = () => {
@@ -98,9 +95,10 @@ const MerchantPanel = () => {
   const activeRate = activeTab === 'buy'
     ? merchantConfig?.buyRateKesPerUsdt ?? 0
     : merchantConfig?.sellRateKesPerUsdt ?? 0;
-  const rateConfigured = Number.isFinite(activeRate) && activeRate > 0;
+  const activeRateValue = moneyToNumber(activeRate);
+  const rateConfigured = activeRateValue > 0;
   const fiatTotal = hasValidAmount && rateConfigured
-    ? roundMoney(amountValue * activeRate)
+    ? roundMoney(amountValue * activeRateValue)
     : null;
   const fiatCurrency = merchantConfig?.fiatCurrency ?? 'KES';
   const buyReadyForSubmit = Boolean(
@@ -135,7 +133,7 @@ const MerchantPanel = () => {
     setLoading(true);
 
     try {
-      const parsedAmount = roundMoney(amountValue);
+      const parsedAmount = amountValue.toFixed(6);
 
       if (activeTab === 'buy') {
         if (!paymentConfirmed) {
@@ -490,7 +488,7 @@ const MerchantPanel = () => {
                         </div>
                         <div>
                           <p className="font-bold text-xl tracking-tight">
-                            {order.type === 'BUY' ? 'BUY USDT' : 'SELL USDT'} {order.amount.toFixed(2)} USDT
+                            {order.type === 'BUY' ? 'BUY USDT' : 'SELL USDT'} {formatMoney(order.amount)} USDT
                           </p>
                           <p className="text-[10px] opacity-40 font-mono font-bold uppercase">
                             TX-{order._id.substring(0, 12)} | {new Date(order.createdAt).toLocaleDateString()}

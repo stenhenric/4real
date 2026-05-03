@@ -3,7 +3,7 @@ import { createIdempotencyKey } from '../utils/idempotency.ts';
 import type { MatchDTO } from '../types/api.ts';
 
 interface CreateMatchPayload {
-  wager: number;
+  wager: string;
   isPrivate: boolean;
 }
 

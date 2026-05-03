@@ -20,6 +20,8 @@ const RegisterPage = lazy(() => import('../pages/auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('../pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('../pages/auth/ResetPasswordPage'));
 const VerifyEmailPage = lazy(() => import('../pages/auth/VerifyEmailPage'));
+const MagicLinkPage = lazy(() => import('../pages/auth/MagicLinkPage'));
+const ApproveLoginPage = lazy(() => import('../pages/auth/ApproveLoginPage'));
 const VerifiedPage = lazy(() => import('../pages/auth/VerifiedPage'));
 const CompleteProfilePage = lazy(() => import('../pages/auth/CompleteProfilePage'));
 const MfaChallengePage = lazy(() => import('../pages/auth/MfaChallengePage'));
@@ -61,6 +63,8 @@ export default function App() {
             <Route path="/auth/forgot-password" element={<PublicOnlyRoute><ForgotPasswordPage /></PublicOnlyRoute>} />
             <Route path="/auth/reset-password" element={<PublicOnlyRoute><ResetPasswordPage /></PublicOnlyRoute>} />
             <Route path="/auth/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/auth/magic-link" element={<MagicLinkPage />} />
+            <Route path="/auth/approve-login" element={<ApproveLoginPage />} />
             <Route path="/auth/verified" element={<VerifiedPage />} />
             <Route path="/auth/mfa" element={<MfaChallengePage />} />
             <Route

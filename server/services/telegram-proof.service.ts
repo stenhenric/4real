@@ -23,10 +23,10 @@ function buildTelegramMessageUrl(chatId: string, messageId: string, username?: s
 
 export async function relayOrderProofToTelegram(params: {
   orderType: 'BUY' | 'SELL';
-  amount: number;
+  amount: string;
   fiatCurrency: 'KES';
-  exchangeRate: number;
-  fiatTotal: number;
+  exchangeRate: string;
+  fiatTotal: string;
   transactionCode: string;
   username: string;
   userId: string;
@@ -45,9 +45,9 @@ export async function relayOrderProofToTelegram(params: {
   const caption = [
     `4real merchant proof`,
     `Type: ${params.orderType}`,
-    `Amount: ${params.amount.toFixed(2)} USDT`,
-    `Rate: ${params.exchangeRate.toFixed(2)} ${params.fiatCurrency}/USDT`,
-    `Fiat total: ${params.fiatTotal.toFixed(2)} ${params.fiatCurrency}`,
+    `Amount: ${params.amount} USDT`,
+    `Rate: ${params.exchangeRate} ${params.fiatCurrency}/USDT`,
+    `Fiat total: ${params.fiatTotal} ${params.fiatCurrency}`,
     `M-Pesa code: ${params.transactionCode}`,
     `User: ${params.username}`,
     `User ID: ${params.userId}`,

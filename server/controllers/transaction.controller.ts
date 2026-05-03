@@ -9,6 +9,7 @@ import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { generateDepositMemo } from '../services/deposit-service.ts';
 import { prepareTonConnectDeposit } from '../services/deposit-tonconnect.service.ts';
 import { AuditService } from '../services/audit.service.ts';
+import { CacheKeys, invalidateCacheKeys } from '../services/cache.service.ts';
 import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
@@ -21,7 +22,9 @@ import type {
 
 export const getUserTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
   assertAuthenticated(req);
-  const transactions = await TransactionService.getUnifiedTransactionsByUser(req.user.id);
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(req.query.pageSize) || 25, 1), 100);
+  const transactions = await TransactionService.getUnifiedTransactionsByUser(req.user.id, page, pageSize);
   res.json(transactions);
 };
 
@@ -109,6 +112,9 @@ export const requestWithdrawalHandler = async (req: AuthRequest, res: Response):
     },
   });
 
+  if (!result.replayed) {
+    await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
+  }
   res.status(result.statusCode).json(result.body);
 };
 

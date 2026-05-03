@@ -1,17 +1,17 @@
-import request from './api/apiClient';
-import { createIdempotencyKey } from '../utils/idempotency';
+import request from './api/apiClient.ts';
+import { createIdempotencyKey } from '../utils/idempotency.ts';
 import type { MerchantConfigDTO, OrderDTO } from '../types/api';
 
 type CreateOrderPayload =
   | {
       type: 'BUY';
-      amount: number;
+      amount: string;
       transactionCode: string;
       proofImage: File;
     }
   | {
       type: 'SELL';
-      amount: number;
+      amount: string;
     };
 
 type OrderStatus = OrderDTO['status'];

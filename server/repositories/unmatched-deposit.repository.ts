@@ -42,6 +42,19 @@ export class UnmatchedDepositRepository {
     return this.collection().findOne({ txHash }, session ? { session } : undefined);
   }
 
+  static async findOpenByTxHashes(txHashes: string[]): Promise<UnmatchedDepositDocument[]> {
+    if (txHashes.length === 0) {
+      return [];
+    }
+
+    return this.collection()
+      .find({
+        txHash: { $in: txHashes },
+        resolved: { $ne: true },
+      })
+      .toArray();
+  }
+
   static async countOpen(): Promise<number> {
     return this.collection().countDocuments({ resolved: { $ne: true } });
   }

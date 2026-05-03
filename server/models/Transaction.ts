@@ -18,7 +18,7 @@ export type LedgerTransactionStatus = 'PENDING' | 'COMPLETED' | 'REJECTED' | 'DO
 export interface ITransaction extends Document {
   userId: mongoose.Types.ObjectId;
   type: LedgerTransactionType;
-  amount: number;
+  amount: string;
   status: LedgerTransactionStatus;
   referenceId?: string;
   createdAt: Date;
@@ -44,7 +44,7 @@ const TransactionSchema: Schema = new Schema({
     ],
     required: true
   },
-  amount: { type: Number, required: true },
+  amount: { type: String, required: true, match: /^-?\d+\.\d{6}$/ },
   status: { type: String, enum: ['PENDING', 'COMPLETED', 'REJECTED', 'DONE'], default: 'COMPLETED', index: true },
   referenceId: { type: String }
 }, {

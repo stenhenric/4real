@@ -6,12 +6,22 @@ import { getEnv } from '../config/env.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeOrder } from '../serializers/api.ts';
+import { CacheKeys, invalidateCacheKeys } from '../services/cache.service.ts';
 import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
 import { getMerchantConfig } from '../services/merchant-config.service.ts';
 import { OrderService } from '../services/order.service.ts';
 import { enqueueOrderProofRelay, settleOrderProofRelay } from '../services/order-proof-relay.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
+import {
+  KES_SCALE,
+  RATE_SCALE,
+  USDT_SCALE,
+  formatKesAmount,
+  multiplyScaledAmounts,
+  parseRate,
+  parseUsdtAmount,
+} from '../utils/money.ts';
 import { parseMultipartForm } from '../utils/multipart.ts';
 import { badRequest, notFound, payloadTooLarge, serviceUnavailable, unsupportedMediaType } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
@@ -19,10 +29,6 @@ import {
   createOrderRequestSchema,
   type UpdateOrderStatusRequest,
 } from '../validation/request-schemas.ts';
-
-function roundMoney(value: number): number {
-  return Number(value.toFixed(2));
-}
 
 export class OrderController {
   static async getOrders(req: AuthRequest, res: Response): Promise<void> {
@@ -46,12 +52,13 @@ export class OrderController {
     const parsedBody = createOrderRequestSchema.parse(fields);
     const merchantConfig = await getMerchantConfig();
     const proofImage = files.proofImage;
+    const amountRaw = parseUsdtAmount(parsedBody.amount);
 
-    if (parsedBody.type === 'BUY' && parsedBody.amount < 1) {
+    if (parsedBody.type === 'BUY' && amountRaw < parseUsdtAmount('1')) {
       throw badRequest('Minimum BUY amount is 1 USDT', 'BUY_ORDER_MINIMUM_NOT_MET');
     }
 
-    if (parsedBody.type === 'SELL' && parsedBody.amount < 2) {
+    if (parsedBody.type === 'SELL' && amountRaw < parseUsdtAmount('2')) {
       throw badRequest('Minimum SELL amount is 2 USDT', 'SELL_ORDER_MINIMUM_NOT_MET');
     }
 
@@ -81,7 +88,7 @@ export class OrderController {
       ? merchantConfig.buyRateKesPerUsdt
       : merchantConfig.sellRateKesPerUsdt;
 
-    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+    if (parseRate(exchangeRate) <= 0n) {
       throw serviceUnavailable('Merchant rate is not configured', 'MERCHANT_RATE_NOT_CONFIGURED');
     }
 
@@ -90,7 +97,13 @@ export class OrderController {
       throw notFound('User not found', 'USER_NOT_FOUND');
     }
 
-    const fiatTotal = roundMoney(parsedBody.amount * exchangeRate);
+    const fiatTotal = formatKesAmount(multiplyScaledAmounts({
+      leftRaw: amountRaw,
+      leftScale: USDT_SCALE,
+      rightRaw: parseRate(exchangeRate),
+      rightScale: RATE_SCALE,
+      resultScale: KES_SCALE,
+    }));
     const proofDigest = proofImage
       ? crypto.createHash('sha256').update(proofImage.data).digest('hex')
       : undefined;
@@ -178,6 +191,9 @@ export class OrderController {
       }
     }
 
+    if (!result.replayed) {
+      await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
+    }
     res.status(result.statusCode).json(responseBody);
   }
 
@@ -201,6 +217,7 @@ export class OrderController {
       throw notFound('Order not found', 'ORDER_NOT_FOUND');
     }
 
+    await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
     res.json(serializeOrder(order));
   }
 }

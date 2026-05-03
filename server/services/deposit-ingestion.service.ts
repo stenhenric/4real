@@ -16,6 +16,7 @@ import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.re
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { UserService } from './user.service.ts';
 import { AuditService } from './audit.service.ts';
+import { CacheKeys, invalidateCacheKeys } from './cache.service.ts';
 import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
 import { getHotWalletRuntime } from './hot-wallet-runtime.service.ts';
 import { recordDepositIngestionDecision, registerMetricsCollector, setUnmatchedDepositsOpen } from './metrics.service.ts';
@@ -57,7 +58,7 @@ export interface DepositReplayTransferResult {
   txHash: string;
   decision: DepositReplayDecision;
   amountRaw: string;
-  amountUsdt: number;
+  amountUsdt: string;
   comment: string;
   memoStatus: 'missing' | 'inactive' | 'active';
   candidateUserId?: string | null;
@@ -71,7 +72,7 @@ export interface DepositReplayTransferResult {
 export interface DepositReviewItem {
   txHash: string;
   amountRaw: string;
-  amountUsdt: number;
+  amountUsdt: string;
   comment: string;
   senderJettonWallet: string | null;
   senderOwnerAddress: string | null;
@@ -89,10 +90,6 @@ export interface DepositReviewItem {
 
 function toUsdtDisplay(amountRaw: string): string {
   return (Number(amountRaw) / 1e6).toFixed(6);
-}
-
-function toUsdtNumber(amountRaw: string): number {
-  return Number(toUsdtDisplay(amountRaw));
 }
 
 function isDuplicateKeyError(error: unknown): error is { code: number } {
@@ -175,7 +172,7 @@ function mapReviewDocument(
   return {
     txHash: document.txHash,
     amountRaw: document.receivedRaw,
-    amountUsdt: toUsdtNumber(document.receivedRaw),
+    amountUsdt: toUsdtDisplay(document.receivedRaw),
     comment: document.comment,
     senderJettonWallet: document.senderJettonWallet,
     senderOwnerAddress: document.senderOwnerAddress,
@@ -263,6 +260,35 @@ async function createUnmatchedDeposit(params: {
   }, params.session);
 }
 
+export interface TransferLookupContext {
+  memoMap: Map<string, DepositMemoDocument>;
+  processedHashes: Set<string>;
+  unmatchedOpenHashes: Set<string>;
+}
+
+export async function buildTransferLookupContext(transfers: JettonTransferEvent[]): Promise<TransferLookupContext> {
+  const txHashes = transfers.map((transfer) => transfer.transaction_hash);
+  const comments = [
+    ...new Set(
+      transfers
+        .map((transfer) => extractJettonTransferComment(transfer))
+        .filter((comment) => comment.length > 0),
+    ),
+  ];
+
+  const [processedDocs, unmatchedDocs, memoDocs] = await Promise.all([
+    ProcessedTransactionRepository.findSeenHashes(txHashes),
+    UnmatchedDepositRepository.findOpenByTxHashes(txHashes),
+    DepositMemoRepository.findByMemos(comments),
+  ]);
+
+  return {
+    memoMap: new Map(memoDocs.map((document) => [document.memo, document])),
+    processedHashes: new Set(processedDocs.map((document) => document.txHash)),
+    unmatchedOpenHashes: new Set(unmatchedDocs.map((document) => document.txHash)),
+  };
+}
+
 function buildTransferPreview(
   tx: JettonTransferEvent,
   memoDoc: DepositMemoDocument | undefined,
@@ -282,7 +308,7 @@ function buildTransferPreview(
       txHash: tx.transaction_hash,
       decision: 'rejected',
       amountRaw,
-      amountUsdt: toUsdtNumber(amountRaw),
+      amountUsdt: toUsdtDisplay(amountRaw),
       comment,
       memoStatus: 'missing',
       senderJettonWallet,
@@ -297,7 +323,7 @@ function buildTransferPreview(
       txHash: tx.transaction_hash,
       decision: 'rejected',
       amountRaw,
-      amountUsdt: toUsdtNumber(amountRaw),
+      amountUsdt: toUsdtDisplay(amountRaw),
       comment,
       memoStatus: 'missing',
       senderJettonWallet,
@@ -314,7 +340,7 @@ function buildTransferPreview(
       txHash: tx.transaction_hash,
       decision: 'already_processed',
       amountRaw,
-      amountUsdt: toUsdtNumber(amountRaw),
+      amountUsdt: toUsdtDisplay(amountRaw),
       comment,
       memoStatus: memoResolution.status,
       candidateUserId: memoResolution.candidateUserId ?? null,
@@ -329,7 +355,7 @@ function buildTransferPreview(
       txHash: tx.transaction_hash,
       decision: 'already_unmatched_open',
       amountRaw,
-      amountUsdt: toUsdtNumber(amountRaw),
+      amountUsdt: toUsdtDisplay(amountRaw),
       comment,
       memoStatus: memoResolution.status,
       candidateUserId: memoResolution.candidateUserId ?? null,
@@ -344,7 +370,7 @@ function buildTransferPreview(
       txHash: tx.transaction_hash,
       decision: 'credit',
       amountRaw,
-      amountUsdt: toUsdtNumber(amountRaw),
+      amountUsdt: toUsdtDisplay(amountRaw),
       comment,
       memoStatus: memoResolution.status,
       candidateUserId: memoResolution.candidateUserId ?? null,
@@ -358,7 +384,7 @@ function buildTransferPreview(
     txHash: tx.transaction_hash,
     decision: 'unmatched',
     amountRaw,
-    amountUsdt: toUsdtNumber(amountRaw),
+    amountUsdt: toUsdtDisplay(amountRaw),
     comment,
     memoStatus: memoResolution.status,
     candidateUserId: memoResolution.candidateUserId ?? null,
@@ -455,24 +481,43 @@ export async function fetchIncomingUsdtTransfers(params: {
   return allTransfers;
 }
 
-export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<DepositReplayTransferResult> {
-  const comment = extractJettonTransferComment(tx);
-  const memoDocs = comment ? await DepositMemoRepository.findByMemos([comment]) : [];
-  const memoDoc = memoDocs[0];
-  const existingProcessed = await ProcessedTransactionRepository.findByHash(tx.transaction_hash);
-  const existingUnmatched = await UnmatchedDepositRepository.findByTxHash(tx.transaction_hash);
-  const preview = buildTransferPreview(tx, memoDoc, {
-    processed: Boolean(existingProcessed),
-    unmatchedOpen: Boolean(existingUnmatched && existingUnmatched.resolved !== true),
-  });
+export async function ingestIncomingTransfer(
+  tx: JettonTransferEvent,
+  context?: TransferLookupContext,
+): Promise<DepositReplayTransferResult> {
+  return ingestIncomingTransferWithContext(tx, context);
+}
 
-  if (preview.decision !== 'credit' && preview.decision !== 'unmatched' && preview.decision !== 'rejected') {
-    return finalizeIngestionResult(preview);
+async function ingestIncomingTransferWithContext(
+  tx: JettonTransferEvent,
+  context?: TransferLookupContext,
+): Promise<DepositReplayTransferResult> {
+  const comment = extractJettonTransferComment(tx);
+  const preview = context
+    ? buildTransferPreview(tx, comment ? context.memoMap.get(comment) : undefined, {
+        processed: context.processedHashes.has(tx.transaction_hash),
+        unmatchedOpen: context.unmatchedOpenHashes.has(tx.transaction_hash),
+      })
+    : undefined;
+
+  const resolvedPreview = preview ?? await (async () => {
+    const memoDoc = (comment ? await DepositMemoRepository.findByMemos([comment]) : [])[0];
+    const existingProcessed = await ProcessedTransactionRepository.findByHash(tx.transaction_hash);
+    const existingUnmatched = await UnmatchedDepositRepository.findByTxHash(tx.transaction_hash);
+
+    return buildTransferPreview(tx, memoDoc, {
+      processed: Boolean(existingProcessed),
+      unmatchedOpen: Boolean(existingUnmatched && existingUnmatched.resolved !== true),
+    });
+  })();
+
+  if (resolvedPreview.decision !== 'credit' && resolvedPreview.decision !== 'unmatched' && resolvedPreview.decision !== 'rejected') {
+    return finalizeIngestionResult(resolvedPreview);
   }
 
-  if (preview.decision === 'rejected') {
-    if (preview.reason !== 'transaction_aborted') {
-      return finalizeIngestionResult(preview);
+  if (resolvedPreview.decision === 'rejected') {
+    if (resolvedPreview.reason !== 'transaction_aborted') {
+      return finalizeIngestionResult(resolvedPreview);
     }
 
     const rejectionSession = await mongoose.startSession();
@@ -490,9 +535,9 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
           resourceId: tx.transaction_hash,
           metadata: {
             accepted: false,
-            reason: preview.reason,
-            senderJettonWallet: preview.senderJettonWallet,
-            senderAddress: preview.senderOwnerAddress,
+            reason: resolvedPreview.reason,
+            senderJettonWallet: resolvedPreview.senderJettonWallet,
+            senderAddress: resolvedPreview.senderOwnerAddress,
           },
           session: rejectionSession,
         });
@@ -505,44 +550,47 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
       await rejectionSession.endSession();
     }
 
-    return finalizeIngestionResult(preview);
+    if (context) {
+      context.processedHashes.add(tx.transaction_hash);
+    }
+    return finalizeIngestionResult(resolvedPreview);
   }
 
   const session = await mongoose.startSession();
-  let outcome = preview;
+  let outcome = resolvedPreview;
   try {
     await session.withTransaction(async () => {
-      if (preview.decision === 'unmatched') {
+      if (resolvedPreview.decision === 'unmatched') {
         await createUnmatchedDeposit({
           txHash: tx.transaction_hash,
-          receivedRaw: preview.amountRaw,
-          comment: preview.comment,
-          senderJettonWallet: preview.senderJettonWallet,
-          senderOwnerAddress: preview.senderOwnerAddress,
+          receivedRaw: resolvedPreview.amountRaw,
+          comment: resolvedPreview.comment,
+          senderJettonWallet: resolvedPreview.senderJettonWallet,
+          senderOwnerAddress: resolvedPreview.senderOwnerAddress,
           txTime: tx.transaction_now,
-          memoStatus: preview.memoStatus === 'missing' ? 'missing' : 'inactive',
-          candidateUserId: preview.candidateUserId ?? null,
+          memoStatus: resolvedPreview.memoStatus === 'missing' ? 'missing' : 'inactive',
+          candidateUserId: resolvedPreview.candidateUserId ?? null,
           session,
         });
         return;
       }
 
-      const claimedMemo = await DepositMemoRepository.claimActiveMemo(preview.comment, session);
+      const claimedMemo = await DepositMemoRepository.claimActiveMemo(resolvedPreview.comment, session);
       if (!claimedMemo?.userId) {
         outcome = {
-          ...preview,
+          ...resolvedPreview,
           decision: 'unmatched',
           memoStatus: 'inactive',
         };
         await createUnmatchedDeposit({
           txHash: tx.transaction_hash,
-          receivedRaw: preview.amountRaw,
-          comment: preview.comment,
-          senderJettonWallet: preview.senderJettonWallet,
-          senderOwnerAddress: preview.senderOwnerAddress,
+          receivedRaw: resolvedPreview.amountRaw,
+          comment: resolvedPreview.comment,
+          senderJettonWallet: resolvedPreview.senderJettonWallet,
+          senderOwnerAddress: resolvedPreview.senderOwnerAddress,
           txTime: tx.transaction_now,
           memoStatus: 'inactive',
-          candidateUserId: preview.candidateUserId ?? null,
+          candidateUserId: resolvedPreview.candidateUserId ?? null,
           session,
         });
         return;
@@ -557,17 +605,17 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
       await DepositRepository.create({
         txHash: tx.transaction_hash,
         userId: claimedMemo.userId,
-        amountRaw: preview.amountRaw,
-        amountDisplay: toUsdtDisplay(preview.amountRaw),
-        comment: preview.comment,
-        senderJettonWallet: preview.senderJettonWallet ?? '',
-        senderAddress: preview.senderOwnerAddress,
+        amountRaw: resolvedPreview.amountRaw,
+        amountDisplay: toUsdtDisplay(resolvedPreview.amountRaw),
+        comment: resolvedPreview.comment,
+        senderJettonWallet: resolvedPreview.senderJettonWallet ?? '',
+        senderAddress: resolvedPreview.senderOwnerAddress,
         txTime: new Date(tx.transaction_now * 1000),
         status: 'confirmed',
         createdAt: new Date(),
       }, session);
 
-      await UserBalanceRepository.creditDeposit(claimedMemo.userId, preview.amountRaw, session);
+      await UserBalanceRepository.creditDeposit(claimedMemo.userId, resolvedPreview.amountRaw, session);
     });
   } catch (error) {
     if (!isDuplicateKeyError(error)) {
@@ -597,7 +645,32 @@ export async function ingestIncomingTransfer(tx: JettonTransferEvent): Promise<D
     });
   }
 
+  if (context) {
+    if (outcome.decision === 'credit') {
+      context.processedHashes.add(tx.transaction_hash);
+      context.unmatchedOpenHashes.delete(tx.transaction_hash);
+    } else if (outcome.decision === 'unmatched') {
+      context.processedHashes.add(tx.transaction_hash);
+      context.unmatchedOpenHashes.add(tx.transaction_hash);
+    }
+  }
+
+  if (outcome.decision === 'credit' || outcome.decision === 'unmatched') {
+    await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
+  }
+
   return finalizeIngestionResult(outcome);
+}
+
+export async function ingestIncomingTransfers(transfers: JettonTransferEvent[]): Promise<DepositReplayTransferResult[]> {
+  const context = await buildTransferLookupContext(transfers);
+  const appliedTransfers: DepositReplayTransferResult[] = [];
+
+  for (const transfer of transfers) {
+    appliedTransfers.push(await ingestIncomingTransferWithContext(transfer, context));
+  }
+
+  return appliedTransfers;
 }
 
 export async function replayDepositWindow(params: {
@@ -626,10 +699,7 @@ export async function replayDepositWindow(params: {
   });
 
   if (!params.dryRun) {
-    const appliedTransfers: DepositReplayTransferResult[] = [];
-    for (const transfer of transfers) {
-      appliedTransfers.push(await ingestIncomingTransfer(transfer));
-    }
+    const appliedTransfers = await ingestIncomingTransfers(transfers);
 
     const usernameMap = await resolveUsernames(appliedTransfers.map((transfer) => transfer.candidateUserId));
 
@@ -641,32 +711,12 @@ export async function replayDepositWindow(params: {
     };
   }
 
-  const txHashes = transfers.map((transfer) => transfer.transaction_hash);
-  const comments = [
-    ...new Set(
-      transfers
-        .map((transfer) => extractJettonTransferComment(transfer))
-        .filter((comment) => comment.length > 0),
-    ),
-  ];
-  const [processedDocs, unmatchedDocs, memoDocs] = await Promise.all([
-    ProcessedTransactionRepository.findSeenHashes(txHashes),
-    Promise.all(txHashes.map((txHash) => UnmatchedDepositRepository.findByTxHash(txHash))),
-    DepositMemoRepository.findByMemos(comments),
-  ]);
-  const processedHashes = new Set(processedDocs.map((document) => document.txHash));
-  const unmatchedOpenHashes = new Set(
-    unmatchedDocs
-      .filter((document) => Boolean(document && document.resolved !== true))
-      .map((document) => document?.txHash)
-      .filter((txHash): txHash is string => typeof txHash === 'string'),
-  );
-  const memoMap = new Map(memoDocs.map((document) => [document.memo, document]));
+  const context = await buildTransferLookupContext(transfers);
 
   const previews = transfers.map((transfer) =>
-    buildTransferPreview(transfer, memoMap.get(extractJettonTransferComment(transfer)), {
-      processed: processedHashes.has(transfer.transaction_hash),
-      unmatchedOpen: unmatchedOpenHashes.has(transfer.transaction_hash),
+    buildTransferPreview(transfer, context.memoMap.get(extractJettonTransferComment(transfer)), {
+      processed: context.processedHashes.has(transfer.transaction_hash),
+      unmatchedOpen: context.unmatchedOpenHashes.has(transfer.transaction_hash),
     }),
   );
   const usernameMap = await resolveUsernames(previews.map((preview) => preview.candidateUserId));
@@ -817,6 +867,8 @@ export async function reconcileMerchantDeposit(params: {
       },
     });
   }
+
+  await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
 
   const resolved = await UnmatchedDepositRepository.findByTxHash(params.txHash);
   if (!resolved) {

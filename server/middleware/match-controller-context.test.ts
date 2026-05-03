@@ -48,10 +48,10 @@ test('match controller getMatch works when the handler is invoked without class 
     p1Username: 'host',
     player1Id: match.player1Id.toString(),
     status: 'waiting',
-    wager: 0,
+    wager: '0.000000',
     isPrivate: false,
     moveHistory: [],
-    projectedWinnerAmount: 0,
-    commissionRate: 0.1,
+    projectedWinnerAmount: '0.000000',
+    commissionRate: '0.100000',
   });
 });

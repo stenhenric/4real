@@ -11,9 +11,10 @@ import {
 } from '../../features/auth/AuthShell';
 import { GoogleAuthButton } from '../../features/auth/GoogleAuthButton';
 import {
+  buildMagicLinkPath,
   buildMfaChallengePath,
   buildVerifyEmailPath,
-  getPostAuthPath,
+  getPostAuthRedirectPath,
   sanitizeInternalPath,
 } from '../../features/auth/auth-routing';
 import {
@@ -64,7 +65,7 @@ export default function LoginPage() {
       if (response.user) {
         setAuthStateFromResponse(response);
         success('Signed in.');
-        navigate(getPostAuthPath(response), { replace: true });
+        navigate(getPostAuthRedirectPath(response), { replace: true });
         return;
       }
 
@@ -80,7 +81,7 @@ export default function LoginPage() {
         return;
       }
 
-      navigate(buildVerifyEmailPath({ email: response.email ?? email }), {
+      navigate(sanitizeInternalPath(response.redirectTo) ?? buildVerifyEmailPath({ email: response.email ?? email }), {
         replace: true,
         state: { previewUrl: response.previewUrl ?? verificationState?.previewUrl },
       });
@@ -102,7 +103,7 @@ export default function LoginPage() {
     try {
       const response = await requestMagicLink({ email, redirectTo });
       info(response.message ?? 'If the account exists, a sign-in link is on the way.');
-      navigate(buildVerifyEmailPath({ email }), {
+      navigate(sanitizeInternalPath(response.redirectTo) ?? buildMagicLinkPath({ email }), {
         replace: false,
         state: { previewUrl: response.previewUrl },
       });

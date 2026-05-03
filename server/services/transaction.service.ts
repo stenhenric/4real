@@ -5,12 +5,12 @@ import { Transaction } from '../models/Transaction.ts';
 import type { ITransaction, LedgerTransactionStatus, LedgerTransactionType } from '../models/Transaction.ts';
 import { DepositRepository } from '../repositories/deposit.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
-import type { TransactionDTO } from '../types/api.ts';
+import type { TransactionDTO, TransactionFeedDTO } from '../types/api.ts';
 
 interface CreateTransactionInput {
   userId: string | mongoose.Types.ObjectId;
   type: LedgerTransactionType;
-  amount: number;
+  amount: string;
   status?: LedgerTransactionStatus;
   referenceId?: string;
   session?: mongoose.ClientSession;
@@ -31,29 +31,41 @@ export class TransactionService {
     return transaction.save(data.session ? { session: data.session } : undefined);
   }
 
-  static async getTransactionsByUser(userId: string | mongoose.Types.ObjectId): Promise<ITransaction[]> {
+  static async getTransactionsByUser(userId: string | mongoose.Types.ObjectId, limit?: number): Promise<ITransaction[]> {
     const normalizedUserId = typeof userId === 'string'
       ? new mongoose.Types.ObjectId(userId)
       : userId;
-    return Transaction.find({ userId: normalizedUserId }).sort({ createdAt: -1 });
+    const query = Transaction.find({ userId: normalizedUserId }).sort({ createdAt: -1 });
+    return limit ? query.limit(limit) : query;
   }
 
   static async getAllTransactions(limit: number = 100, offset: number = 0): Promise<ITransaction[]> {
     return Transaction.find().sort({ createdAt: -1 }).skip(offset).limit(limit);
   }
 
-  static async getUnifiedTransactionsByUser(userId: string): Promise<TransactionDTO[]> {
+  static async getUnifiedTransactionsByUser(userId: string, page = 1, pageSize = 25): Promise<TransactionFeedDTO> {
+    const normalizedPage = Math.max(1, Math.floor(page));
+    const normalizedPageSize = Math.min(Math.max(1, Math.floor(pageSize)), 100);
+    const fetchLimit = normalizedPage * normalizedPageSize;
     const [transactions, deposits, withdrawals] = await Promise.all([
-      this.getTransactionsByUser(userId),
-      DepositRepository.findByUserId(userId),
-      WithdrawalRepository.findByUserId(userId),
+      this.getTransactionsByUser(userId, fetchLimit),
+      DepositRepository.findByUserId(userId, fetchLimit),
+      WithdrawalRepository.findByUserId(userId, fetchLimit),
     ]);
 
-    return [
+    const items = [
       ...transactions.map((transaction) => serializeLedgerTransaction(transaction)),
       ...deposits.map((deposit) => serializeDepositTransaction(deposit)),
       ...withdrawals.map((withdrawal) => serializeWithdrawalTransaction(withdrawal)),
     ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+
+    const startIndex = (normalizedPage - 1) * normalizedPageSize;
+    return {
+      items: items.slice(startIndex, startIndex + normalizedPageSize),
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      total: items.length,
+    };
   }
 
   static async updateTransactionStatusByReference(

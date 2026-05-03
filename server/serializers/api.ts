@@ -18,6 +18,14 @@ import type { IOrder } from '../models/Order.ts';
 import type { DepositDocument } from '../repositories/deposit.repository.ts';
 import type { WithdrawalDocument } from '../repositories/withdrawal.repository.ts';
 import { calculateMatchPayout } from '../services/match-payout.service.ts';
+import {
+  formatKesAmount,
+  formatRate,
+  formatUsdtAmount,
+  parseKesAmount,
+  parseRate,
+  parseUsdtAmount,
+} from '../utils/money.ts';
 import type { IAuthSession } from '../models/AuthSession.ts';
 
 function serializeStats(stats?: IUser['stats']): UserStatsDTO {
@@ -48,7 +56,43 @@ function serializeOrderUser(user: unknown): string | OrderUserDTO {
   return serializeId(user);
 }
 
-export function serializeAuthUser(user: IUser, balance: number): UserDTO {
+function readLegacyUsdtAmount(value: unknown): string {
+  if (typeof value === 'string') {
+    return formatUsdtAmount(parseUsdtAmount(value));
+  }
+
+  if (typeof value === 'number') {
+    return formatUsdtAmount(parseUsdtAmount(value));
+  }
+
+  return formatUsdtAmount(0n);
+}
+
+function readLegacyRate(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return formatRate(parseRate(value));
+  }
+
+  return undefined;
+}
+
+function readLegacyKesAmount(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return formatKesAmount(parseKesAmount(value));
+  }
+
+  return undefined;
+}
+
+export function serializeAuthUser(user: IUser, balance: string): UserDTO {
   return {
     id: user._id.toString(),
     username: user.username ?? '',
@@ -80,7 +124,7 @@ export function serializeSessionListItem(session: IAuthSession, current = false)
 export function serializeAuthState(params: {
   status: AuthResponseDTO['status'];
   user: IUser;
-  balance: number;
+  balance: string;
   session?: IAuthSession;
   message?: string;
   nextStep?: AuthResponseDTO['nextStep'];
@@ -120,7 +164,7 @@ export function serializeMatch(match: IMatch, options?: { inviteUrl?: string }):
     p1Username: match.p1Username,
     player1Id: serializeId(match.player1Id),
     status: match.status,
-    wager: match.wager ?? 0,
+    wager: readLegacyUsdtAmount(match.wager ?? 0),
     isPrivate: match.isPrivate ?? false,
     moveHistory: match.moveHistory ?? [],
     projectedWinnerAmount: payout.projectedWinnerAmount,
@@ -136,11 +180,14 @@ export function serializeMatch(match: IMatch, options?: { inviteUrl?: string }):
 }
 
 export function serializeOrder(order: IOrder): OrderDTO {
+  const exchangeRate = readLegacyRate(order.exchangeRate);
+  const fiatTotal = readLegacyKesAmount(order.fiatTotal);
+
   return {
     _id: serializeId(order._id),
     userId: serializeOrderUser(order.userId),
     type: order.type,
-    amount: order.amount,
+    amount: readLegacyUsdtAmount(order.amount),
     status: order.status,
     createdAt: order.createdAt.toISOString(),
     ...(order.proof ? {
@@ -153,8 +200,8 @@ export function serializeOrder(order: IOrder): OrderDTO {
     } : {}),
     ...(order.transactionCode ? { transactionCode: order.transactionCode } : {}),
     ...(order.fiatCurrency ? { fiatCurrency: order.fiatCurrency } : {}),
-    ...(order.exchangeRate !== undefined ? { exchangeRate: order.exchangeRate } : {}),
-    ...(order.fiatTotal !== undefined ? { fiatTotal: order.fiatTotal } : {}),
+    ...(exchangeRate ? { exchangeRate } : {}),
+    ...(fiatTotal ? { fiatTotal } : {}),
   };
 }
 
@@ -162,7 +209,7 @@ export function serializeLedgerTransaction(transaction: ITransaction): Transacti
   return {
     _id: transaction._id.toString(),
     type: transaction.type,
-    amount: transaction.amount,
+    amount: readLegacyUsdtAmount(transaction.amount),
     status: transaction.status,
     createdAt: transaction.createdAt.toISOString(),
     ...(transaction.referenceId ? { referenceId: transaction.referenceId } : {}),
@@ -173,7 +220,7 @@ export function serializeDepositTransaction(deposit: DepositDocument): Transacti
   return {
     _id: `deposit:${deposit.txHash}`,
     type: 'DEPOSIT',
-    amount: Number(deposit.amountDisplay),
+    amount: deposit.amountDisplay,
     status: deposit.status,
     createdAt: deposit.txTime.toISOString(),
     referenceId: deposit.txHash,
@@ -184,7 +231,7 @@ export function serializeWithdrawalTransaction(withdrawal: WithdrawalDocument): 
   return {
     _id: `withdrawal:${withdrawal.withdrawalId}`,
     type: 'WITHDRAW',
-    amount: -Number(withdrawal.amountDisplay),
+    amount: formatUsdtAmount(-BigInt(withdrawal.amountRaw)),
     status: withdrawal.status,
     createdAt: withdrawal.createdAt.toISOString(),
     referenceId: withdrawal.withdrawalId,
@@ -195,7 +242,7 @@ export function serializeWithdrawalStatus(withdrawal: WithdrawalDocument): Withd
   return {
     withdrawalId: withdrawal.withdrawalId,
     status: withdrawal.status,
-    amountUsdt: Number(withdrawal.amountDisplay),
+    amountUsdt: withdrawal.amountDisplay,
     toAddress: withdrawal.toAddress,
     createdAt: withdrawal.createdAt.toISOString(),
     ...(withdrawal.updatedAt ? { updatedAt: withdrawal.updatedAt.toISOString() } : {}),

@@ -1,11 +1,38 @@
 import assert from 'node:assert/strict';
-import test, { mock } from 'node:test';
+import test, { mock, type TestContext } from 'node:test';
 import { z } from 'zod';
 
+import { resetEnvCacheForTests } from '../config/env.ts';
 import { ExternalSchemaError, parseExternalResponse } from '../schemas/external/parse-external-response.ts';
 import { toncenterJettonWalletBalanceSchema } from '../schemas/external/toncenter-balance.schema.ts';
 import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
+import {
+  CacheKeys,
+  CACHE_TTLS,
+  computeJitteredTtl,
+  getOrPopulateJson,
+  invalidateCacheKeys,
+  resetCacheServiceForTests,
+} from '../services/cache.service.ts';
 import { logger } from '../utils/logger.ts';
+
+function forceMemoryOnlyCacheForTest(t: TestContext) {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'test';
+  resetEnvCacheForTests();
+  resetCacheServiceForTests();
+
+  t.after(() => {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    resetEnvCacheForTests();
+    resetCacheServiceForTests();
+  });
+}
 
 test('logger redacts bearer tokens and nested secrets before writing output', (t) => {
   let capturedOutput = '';
@@ -126,4 +153,77 @@ test('toncenter transfer schema accepts additive keys and normalizes string forw
 
   assert.equal(result.jetton_transfers.length, 1);
   assert.deepEqual(result.jetton_transfers[0]?.decoded_forward_payload, { comment: 'memo-123' });
+});
+
+test('computeJitteredTtl keeps cache TTLs positive and never extends the declared window', (t) => {
+  forceMemoryOnlyCacheForTest(t);
+  const randomMock = mock.method(Math, 'random', () => 0.5);
+  t.after(() => randomMock.mock.restore());
+
+  const ttl = computeJitteredTtl(30);
+  assert.equal(ttl, 28);
+  assert.ok(ttl > 0);
+  assert.ok(ttl <= 30);
+});
+
+test('getOrPopulateJson coalesces concurrent cache misses and serves subsequent hits from cache', async (t) => {
+  forceMemoryOnlyCacheForTest(t);
+
+  let loaderCalls = 0;
+  const loader = async () => {
+    loaderCalls += 1;
+    return { value: 'cached' };
+  };
+
+  const [first, second] = await Promise.all([
+    getOrPopulateJson({
+      key: CacheKeys.leaderboard(10),
+      ttlSeconds: CACHE_TTLS.leaderboard,
+      loader,
+    }),
+    getOrPopulateJson({
+      key: CacheKeys.leaderboard(10),
+      ttlSeconds: CACHE_TTLS.leaderboard,
+      loader,
+    }),
+  ]);
+
+  const third = await getOrPopulateJson({
+    key: CacheKeys.leaderboard(10),
+    ttlSeconds: CACHE_TTLS.leaderboard,
+    loader,
+  });
+
+  assert.equal(loaderCalls, 1);
+  assert.equal(first.cacheStatus, 'miss');
+  assert.equal(second.cacheStatus, 'miss');
+  assert.equal(third.cacheStatus, 'hit');
+  assert.deepEqual(third.value, { value: 'cached' });
+});
+
+test('invalidateCacheKeys removes cached values so the next read recomputes them', async (t) => {
+  forceMemoryOnlyCacheForTest(t);
+
+  let loaderCalls = 0;
+  const key = CacheKeys.activeMatches();
+  const loader = async () => {
+    loaderCalls += 1;
+    return { generation: loaderCalls };
+  };
+
+  await getOrPopulateJson({
+    key,
+    ttlSeconds: CACHE_TTLS.activeMatches,
+    loader,
+  });
+  await invalidateCacheKeys([key]);
+  const result = await getOrPopulateJson({
+    key,
+    ttlSeconds: CACHE_TTLS.activeMatches,
+    loader,
+  });
+
+  assert.equal(loaderCalls, 2);
+  assert.equal(result.cacheStatus, 'miss');
+  assert.deepEqual(result.value, { generation: 2 });
 });

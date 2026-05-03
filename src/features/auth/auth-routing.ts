@@ -29,6 +29,12 @@ export function getPostAuthPath(response?: Pick<AuthResponseDTO, 'status' | 'nex
   return '/play';
 }
 
+export function getPostAuthRedirectPath(
+  response?: Pick<AuthResponseDTO, 'redirectTo' | 'status' | 'nextStep' | 'user'> | null,
+): string {
+  return sanitizeInternalPath(response?.redirectTo) ?? getPostAuthPath(response);
+}
+
 export function buildVerifyEmailPath(params?: {
   email?: string | null;
   error?: string | null;
@@ -45,6 +51,32 @@ export function buildVerifyEmailPath(params?: {
 
   const query = search.toString();
   return query ? `/auth/verify-email?${query}` : '/auth/verify-email';
+}
+
+export function buildMagicLinkPath(params?: {
+  email?: string | null;
+}) {
+  const search = new URLSearchParams();
+
+  if (params?.email) {
+    search.set('email', params.email);
+  }
+
+  const query = search.toString();
+  return query ? `/auth/magic-link?${query}` : '/auth/magic-link';
+}
+
+export function buildApproveLoginPath(params?: {
+  email?: string | null;
+}) {
+  const search = new URLSearchParams();
+
+  if (params?.email) {
+    search.set('email', params.email);
+  }
+
+  const query = search.toString();
+  return query ? `/auth/approve-login?${query}` : '/auth/approve-login';
 }
 
 export function buildMfaChallengePath(params: {

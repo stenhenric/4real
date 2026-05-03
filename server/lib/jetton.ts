@@ -1,6 +1,7 @@
 import { Address, JettonMaster } from '@ton/ton';
 
 import { JettonWalletCacheRepository } from '../repositories/jetton-wallet-cache.repository.ts';
+import { CacheKeys, CACHE_TTLS, getOrPopulateJson } from '../services/cache.service.ts';
 import { createTonClient } from './ton-client.ts';
 
 export const USDT_MASTER = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
@@ -57,20 +58,30 @@ export async function getOrDeriveJettonWallet(ownerAddress: string) {
   const normalizedOwnerAddress = normalizeAddress(ownerAddress);
   const normalizedJettonMaster = normalizeAddress(USDT_MASTER);
 
-  const cached = await JettonWalletCacheRepository.findByOwnerAndMaster(
-    normalizedOwnerAddress,
-    normalizedJettonMaster,
-  );
-  if (cached) return cached.jettonWallet;
+  const { value } = await getOrPopulateJson({
+    key: CacheKeys.jettonWallet(normalizedOwnerAddress, normalizedJettonMaster),
+    ttlSeconds: CACHE_TTLS.jettonWallet,
+    loader: async () => {
+      const cached = await JettonWalletCacheRepository.findByOwnerAndMaster(
+        normalizedOwnerAddress,
+        normalizedJettonMaster,
+      );
+      if (cached) {
+        return cached.jettonWallet;
+      }
 
-  const walletStr = await deriveJettonWallet(ownerAddress);
+      const walletStr = await deriveJettonWallet(ownerAddress);
 
-  await JettonWalletCacheRepository.upsert({
-    ownerAddress: normalizedOwnerAddress,
-    jettonMaster: normalizedJettonMaster,
-    jettonWallet: walletStr,
-    derivedAt: new Date(),
+      await JettonWalletCacheRepository.upsert({
+        ownerAddress: normalizedOwnerAddress,
+        jettonMaster: normalizedJettonMaster,
+        jettonWallet: walletStr,
+        derivedAt: new Date(),
+      });
+
+      return walletStr;
+    },
   });
 
-  return walletStr;
+  return value;
 }

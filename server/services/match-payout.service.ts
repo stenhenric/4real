@@ -1,50 +1,90 @@
-export const MATCH_COMMISSION_RATE = 0.1;
+import {
+  divideRounded,
+  formatRate,
+  formatUsdtAmount,
+  parseRate,
+  parseUsdtAmount,
+} from '../utils/money.ts';
+
+const BASIS_POINTS_DIVISOR = 10_000n;
+const MATCH_COMMISSION_BPS = 1_000n;
+const DRAW_COMMISSION_BPS = 500n;
+
+export const MATCH_COMMISSION_RATE = formatRate(parseRate('0.100000'));
 
 export interface MatchPayoutSummary {
-  totalPot: number;
-  commissionAmount: number;
-  projectedWinnerAmount: number;
-  commissionRate: number;
+  totalPot: string;
+  totalPotRaw: string;
+  commissionAmount: string;
+  commissionAmountRaw: string;
+  projectedWinnerAmount: string;
+  projectedWinnerAmountRaw: string;
+  commissionRate: string;
 }
 
-export function calculateMatchPayout(wager: number): MatchPayoutSummary {
-  const normalizedWager = Number.isFinite(wager) && wager > 0 ? wager : 0;
-  const totalPot = normalizedWager * 2;
-  const commissionAmount = totalPot * MATCH_COMMISSION_RATE;
-  const projectedWinnerAmount = totalPot - commissionAmount;
+function normalizeUsdtRawAmount(value: string | number | bigint): bigint {
+  if (typeof value === 'bigint') {
+    return value > 0n ? value : 0n;
+  }
+
+  const parsed = parseUsdtAmount(value);
+  return parsed > 0n ? parsed : 0n;
+}
+
+export function calculateMatchPayout(wager: string | number | bigint): MatchPayoutSummary {
+  const normalizedWagerRaw = normalizeUsdtRawAmount(wager);
+  const totalPotRaw = normalizedWagerRaw * 2n;
+  const commissionAmountRaw = divideRounded(
+    totalPotRaw * MATCH_COMMISSION_BPS,
+    BASIS_POINTS_DIVISOR,
+    'down',
+  );
+  const projectedWinnerAmountRaw = totalPotRaw - commissionAmountRaw;
 
   return {
-    totalPot,
-    commissionAmount,
-    projectedWinnerAmount,
+    totalPot: formatUsdtAmount(totalPotRaw),
+    totalPotRaw: totalPotRaw.toString(),
+    commissionAmount: formatUsdtAmount(commissionAmountRaw),
+    commissionAmountRaw: commissionAmountRaw.toString(),
+    projectedWinnerAmount: formatUsdtAmount(projectedWinnerAmountRaw),
+    projectedWinnerAmountRaw: projectedWinnerAmountRaw.toString(),
     commissionRate: MATCH_COMMISSION_RATE,
   };
 }
 
-export function calculateProjectedWinnerAmount(wager: number): number {
+export function calculateProjectedWinnerAmount(wager: string | number | bigint): string {
   return calculateMatchPayout(wager).projectedWinnerAmount;
 }
 
-export const DRAW_COMMISSION_RATE = 0.05;
+export const DRAW_COMMISSION_RATE = formatRate(parseRate('0.050000'));
 
 export interface DrawPayoutSummary {
-  totalPot: number;
-  commissionAmount: number;
-  refundPerPlayer: number;
-  commissionRate: number;
+  totalPot: string;
+  totalPotRaw: string;
+  commissionAmount: string;
+  commissionAmountRaw: string;
+  refundPerPlayer: string;
+  refundPerPlayerRaw: string;
+  commissionRate: string;
 }
 
-export function calculateDrawPayout(wager: number): DrawPayoutSummary {
-  const normalizedWager = Number.isFinite(wager) && wager > 0 ? wager : 0;
-  const totalPot = normalizedWager * 2;
-  const commissionAmount = totalPot * DRAW_COMMISSION_RATE;
-  // Refund per player is (Total Pot - Commission) / 2
-  const refundPerPlayer = (totalPot - commissionAmount) / 2;
+export function calculateDrawPayout(wager: string | number | bigint): DrawPayoutSummary {
+  const normalizedWagerRaw = normalizeUsdtRawAmount(wager);
+  const totalPotRaw = normalizedWagerRaw * 2n;
+  const commissionAmountRaw = divideRounded(
+    totalPotRaw * DRAW_COMMISSION_BPS,
+    BASIS_POINTS_DIVISOR,
+    'down',
+  );
+  const refundPerPlayerRaw = (totalPotRaw - commissionAmountRaw) / 2n;
 
   return {
-    totalPot,
-    commissionAmount,
-    refundPerPlayer,
+    totalPot: formatUsdtAmount(totalPotRaw),
+    totalPotRaw: totalPotRaw.toString(),
+    commissionAmount: formatUsdtAmount(commissionAmountRaw),
+    commissionAmountRaw: commissionAmountRaw.toString(),
+    refundPerPlayer: formatUsdtAmount(refundPerPlayerRaw),
+    refundPerPlayerRaw: refundPerPlayerRaw.toString(),
     commissionRate: DRAW_COMMISSION_RATE,
   };
 }

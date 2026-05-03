@@ -20,6 +20,11 @@ export interface ApiErrorDTO {
   details?: unknown;
 }
 
+export type UsdtAmountString = string;
+export type KesAmountString = string;
+export type RateString = string;
+export type TonAmountString = string;
+
 export interface UserStatsDTO {
   wins: number;
   losses: number;
@@ -30,7 +35,7 @@ export interface UserDTO {
   id: string;
   username: string;
   email: string;
-  balance: number;
+  balance: UsdtAmountString;
   elo: number;
   isAdmin: boolean;
   stats: UserStatsDTO;
@@ -112,11 +117,11 @@ export interface MatchDTO {
   player2Id?: string;
   status: 'waiting' | 'active' | 'completed';
   winnerId?: string;
-  wager: number;
+  wager: UsdtAmountString;
   isPrivate: boolean;
   moveHistory: MatchMoveDTO[];
-  projectedWinnerAmount?: number;
-  commissionRate?: number;
+  projectedWinnerAmount?: UsdtAmountString;
+  commissionRate?: RateString;
   settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
   lastActivityAt?: string;
   createdAt?: string;
@@ -141,13 +146,13 @@ export interface OrderDTO {
   _id: string;
   userId: string | OrderUserDTO;
   type: 'BUY' | 'SELL';
-  amount: number;
+  amount: UsdtAmountString;
   status: 'PENDING' | 'DONE' | 'REJECTED';
   proof?: TelegramOrderProofDTO;
   transactionCode?: string;
   fiatCurrency?: FiatCurrency;
-  exchangeRate?: number;
-  fiatTotal?: number;
+  exchangeRate?: RateString;
+  fiatTotal?: KesAmountString;
   createdAt: string;
 }
 
@@ -165,7 +170,7 @@ export type MerchantJobKey =
 export interface MerchantVolumePointDTO {
   bucketStart: string;
   bucketLabel: string;
-  completedVolumeUsdt: number;
+  completedVolumeUsdt: UsdtAmountString;
   completedCount: number;
 }
 
@@ -173,15 +178,15 @@ export interface MerchantOrderDeskItemDTO {
   id: string;
   user: OrderUserDTO;
   type: 'BUY' | 'SELL';
-  amount: number;
+  amount: UsdtAmountString;
   status: OrderDTO['status'];
   createdAt: string;
   waitMinutes: number;
   proof?: TelegramOrderProofDTO;
   transactionCode?: string;
   fiatCurrency?: FiatCurrency;
-  exchangeRate?: number;
-  fiatTotal?: number;
+  exchangeRate?: RateString;
+  fiatTotal?: KesAmountString;
   riskLevel: MerchantRiskLevel;
   riskFlags: string[];
 }
@@ -189,9 +194,9 @@ export interface MerchantOrderDeskItemDTO {
 export interface MerchantOverviewDTO {
   pendingOrderCount: number;
   highRiskPendingOrderCount: number;
-  pendingBuyVolumeUsdt: number;
-  pendingSellVolumeUsdt: number;
-  completedVolume24hUsdt: number;
+  pendingBuyVolumeUsdt: UsdtAmountString;
+  pendingSellVolumeUsdt: UsdtAmountString;
+  completedVolume24hUsdt: UsdtAmountString;
   completedTrades24h: number;
   oldestPendingMinutes: number | null;
   volumeSeries: MerchantVolumePointDTO[];
@@ -236,10 +241,17 @@ export type TransactionStatus =
 export interface TransactionDTO {
   _id: string;
   type: TransactionType;
-  amount: number;
+  amount: UsdtAmountString;
   status: TransactionStatus;
   createdAt: string;
   referenceId?: string;
+}
+
+export interface TransactionFeedDTO {
+  items: TransactionDTO[];
+  page: number;
+  pageSize: number;
+  total: number;
 }
 
 export interface DepositMemoDTO {
@@ -251,7 +263,7 @@ export interface DepositMemoDTO {
 
 export interface WithdrawRequestDTO {
   toAddress: string;
-  amountUsdt: number;
+  amountUsdt: UsdtAmountString;
 }
 
 export interface WithdrawalRequestAcceptedDTO {
@@ -265,7 +277,7 @@ export interface WithdrawalRequestAcceptedDTO {
 export interface WithdrawalStatusDTO {
   withdrawalId: string;
   status: 'queued' | 'processing' | 'sent' | 'confirmed' | 'stuck' | 'failed';
-  amountUsdt: number;
+  amountUsdt: UsdtAmountString;
   toAddress: string;
   createdAt: string;
   updatedAt?: string;
@@ -278,28 +290,28 @@ export interface MerchantConfigDTO {
   walletAddress: string;
   instructions: string;
   fiatCurrency: FiatCurrency;
-  buyRateKesPerUsdt: number;
-  sellRateKesPerUsdt: number;
+  buyRateKesPerUsdt: RateString;
+  sellRateKesPerUsdt: RateString;
 }
 
 export interface UpdateMerchantConfigRequestDTO {
   mpesaNumber?: string;
   walletAddress?: string;
   instructions?: string;
-  buyRateKesPerUsdt?: number;
-  sellRateKesPerUsdt?: number;
+  buyRateKesPerUsdt?: RateString;
+  sellRateKesPerUsdt?: RateString;
 }
 
 export interface MerchantLiquidityDTO {
   hotWalletAddress: string;
   hotJettonWallet: string;
   merchantConfig: MerchantConfigDTO;
-  tonBalanceTon: number | null;
-  onChainUsdtBalanceUsdt: number | null;
-  ledgerUsdtBalanceUsdt: number;
-  usdtDeltaUsdt: number | null;
-  depositFlow24hUsdt: number;
-  withdrawalFlow24hUsdt: number;
+  tonBalanceTon: TonAmountString | null;
+  onChainUsdtBalanceUsdt: UsdtAmountString | null;
+  ledgerUsdtBalanceUsdt: UsdtAmountString;
+  usdtDeltaUsdt: UsdtAmountString | null;
+  depositFlow24hUsdt: UsdtAmountString;
+  withdrawalFlow24hUsdt: UsdtAmountString;
   queuedWithdrawalCount: number;
   processingWithdrawalCount: number;
   stuckWithdrawalCount: number;
@@ -307,7 +319,7 @@ export interface MerchantLiquidityDTO {
   unresolvedDepositCount: number;
   jobs: MerchantJobStatusDTO[];
   balanceError?: string;
-  systemCommissionUsdt: number;
+  systemCommissionUsdt: UsdtAmountString;
 }
 
 export interface MerchantAlertDTO {
@@ -357,7 +369,7 @@ export type MerchantDepositReplayDecision =
 export interface MerchantDepositReviewItemDTO {
   txHash: string;
   amountRaw: string;
-  amountUsdt: number;
+  amountUsdt: UsdtAmountString;
   comment: string;
   senderJettonWallet: string | null;
   senderOwnerAddress: string | null;
@@ -389,7 +401,7 @@ export interface MerchantDepositReplayTransferResultDTO {
   txHash: string;
   decision: MerchantDepositReplayDecision;
   amountRaw: string;
-  amountUsdt: number;
+  amountUsdt: UsdtAmountString;
   comment: string;
   memoStatus: MerchantDepositMemoStatus;
   candidateUserId?: string | null;
@@ -410,7 +422,7 @@ export interface MerchantDepositReplayResultDTO {
 export interface PreparedTonConnectDepositDTO {
   memo: string;
   address: string;
-  amountUsdt: number;
+  amountUsdt: UsdtAmountString;
   amountRaw: string;
   userJettonWalletAddress: string;
   transaction: {

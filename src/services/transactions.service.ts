@@ -1,9 +1,9 @@
-import request from './api/apiClient';
-import { createIdempotencyKey } from '../utils/idempotency';
+import request from './api/apiClient.ts';
+import { createIdempotencyKey } from '../utils/idempotency.ts';
 import type {
   DepositMemoDTO,
   PreparedTonConnectDepositDTO,
-  TransactionDTO,
+  TransactionFeedDTO,
   WithdrawRequestDTO,
   WithdrawalRequestAcceptedDTO,
 } from '../types/api';
@@ -11,11 +11,28 @@ import type {
 interface PrepareTonConnectDepositPayload {
   memo: string;
   walletAddress: string;
-  amountUsdt: number;
+  amountUsdt: string;
 }
 
-export function getTransactions(signal?: AbortSignal) {
-  return request<TransactionDTO[]>('/transactions', signal ? { signal } : undefined);
+export function getTransactions(query: {
+  page?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
+} = {}) {
+  const params = new URLSearchParams();
+  if (query.page) {
+    params.set('page', String(query.page));
+  }
+  if (query.pageSize) {
+    params.set('pageSize', String(query.pageSize));
+  }
+
+  const queryString = params.toString();
+  const endpoint = queryString.length > 0
+    ? `/transactions?${queryString}`
+    : '/transactions';
+
+  return request<TransactionFeedDTO>(endpoint, query.signal ? { signal: query.signal } : undefined);
 }
 
 export function createDepositMemo() {

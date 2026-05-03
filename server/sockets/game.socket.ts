@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import type { Server } from 'socket.io';
 import { getEnv } from '../config/env.ts';
 
-import { AUTH_COOKIE_NAME } from '../config/cookies.ts';
+import { getAuthCookieName } from '../config/cookies.ts';
 import { AuthSessionService } from '../services/auth-session.service.ts';
 import { RealtimeMatchService } from '../services/realtime-match.service.ts';
 import { isSocketRateLimited } from '../services/socket-rate-limit.service.ts';
@@ -36,10 +36,11 @@ function getSocketErrorPayload(error: unknown): SocketErrorPayload {
 }
 
 function extractAccessToken(cookieHeader?: string): string | undefined {
+  const authCookieName = getAuthCookieName();
   const tokenPair = cookieHeader
     ?.split(';')
     .map((pair) => pair.trim())
-    .find((pair) => pair.startsWith(`${AUTH_COOKIE_NAME}=`));
+    .find((pair) => pair.startsWith(`${authCookieName}=`));
 
   return tokenPair ? decodeURIComponent(tokenPair.split('=')[1] ?? '') : undefined;
 }

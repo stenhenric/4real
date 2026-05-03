@@ -49,7 +49,7 @@ const DepositPanel = () => {
       const prepared = await prepareTonConnectDeposit({
         memo: memoData.memo,
         walletAddress: connectedWalletAddress,
-        amountUsdt,
+        amountUsdt: amountUsdt.toFixed(6),
       });
 
       await tonConnectUI.sendTransaction(prepared.transaction);

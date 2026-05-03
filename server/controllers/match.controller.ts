@@ -1,8 +1,10 @@
 import type { Request, Response } from 'express';
 
+import { applyPublicCacheHeaders } from '../http/cache-policy.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeMatch } from '../serializers/api.ts';
+import { CacheKeys, CACHE_TTLS, getOrPopulateJson, invalidateCacheKeys } from '../services/cache.service.ts';
 import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
 import { MatchService } from '../services/match.service.ts';
@@ -41,8 +43,16 @@ export class MatchController {
   }
 
   static async getActiveMatches(_req: Request, res: Response): Promise<void> {
-    const matches = await MatchService.getActiveMatches();
-    res.json(matches.map((match) => serializeMatch(match)));
+    const { value: matches } = await getOrPopulateJson({
+      key: CacheKeys.activeMatches(),
+      ttlSeconds: CACHE_TTLS.activeMatches,
+      loader: async () => {
+        const activeMatches = await MatchService.getActiveMatches();
+        return activeMatches.map((match) => serializeMatch(match));
+      },
+    });
+    applyPublicCacheHeaders(res, 5);
+    res.json(matches);
   }
 
   static async getMatch(req: AuthRequest, res: Response): Promise<void> {
@@ -73,7 +83,7 @@ export class MatchController {
       execute: async ({ session }) => {
         const createdMatch = await MatchService.createMatchForUser({
           userId,
-          wager: wager || 0,
+          wager: wager || '0.000000',
           isPrivate: isPrivate || false,
           requestId: res.locals.requestId,
           session,
@@ -90,6 +100,7 @@ export class MatchController {
     });
 
     if (!result.replayed) {
+      await invalidateCacheKeys([CacheKeys.activeMatches()]);
       emitPublicMatchUpdatedEvent({
         roomId: result.body.roomId,
         status: result.body.status,
@@ -131,6 +142,7 @@ export class MatchController {
     });
 
     if (!result.replayed) {
+      await invalidateCacheKeys([CacheKeys.activeMatches()]);
       emitPublicMatchUpdatedEvent({
         roomId: result.body.roomId,
         status: result.body.status,
@@ -167,6 +179,7 @@ export class MatchController {
     });
 
     if (!result.replayed) {
+      await invalidateCacheKeys([CacheKeys.activeMatches()]);
       emitPublicMatchUpdatedEvent({
         roomId: result.body.roomId,
         status: result.body.status,

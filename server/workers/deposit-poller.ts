@@ -2,6 +2,7 @@ import { FailedDepositIngestionRepository } from '../repositories/failed-deposit
 import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import {
+  buildTransferLookupContext,
   fetchIncomingUsdtTransfers,
   ingestIncomingTransfer,
   type JettonTransferEvent,
@@ -33,6 +34,8 @@ export async function pollDeposits() {
     failedIngestionDocs.map((document) => [document.txHash, document]),
   );
 
+  const pendingTransfers: JettonTransferEvent[] = [];
+
   for (const tx of transfers) {
     if (seenHashes.has(tx.transaction_hash)) {
       continue;
@@ -43,8 +46,15 @@ export async function pollDeposits() {
       continue;
     }
 
+    pendingTransfers.push(tx);
+  }
+
+  const transferLookupContext = await buildTransferLookupContext(pendingTransfers);
+
+  for (const tx of pendingTransfers) {
+
     try {
-      await ingestIncomingTransfer(tx);
+      await ingestIncomingTransfer(tx, transferLookupContext);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       await FailedDepositIngestionRepository.upsertFailure({

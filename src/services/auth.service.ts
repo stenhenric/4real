@@ -1,4 +1,4 @@
-import request from './api/apiClient';
+import request from './api/apiClient.ts';
 import type { AuthResponseDTO } from '../types/api';
 
 interface PasswordLoginRequest {
@@ -45,6 +45,10 @@ interface CompleteProfileRequest {
   username: string;
 }
 
+interface TokenConsumeRequest {
+  token: string;
+}
+
 export function getCurrentUser(signal?: AbortSignal) {
   return request<AuthResponseDTO>('/auth/me', signal ? { signal } : undefined);
 }
@@ -70,6 +74,13 @@ export function requestMagicLink(payload: MagicLinkRequest) {
   });
 }
 
+export function consumeMagicLink(payload: TokenConsumeRequest) {
+  return request<AuthResponseDTO>('/auth/login/magic-link/consume', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function requestGoogleOAuthRedirect(redirectTo?: string) {
   const query = redirectTo ? `?redirectTo=${encodeURIComponent(redirectTo)}` : '';
   return request<AuthResponseDTO>(`/auth/oauth/google/start${query}`);
@@ -79,6 +90,20 @@ export function resendVerificationEmail(email: string) {
   return request<AuthResponseDTO>('/auth/email/verify/resend', {
     method: 'POST',
     body: JSON.stringify({ email }),
+  });
+}
+
+export function consumeVerificationEmail(payload: TokenConsumeRequest) {
+  return request<AuthResponseDTO>('/auth/email/verify/consume', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function consumeSuspiciousLogin(payload: TokenConsumeRequest) {
+  return request<AuthResponseDTO>('/auth/login/suspicious/consume', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 

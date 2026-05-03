@@ -10,6 +10,7 @@ import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { updateMerchantAdminConfig } from '../../services/merchant-config.service';
 import type { MerchantConfigDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
+import { moneyToNumber } from '../../utils/exact-money.ts';
 
 interface MerchantConfigFormState {
   mpesaNumber: string;
@@ -76,8 +77,8 @@ export default function LiquidityPage() {
       return;
     }
 
-    const buyRateKesPerUsdt = Number(formState.buyRateKesPerUsdt);
-    const sellRateKesPerUsdt = Number(formState.sellRateKesPerUsdt);
+    const buyRateKesPerUsdt = moneyToNumber(formState.buyRateKesPerUsdt);
+    const sellRateKesPerUsdt = moneyToNumber(formState.sellRateKesPerUsdt);
 
     if (!Number.isFinite(buyRateKesPerUsdt) || buyRateKesPerUsdt <= 0) {
       showError('Buy rate must be greater than 0.');
@@ -96,8 +97,8 @@ export default function LiquidityPage() {
         mpesaNumber: formState.mpesaNumber.trim(),
         walletAddress: formState.walletAddress.trim(),
         instructions: formState.instructions.trim(),
-        buyRateKesPerUsdt,
-        sellRateKesPerUsdt,
+        buyRateKesPerUsdt: buyRateKesPerUsdt.toFixed(6),
+        sellRateKesPerUsdt: sellRateKesPerUsdt.toFixed(6),
       });
 
       setFormState(toFormState(updatedConfig));
@@ -146,7 +147,7 @@ export default function LiquidityPage() {
           <p className="mt-4 text-4xl font-bold italic">
             {dashboard.liquidity.usdtDeltaUsdt === null
               ? 'Unavailable'
-              : `${dashboard.liquidity.usdtDeltaUsdt >= 0 ? '+' : ''}${formatMoney(dashboard.liquidity.usdtDeltaUsdt)}`}
+              : `${moneyToNumber(dashboard.liquidity.usdtDeltaUsdt) >= 0 ? '+' : ''}${formatMoney(dashboard.liquidity.usdtDeltaUsdt)}`}
           </p>
           <p className="mt-2 text-sm font-mono opacity-60">On-chain reserve minus ledger</p>
           <p className="mt-1 text-xs font-mono opacity-40">Commission is tracked separately below.</p>

@@ -1,17 +1,19 @@
 import type { Request, Response } from 'express';
 
+import type { IUser } from '../models/User.ts';
 import {
-  AUTH_COOKIE_NAME,
-  DEVICE_COOKIE_NAME,
-  REFRESH_COOKIE_NAME,
   getAuthCookieClearOptions,
+  getAuthCookieName,
   getAuthCookieOptions,
   getDeviceCookieClearOptions,
+  getDeviceCookieName,
   getDeviceCookieOptions,
+  getRefreshCookieName,
   getRefreshCookieClearOptions,
   getRefreshCookieOptions,
 } from '../config/cookies.ts';
 import { getEnv, getPublicAppOrigin } from '../config/env.ts';
+import { applyClearSiteDataHeaders, applyNoStoreHeaders } from '../http/cache-policy.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeAuthState, serializeSessionListItem } from '../serializers/api.ts';
@@ -28,6 +30,9 @@ import { UserService } from '../services/user.service.ts';
 import { badRequest, conflict, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
 import type {
   CompleteProfileRequest,
+  ConsumeMagicLinkRequest,
+  ConsumeSuspiciousLoginRequest,
+  ConsumeVerificationEmailRequest,
   EmailVerificationResendRequest,
   ForgotPasswordRequest,
   LoginPasswordRequest,
@@ -41,7 +46,7 @@ import type {
 
 function getRequestMetadata(req: Request) {
   return {
-    deviceId: AuthSessionService.ensureDeviceId(req.cookies?.[DEVICE_COOKIE_NAME]),
+    deviceId: AuthSessionService.ensureDeviceId(req.cookies?.[getDeviceCookieName()]),
     ipAddress: req.ip ?? null,
     userAgent: req.get('user-agent')?.slice(0, 512) ?? null,
   };
@@ -68,6 +73,36 @@ function buildPostAuthRedirect(username?: string | null): string {
   return username && username.trim().length > 0 ? '/play' : '/auth/complete-profile';
 }
 
+function buildPendingEmailVerificationRedirect(email?: string): string {
+  const search = new URLSearchParams();
+  if (email) {
+    search.set('email', email);
+  }
+
+  const query = search.toString();
+  return query ? `/auth/verify-email?${query}` : '/auth/verify-email';
+}
+
+function buildMagicLinkPendingRedirect(email?: string): string {
+  const search = new URLSearchParams();
+  if (email) {
+    search.set('email', email);
+  }
+
+  const query = search.toString();
+  return query ? `/auth/magic-link?${query}` : '/auth/magic-link';
+}
+
+function buildSuspiciousLoginRedirect(email?: string): string {
+  const search = new URLSearchParams();
+  if (email) {
+    search.set('email', email);
+  }
+
+  const query = search.toString();
+  return query ? `/auth/approve-login?${query}` : '/auth/approve-login';
+}
+
 function applySessionCookies(
   res: Response,
   issuedSession: {
@@ -76,15 +111,42 @@ function applySessionCookies(
     deviceId: string;
   },
 ): void {
-  res.cookie(AUTH_COOKIE_NAME, issuedSession.accessToken, getAuthCookieOptions());
-  res.cookie(REFRESH_COOKIE_NAME, issuedSession.refreshToken, getRefreshCookieOptions());
-  res.cookie(DEVICE_COOKIE_NAME, issuedSession.deviceId, getDeviceCookieOptions());
+  res.cookie(getAuthCookieName(), issuedSession.accessToken, getAuthCookieOptions());
+  res.cookie(getRefreshCookieName(), issuedSession.refreshToken, getRefreshCookieOptions());
+  res.cookie(getDeviceCookieName(), issuedSession.deviceId, getDeviceCookieOptions());
 }
 
 function clearSessionCookies(res: Response): void {
-  res.clearCookie(AUTH_COOKIE_NAME, getAuthCookieClearOptions());
-  res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieClearOptions());
-  res.clearCookie(DEVICE_COOKIE_NAME, getDeviceCookieClearOptions());
+  res.clearCookie(getAuthCookieName(), getAuthCookieClearOptions());
+  res.clearCookie(getRefreshCookieName(), getRefreshCookieClearOptions());
+  res.clearCookie(getDeviceCookieName(), getDeviceCookieClearOptions());
+}
+
+async function respondWithIssuedSession(params: {
+  req: Request;
+  res: Response;
+  user: IUser;
+  redirectTo: string;
+}): Promise<void> {
+  const issuedSession = await AuthSessionService.createSession({
+    user: params.user,
+    metadata: getRequestMetadata(params.req),
+  });
+  applySessionCookies(params.res, issuedSession);
+
+  const balance = await UserService.getDisplayBalance(params.user._id.toString());
+  params.res.json({
+    ...serializeAuthState({
+      status: typeof params.user.username === 'string' && params.user.username.trim().length > 0
+        ? 'authenticated'
+        : 'profile_incomplete',
+      user: params.user,
+      balance,
+      session: issuedSession.session,
+      nextStep: params.user.username ? undefined : 'complete_profile',
+    }),
+    redirectTo: params.redirectTo,
+  });
 }
 
 async function buildAuthState(userId: string, sessionId?: string) {
@@ -112,7 +174,7 @@ async function sendVerificationEmail(userId: string, email: string): Promise<str
     type: 'email_verification',
     expiresAt: new Date(Date.now() + (getEnv().AUTH_EMAIL_VERIFY_TTL_SECONDS * 1000)),
   });
-  const verificationUrl = createAbsoluteUrl(`/api/auth/email/verify/consume?token=${encodeURIComponent(token)}`);
+  const verificationUrl = createAbsoluteUrl(`/auth/verify-email?token=${encodeURIComponent(token)}`);
 
   await sendEmail({
     to: email,
@@ -157,7 +219,7 @@ async function sendMagicLinkEmail(userId: string, email: string, redirectTo?: st
     expiresAt: new Date(Date.now() + (getEnv().AUTH_MAGIC_LINK_TTL_SECONDS * 1000)),
     ...(redirectTo ? { metadata: { redirectTo } } : {}),
   });
-  const magicLinkUrl = createAbsoluteUrl(`/api/auth/login/magic-link/consume?token=${encodeURIComponent(token)}`);
+  const magicLinkUrl = createAbsoluteUrl(`/auth/magic-link?token=${encodeURIComponent(token)}`);
 
   await sendEmail({
     to: email,
@@ -179,7 +241,7 @@ async function sendSuspiciousLoginEmail(userId: string, email: string): Promise<
     type: 'suspicious_login',
     expiresAt: new Date(Date.now() + (getEnv().AUTH_SUSPICIOUS_LOGIN_TTL_SECONDS * 1000)),
   });
-  const approvalUrl = createAbsoluteUrl(`/api/auth/login/suspicious/consume?token=${encodeURIComponent(token)}`);
+  const approvalUrl = createAbsoluteUrl(`/auth/approve-login?token=${encodeURIComponent(token)}`);
 
   await sendEmail({
     to: email,
@@ -223,6 +285,7 @@ export class AuthController {
           status: 'pending_email_verification',
           message: 'Verify your email to continue.',
           email: existingUser.email,
+          redirectTo: buildPendingEmailVerificationRedirect(existingUser.email),
           ...maybeIncludePreviewUrl(verificationUrl),
         });
         return;
@@ -243,6 +306,7 @@ export class AuthController {
       status: 'pending_email_verification',
       message: 'Verify your email to continue.',
       email: user.email,
+      redirectTo: buildPendingEmailVerificationRedirect(user.email),
       ...maybeIncludePreviewUrl(verificationUrl),
     });
   }
@@ -274,6 +338,7 @@ export class AuthController {
         status: 'pending_email_verification',
         message: 'Verify your email to continue.',
         email: user.email,
+        redirectTo: buildPendingEmailVerificationRedirect(user.email),
         ...maybeIncludePreviewUrl(verificationUrl),
       });
       return;
@@ -311,6 +376,7 @@ export class AuthController {
         status: 'pending_email_verification',
         message: 'Check your email to approve this sign-in.',
         email: user.email,
+        redirectTo: buildSuspiciousLoginRedirect(user.email),
         ...maybeIncludePreviewUrl(approvalUrl),
       });
       return;
@@ -342,6 +408,7 @@ export class AuthController {
       res.status(202).json({
         status: 'magic_link_sent',
         message: 'If that email is registered, a sign-in link is on the way.',
+        redirectTo: buildMagicLinkPendingRedirect(email),
       });
       return;
     }
@@ -354,12 +421,15 @@ export class AuthController {
     res.status(202).json({
       status: 'magic_link_sent',
       message: 'If that email is registered, a sign-in link is on the way.',
+      redirectTo: buildMagicLinkPendingRedirect(email),
       ...maybeIncludePreviewUrl(magicLinkUrl),
     });
   }
 
   static async consumeMagicLink(req: Request, res: Response): Promise<void> {
-    const token = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+    applyNoStoreHeaders(res);
+    const body = req.body as ConsumeMagicLinkRequest;
+    const token = body.token.trim();
     if (!token) {
       throw badRequest('Token is required', 'TOKEN_REQUIRED');
     }
@@ -370,16 +440,15 @@ export class AuthController {
       throw unauthorized('This link is invalid or has expired', 'INVALID_OR_EXPIRED_LINK');
     }
 
-    const issuedSession = await AuthSessionService.createSession({
-      user,
-      metadata: getRequestMetadata(req),
-    });
-    applySessionCookies(res, issuedSession);
-
     const redirectTo = sanitizeRedirectPath(
       typeof document.metadata?.redirectTo === 'string' ? document.metadata.redirectTo : undefined,
     ) ?? buildPostAuthRedirect(user.username);
-    res.redirect(302, redirectTo);
+    await respondWithIssuedSession({
+      req,
+      res,
+      user,
+      redirectTo,
+    });
   }
 
   static async startGoogleOAuth(req: Request, res: Response): Promise<void> {
@@ -442,6 +511,7 @@ export class AuthController {
       res.status(202).json({
         status: 'email_verification_sent',
         message: 'If the account exists, a verification email is on the way.',
+        redirectTo: buildPendingEmailVerificationRedirect(body.email),
       });
       return;
     }
@@ -450,33 +520,31 @@ export class AuthController {
     res.status(202).json({
       status: 'email_verification_sent',
       message: 'If the account exists, a verification email is on the way.',
+      redirectTo: buildPendingEmailVerificationRedirect(user.email),
       ...maybeIncludePreviewUrl(verificationUrl),
     });
   }
 
   static async consumeVerificationEmail(req: Request, res: Response): Promise<void> {
-    const token = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+    applyNoStoreHeaders(res);
+    const body = req.body as ConsumeVerificationEmailRequest;
+    const token = body.token.trim();
     if (!token) {
-      res.redirect(302, '/auth/verify-email?error=missing');
-      return;
+      throw badRequest('Token is required', 'TOKEN_REQUIRED');
     }
 
-    try {
-      const document = await OneTimeTokenService.consume('email_verification', token);
-      const user = await UserService.markEmailVerified(document.userId.toString());
-      if (!user) {
-        throw unauthorized('This link is invalid or has expired', 'INVALID_OR_EXPIRED_LINK');
-      }
-
-      const issuedSession = await AuthSessionService.createSession({
-        user,
-        metadata: getRequestMetadata(req),
-      });
-      applySessionCookies(res, issuedSession);
-      res.redirect(302, '/auth/verified');
-    } catch {
-      res.redirect(302, '/auth/verify-email?error=expired');
+    const document = await OneTimeTokenService.consume('email_verification', token);
+    const user = await UserService.markEmailVerified(document.userId.toString());
+    if (!user) {
+      throw unauthorized('This link is invalid or has expired', 'INVALID_OR_EXPIRED_LINK');
     }
+
+    await respondWithIssuedSession({
+      req,
+      res,
+      user,
+      redirectTo: '/auth/verified',
+    });
   }
 
   static async requestPasswordReset(req: Request, res: Response): Promise<void> {
@@ -543,7 +611,7 @@ export class AuthController {
   }
 
   static async refreshSession(req: Request, res: Response): Promise<void> {
-    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
+    const refreshToken = req.cookies?.[getRefreshCookieName()];
     if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
       throw unauthorized('Refresh token required', 'UNAUTHENTICATED');
     }
@@ -571,11 +639,14 @@ export class AuthController {
 
   static async logout(req: Request, res: Response): Promise<void> {
     await AuthSessionService.logoutFromTokens({
-      accessToken: typeof req.cookies?.[AUTH_COOKIE_NAME] === 'string' ? req.cookies[AUTH_COOKIE_NAME] : null,
-      refreshToken: typeof req.cookies?.[REFRESH_COOKIE_NAME] === 'string' ? req.cookies[REFRESH_COOKIE_NAME] : null,
+      accessToken: typeof req.cookies?.[getAuthCookieName()] === 'string' ? req.cookies[getAuthCookieName()] : null,
+      refreshToken: typeof req.cookies?.[getRefreshCookieName()] === 'string'
+        ? req.cookies[getRefreshCookieName()]
+        : null,
     });
 
     clearSessionCookies(res);
+    applyClearSiteDataHeaders(res);
     res.status(204).send();
   }
 
@@ -597,6 +668,7 @@ export class AuthController {
     await AuthSessionService.revokeSession(sessionId, 'user_session_revoked');
     if (sessionId === req.user.sessionId) {
       clearSessionCookies(res);
+      applyClearSiteDataHeaders(res);
     }
 
     res.json({
@@ -788,27 +860,24 @@ export class AuthController {
   }
 
   static async consumeSuspiciousLogin(req: Request, res: Response): Promise<void> {
-    const token = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+    applyNoStoreHeaders(res);
+    const body = req.body as ConsumeSuspiciousLoginRequest;
+    const token = body.token.trim();
     if (!token) {
-      res.redirect(302, '/auth/login?error=suspicious');
-      return;
+      throw badRequest('Token is required', 'TOKEN_REQUIRED');
     }
 
-    try {
-      const document = await OneTimeTokenService.consume('suspicious_login', token);
-      const user = await UserService.findAuthUserById(document.userId.toString());
-      if (!user || !user.emailVerifiedAt) {
-        throw unauthorized('This link is invalid or has expired', 'INVALID_OR_EXPIRED_LINK');
-      }
-
-      const issuedSession = await AuthSessionService.createSession({
-        user,
-        metadata: getRequestMetadata(req),
-      });
-      applySessionCookies(res, issuedSession);
-      res.redirect(302, buildPostAuthRedirect(user.username));
-    } catch {
-      res.redirect(302, '/auth/login?error=suspicious');
+    const document = await OneTimeTokenService.consume('suspicious_login', token);
+    const user = await UserService.findAuthUserById(document.userId.toString());
+    if (!user || !user.emailVerifiedAt) {
+      throw unauthorized('This link is invalid or has expired', 'INVALID_OR_EXPIRED_LINK');
     }
+
+    await respondWithIssuedSession({
+      req,
+      res,
+      user,
+      redirectTo: buildPostAuthRedirect(user.username),
+    });
   }
 }

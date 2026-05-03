@@ -7,10 +7,10 @@ export type OrderProofRelayStatus = 'pending' | 'processing' | 'completed' | 'te
 
 export interface OrderProofRelayPayload {
   orderType: 'BUY' | 'SELL';
-  amount: number;
+  amount: string;
   fiatCurrency: 'KES';
-  exchangeRate: number;
-  fiatTotal: number;
+  exchangeRate: string;
+  fiatTotal: string;
   transactionCode: string;
   username: string;
   userId: string;

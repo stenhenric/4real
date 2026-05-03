@@ -8,9 +8,8 @@ import { createMatchRequestSchema } from '../validation/request-schemas.ts';
 
 const router = Router();
 
-router.use(authenticateToken, requireVerifiedAccount);
-
 router.get('/active', asyncHandler(MatchController.getActiveMatches));
+router.use(authenticateToken, requireVerifiedAccount);
 router.post('/', validateBody(createMatchRequestSchema), asyncHandler(MatchController.createMatch));
 router.post('/:roomId/join', asyncHandler(MatchController.joinMatch));
 router.post('/:roomId/resign', asyncHandler(MatchController.resignMatch));

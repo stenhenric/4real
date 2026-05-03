@@ -2,6 +2,10 @@ node_modules/
 build/
 dist/
 coverage/
+.generated/
+playwright-report/
+test-results/
+.kiro/
 .DS_Store
 *.log
 .env*

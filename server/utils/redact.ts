@@ -1,4 +1,4 @@
-const SENSITIVE_KEY_PATTERN = /token|authorization|cookie|secret|password|api[-_]?key|bearer/i;
+const SENSITIVE_KEY_PATTERN = /token|authorization|cookie|secret|password|api[-_]?key|bearer|session|recovery[-_]?code|totp|transaction[-_]?code|mnemonic/i;
 const REDACTED = '[REDACTED]';
 const MAX_DEPTH = 10;
 const MAX_KEYS = 100;
@@ -22,6 +22,10 @@ function redactInternal(value: unknown, depth: number): unknown {
 
   if (Array.isArray(value)) {
     return value.slice(0, MAX_KEYS).map((entry) => redactInternal(entry, depth + 1));
+  }
+
+  if (typeof value === 'string') {
+    return value.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
   }
 
   if (!value || typeof value !== 'object') {

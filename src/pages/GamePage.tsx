@@ -11,6 +11,7 @@ import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useGameRoom } from '../features/game/useGameRoom';
 import { getMatch, joinMatch, resignMatch } from '../services/matches.service';
 import { cn } from '../utils/cn';
+import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
 import type { MatchDTO } from '../types/api';
 
 const BOARD_COLUMNS = Array.from({ length: 7 }, (_, index) => index);
@@ -113,7 +114,7 @@ const GamePage = () => {
     }
 
     const previousStatus = previousRoomStatusRef.current;
-    const justActivated = room.wager > 0 && room.status === 'active' && previousStatus !== 'active';
+    const justActivated = moneyToNumber(room.wager) > 0 && room.status === 'active' && previousStatus !== 'active';
     const justCompleted = room.status === 'completed' && previousStatus !== 'completed';
 
     if (justActivated || justCompleted) {
@@ -143,7 +144,7 @@ const GamePage = () => {
       const joinedMatch = await joinMatch(roomId, inviteToken);
       setMatchPreview(joinedMatch);
       setRoomAccessReady(true);
-      if (joinedMatch.wager > 0) {
+      if (moneyToNumber(joinedMatch.wager) > 0) {
         await refreshUser();
       }
     } catch (error) {
@@ -190,8 +191,8 @@ const GamePage = () => {
           </p>
           <div className="space-y-3 text-lg font-bold">
             <p>Type: {matchPreview.isPrivate ? 'Private invite' : 'Public lobby'}</p>
-            <p>Wager: {matchPreview.wager.toFixed(2)} USDT</p>
-            <p>Payout: {(matchPreview.projectedWinnerAmount ?? 0).toFixed(2)} USDT</p>
+            <p>Wager: {formatMoneyValue(matchPreview.wager)} USDT</p>
+            <p>Payout: {formatMoneyValue(matchPreview.projectedWinnerAmount ?? 0)} USDT</p>
           </div>
           <p className="mt-6 text-sm opacity-70 italic">
             Joining this room will claim the second seat and lock your wager on the server before realtime play starts.
@@ -291,9 +292,9 @@ const GamePage = () => {
               </span>
               <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold text-ink-black">
                 <span className="bg-black/5 px-2 py-0.5 rounded">ELO {userData?.elo || 1000}</span>
-                {room.wager > 0 && (
+                {moneyToNumber(room.wager) > 0 && (
                   <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded border border-yellow-300">
-                    Wager: ${room.wager.toFixed(2)}
+                    Wager: ${formatMoneyValue(room.wager)}
                   </span>
                 )}
               </div>
@@ -328,9 +329,9 @@ const GamePage = () => {
               </span>
               {opponent ? (
                 <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold">
-                  {room.wager > 0 && (
+                  {moneyToNumber(room.wager) > 0 && (
                     <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded border border-yellow-300">
-                      Wager: ${room.wager.toFixed(2)}
+                      Wager: ${formatMoneyValue(room.wager)}
                     </span>
                   )}
                   <span className="bg-black/5 px-2 py-0.5 rounded">ELO {opponent.elo || 1000}</span>
@@ -386,17 +387,17 @@ const GamePage = () => {
           </div>
         )}
 
-        {room.wager > 0 && (
+        {moneyToNumber(room.wager) > 0 && (
           <div className="rough-border bg-ink-blue text-white p-6 relative shadow-xl overflow-hidden">
             <div className="absolute top-0 right-0 p-1 opacity-20">
               <Medal size={48} />
             </div>
             <p className="text-[10px] uppercase font-bold tracking-widest opacity-60 mb-1">Total Room Pot</p>
             <h3 className="text-4xl font-bold tracking-tighter italic">
-              ${room.projectedWinnerAmount.toFixed(2)}
+              ${formatMoneyValue(room.projectedWinnerAmount)}
             </h3>
             <p className="text-[10px] italic mt-2 opacity-60">
-              * {Math.round(room.commissionRate * 100)}% Merchant Commission Applied
+              * {Math.round(moneyToNumber(room.commissionRate) * 100)}% Merchant Commission Applied
             </p>
           </div>
         )}

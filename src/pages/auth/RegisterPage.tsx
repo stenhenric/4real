@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
-import { buildVerifyEmailPath } from '../../features/auth/auth-routing';
+import { buildVerifyEmailPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { registerAccount } from '../../services/auth.service';
 
 export default function RegisterPage() {
@@ -20,7 +20,7 @@ export default function RegisterPage() {
 
     try {
       const response = await registerAccount({ username, email, password });
-      navigate(buildVerifyEmailPath({ email: response.email ?? email }), {
+      navigate(sanitizeInternalPath(response.redirectTo) ?? buildVerifyEmailPath({ email: response.email ?? email }), {
         replace: true,
         state: { previewUrl: response.previewUrl },
       });

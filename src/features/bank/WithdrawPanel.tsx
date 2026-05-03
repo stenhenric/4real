@@ -8,6 +8,7 @@ import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { createWithdrawal } from '../../services/transactions.service';
+import { formatMoneyValue } from '../../utils/exact-money.ts';
 
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
 const WITHDRAW_ADDRESS_ID = 'withdraw-address';
@@ -43,7 +44,7 @@ const WithdrawPanel = () => {
     setLoading(true);
 
     try {
-      await createWithdrawal({ amountUsdt: Number(amount), toAddress });
+      await createWithdrawal({ amountUsdt: Number(amount).toFixed(6), toAddress });
       addToast('Withdrawal queued successfully. Track it in transaction history.', 'success');
       setAmount('');
       setToAddress(connectedWalletAddress || '');
@@ -75,7 +76,7 @@ const WithdrawPanel = () => {
         <div className="mb-8 p-4 bg-black/5 rounded border border-black/10 flex justify-between items-center">
           <span className="font-bold uppercase tracking-widest text-sm opacity-60">Available Balance:</span>
           <span className="text-2xl font-bold font-mono text-ink-blue">
-            {userData?.balance?.toFixed(2) || '0.00'} USDT
+            {formatMoneyValue(userData?.balance)} USDT
           </span>
         </div>
 

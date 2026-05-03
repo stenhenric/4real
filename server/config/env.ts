@@ -12,7 +12,6 @@ const rawEnvSchema = z.object({
   MONGODB_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   MONGODB_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   MONGODB_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
-  JWT_SECRET: z.string().trim().optional(),
   AUTH_ARGON2_MEMORY_KIB: z.coerce.number().int().min(19 * 1024).default(65_536),
   AUTH_ARGON2_PASSES: z.coerce.number().int().positive().default(3),
   AUTH_ARGON2_PARALLELISM: z.coerce.number().int().positive().default(1),
@@ -83,11 +82,6 @@ const rawEnvSchema = z.object({
   MERCHANT_INSTRUCTIONS: z.string().trim().optional(),
   MERCHANT_BUY_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
   MERCHANT_SELL_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
-  VITE_MERCHANT_MPESA_NUMBER: z.string().trim().optional(),
-  VITE_MERCHANT_WALLET_ADDRESS: z.string().trim().optional(),
-  VITE_MERCHANT_INSTRUCTIONS: z.string().trim().optional(),
-  VITE_MERCHANT_BUY_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
-  VITE_MERCHANT_SELL_RATE_KES_PER_USDT: z.coerce.number().positive().optional(),
   VITE_TON_MANIFEST_URL: z.string().trim().url().optional(),
   REQUEST_BODY_LIMIT: z.string().trim().default('100kb'),
   GENERAL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -114,15 +108,6 @@ const rawEnvSchema = z.object({
   WITHDRAWAL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   WITHDRAWAL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   FEATURE_AGGREGATED_BALANCE_SUM: z
-    .union([z.boolean(), z.string(), z.number()])
-    .optional()
-    .transform((value) => {
-      if (typeof value === 'boolean') return value;
-      if (typeof value === 'number') return value !== 0;
-      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-      return false;
-    }),
-  FEATURE_ATOMIC_BALANCE: z
     .union([z.boolean(), z.string(), z.number()])
     .optional()
     .transform((value) => {
@@ -186,6 +171,19 @@ function resolveProofAllowedMimeTypes(value: string): string[] {
     .filter(Boolean);
 }
 
+function isLocalOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      url.hostname === 'localhost'
+      || url.hostname === '127.0.0.1'
+      || url.hostname === '::1'
+    );
+  } catch {
+    return false;
+  }
+}
+
 function hasMongoDatabaseName(uri: string): boolean {
   const withoutProtocol = uri.replace(/^mongodb(\+srv)?:\/\//, '');
   const slashIndex = withoutProtocol.indexOf('/');
@@ -199,6 +197,21 @@ function hasMongoDatabaseName(uri: string): boolean {
     .trim();
 
   return databaseName.length > 0;
+}
+
+function isMongoTlsConfigured(uri: string): boolean {
+  if (uri.startsWith('mongodb+srv://')) {
+    return true;
+  }
+
+  try {
+    const query = uri.split('?', 2)[1] ?? '';
+    const params = new URLSearchParams(query);
+    const tlsValue = params.get('tls') ?? params.get('ssl');
+    return typeof tlsValue === 'string' && tlsValue.trim().toLowerCase() === 'true';
+  } catch {
+    return false;
+  }
 }
 
 export function getEnv(): AppEnv {
@@ -223,6 +236,18 @@ export function getEnv(): AppEnv {
     throw new Error('MONGODB_URI must include an explicit database name (for example /4real)');
   }
 
+  if (parsed.data.NODE_ENV === 'production' && !isMongoTlsConfigured(mongoUri)) {
+    throw new Error('MONGODB_URI must enable TLS in production (mongodb+srv or tls=true)');
+  }
+
+  const redisUrl = parsed.data.REDIS_URL ?? (
+    parsed.data.NODE_ENV === 'production'
+      ? (() => {
+          throw new Error('REDIS_URL must be explicitly configured in production');
+        })()
+      : undefined
+  );
+
   const totpEncryptionKey = parsed.data.TOTP_ENCRYPTION_KEY ?? (
     parsed.data.NODE_ENV === 'production'
       ? (() => {
@@ -239,6 +264,7 @@ export function getEnv(): AppEnv {
   cachedEnv = {
     ...parsed.data,
     MONGODB_URI: mongoUri,
+    REDIS_URL: redisUrl,
     allowedOrigins: resolveAllowedOrigins(parsed.data.ALLOWED_ORIGINS),
     proofAllowedMimeTypes: resolveProofAllowedMimeTypes(parsed.data.PROOF_ALLOWED_MIME_TYPES),
     TOTP_ENCRYPTION_KEY: totpEncryptionKey,
@@ -270,7 +296,13 @@ export function getPublicAppOrigin(): string {
   }
 
   if (env.VITE_TON_MANIFEST_URL) {
-    return new URL(env.VITE_TON_MANIFEST_URL).origin;
+    const manifestOrigin = new URL(env.VITE_TON_MANIFEST_URL).origin;
+
+    if (env.NODE_ENV === 'production' && isLocalOrigin(manifestOrigin)) {
+      throw new Error('PUBLIC_APP_ORIGIN must be configured in production when VITE_TON_MANIFEST_URL points to localhost');
+    }
+
+    return manifestOrigin;
   }
 
   if (env.NODE_ENV !== 'production') {

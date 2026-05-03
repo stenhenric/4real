@@ -7,6 +7,7 @@ import { SketchyContainer } from '../components/SketchyContainer';
 import { getTransactionAccentClass, isCreditTransaction } from '../features/bank/transactionPresentation';
 import { getTransactions } from '../services/transactions.service';
 import { isAbortError } from '../utils/isAbortError';
+import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
 import type { TransactionDTO } from '../types/api';
 
 type BankView = 'portal' | 'merchant' | 'deposit' | 'withdraw';
@@ -29,8 +30,8 @@ const BankPage = () => {
 
     const fetchTransactions = async () => {
       try {
-        const data = await getTransactions(controller.signal);
-        setTransactions(data);
+        const data = await getTransactions({ signal: controller.signal });
+        setTransactions(data.items);
       } catch (error) {
         if (isAbortError(error)) {
           return;
@@ -163,10 +164,10 @@ const BankPage = () => {
                 </div>
                 <div className="text-right flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center">
                   <span
-                    className={`font-bold text-2xl tracking-tighter ${transaction.amount > 0 ? 'text-green-700' : 'text-red-700'}`}
+                    className={`font-bold text-2xl tracking-tighter ${moneyToNumber(transaction.amount) > 0 ? 'text-green-700' : 'text-red-700'}`}
                   >
-                    {transaction.amount > 0 ? '+' : ''}
-                    {transaction.amount.toFixed(2)}
+                    {moneyToNumber(transaction.amount) > 0 ? '+' : ''}
+                    {formatMoneyValue(transaction.amount)}
                   </span>
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase mt-1

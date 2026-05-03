@@ -20,7 +20,7 @@ export interface IUser extends Document {
   passwordHash?: string | null;
   emailVerifiedAt?: Date | null;
   googleSubject?: string | null;
-  balance: number;
+  balance: string;
   elo: number;
   stats: {
     wins: number;
@@ -41,7 +41,7 @@ const UserSchema: Schema = new Schema({
   passwordHash: { type: String, default: null },
   emailVerifiedAt: { type: Date, default: null, index: true },
   googleSubject: { type: String, default: null, unique: true, sparse: true, index: true },
-  balance: { type: Number, default: 0, min: 0 },
+  balance: { type: String, default: '0.000000', match: /^\d+\.\d{6}$/ },
   elo: { type: Number, default: 1000, min: 0 },
   stats: {
     wins: { type: Number, default: 0 },

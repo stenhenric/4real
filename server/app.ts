@@ -7,6 +7,7 @@ import mongoose from 'mongoose';
 
 import { getCorsOptions } from './config/cors.ts';
 import { getEnv, getPublicAppOrigin, getTrustProxySetting } from './config/env.ts';
+import { apiNoStoreMiddleware } from './http/cache-policy.ts';
 import { csrfProtectionMiddleware } from './middleware/csrf.middleware.ts';
 import { errorHandler, notFoundApiHandler } from './middleware/error.middleware.ts';
 import { createGeneralRateLimiter } from './middleware/rate-limit.middleware.ts';
@@ -28,6 +29,7 @@ export async function createApp(statusProvider: AppStatusProvider) {
   const trustProxy = getTrustProxySetting();
   const publicAppOrigin = getPublicAppOrigin();
   const app = express();
+  app.set('etag', 'strong');
 
   if (env.NODE_ENV === 'production') {
     app.set('trust proxy', 1);
@@ -101,6 +103,7 @@ export async function createApp(statusProvider: AppStatusProvider) {
   });
 
   app.use('/api', createGeneralRateLimiter());
+  app.use('/api', apiNoStoreMiddleware);
   app.use('/api', csrfProtectionMiddleware);
   registerApiRoutes(app);
   app.use('/api', notFoundApiHandler);

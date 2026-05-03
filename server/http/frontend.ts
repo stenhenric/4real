@@ -4,6 +4,10 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 
 import { getEnv } from '../config/env.ts';
+import {
+  applyImmutableAssetCacheHeaders,
+  applyNoStoreHeaders,
+} from './cache-policy.ts';
 import { logger } from '../utils/logger.ts';
 
 function registerStaticFrontend(app: Express): void {
@@ -12,6 +16,7 @@ function registerStaticFrontend(app: Express): void {
   app.use('/assets', express.static(path.join(distPath, 'assets'), {
     fallthrough: false,
     setHeaders: (res, filePath) => {
+      applyImmutableAssetCacheHeaders(res);
       if (filePath.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
       if (filePath.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript');
     },
@@ -19,6 +24,7 @@ function registerStaticFrontend(app: Express): void {
 
   app.use(express.static(distPath, { index: false }));
   app.get('*', (_req, res) => {
+    applyNoStoreHeaders(res);
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }

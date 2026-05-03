@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Order } from '../models/Order.ts';
 import type { IOrder, TelegramOrderProof } from '../models/Order.ts';
 import { badRequest, internalServerError } from '../utils/http-error.ts';
+import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 import { AuditService } from './audit.service.ts';
 import { TransactionService } from './transaction.service.ts';
 import { UserService } from './user.service.ts';
@@ -23,13 +24,13 @@ export class OrderService {
   }: {
     userId: mongoose.Types.ObjectId;
     type: 'BUY' | 'SELL';
-    amount: number;
+    amount: string;
     proof?: TelegramOrderProof | undefined;
     proofRelayQueued?: boolean | undefined;
     transactionCode?: string | undefined;
     fiatCurrency: 'KES';
-    exchangeRate: number;
-    fiatTotal: number;
+    exchangeRate: string;
+    fiatTotal: string;
     requestId?: string | undefined;
     session?: mongoose.ClientSession | undefined;
   }): Promise<IOrder> {
@@ -64,7 +65,9 @@ export class OrderService {
       await TransactionService.createTransaction({
         userId: savedOrder.userId.toString(),
         type: savedOrder.type === 'BUY' ? 'BUY_P2P' : 'SELL_P2P',
-        amount: savedOrder.type === 'BUY' ? savedOrder.amount : -savedOrder.amount,
+        amount: savedOrder.type === 'BUY'
+          ? savedOrder.amount
+          : formatUsdtAmount(-parseUsdtAmount(savedOrder.amount)),
         status: 'PENDING',
         referenceId: savedOrder._id.toString(),
         session: activeSession,

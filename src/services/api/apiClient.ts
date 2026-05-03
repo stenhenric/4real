@@ -1,5 +1,5 @@
 import type { ApiErrorDTO } from '../../types/api';
-import { dispatchAuthRedirect, dispatchSessionExpired } from '../../features/auth/auth-events';
+import { dispatchAuthRedirect, dispatchSessionExpired } from '../../features/auth/auth-events.ts';
 
 interface ApiRequestOptions extends RequestInit {
   skipAuthRefresh?: boolean;

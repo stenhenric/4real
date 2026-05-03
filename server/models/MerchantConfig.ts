@@ -6,8 +6,8 @@ export interface IMerchantConfig extends Document {
   walletAddress: string;
   instructions: string;
   fiatCurrency: 'KES';
-  buyRateKesPerUsdt: number;
-  sellRateKesPerUsdt: number;
+  buyRateKesPerUsdt: string;
+  sellRateKesPerUsdt: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,8 +19,8 @@ const MerchantConfigSchema = new Schema(
     walletAddress: { type: String, required: true, trim: true },
     instructions: { type: String, required: true, trim: true },
     fiatCurrency: { type: String, enum: ['KES'], required: true, default: 'KES' },
-    buyRateKesPerUsdt: { type: Number, required: true, min: 0 },
-    sellRateKesPerUsdt: { type: Number, required: true, min: 0 },
+    buyRateKesPerUsdt: { type: String, required: true, match: /^\d+\.\d{6}$/ },
+    sellRateKesPerUsdt: { type: String, required: true, match: /^\d+\.\d{6}$/ },
   },
   {
     timestamps: true,

@@ -17,12 +17,12 @@ export interface RoomState {
   currentTurn: string | null;
   status: 'waiting' | 'active' | 'completed';
   moves: MatchMoveDTO[];
-  wager: number;
+  wager: string;
   isPrivate: boolean;
   dbMatchId?: string;
   winnerId?: string;
-  projectedWinnerAmount: number;
-  commissionRate: number;
+  projectedWinnerAmount: string;
+  commissionRate: string;
 }
 
 export function createEmptyBoard(): (string | null)[][] {
@@ -96,11 +96,11 @@ export async function createRoomStateFromMatch(match: IMatch): Promise<RoomState
     currentTurn: determineCurrentTurn(match),
     status: match.status,
     moves: normalizedMoves,
-    wager: match.wager ?? 0,
+    wager: match.wager ?? '0.000000',
     isPrivate: match.isPrivate ?? false,
     ...(match._id ? { dbMatchId: match._id.toString() } : {}),
     ...(match.winnerId ? { winnerId: match.winnerId } : {}),
-    projectedWinnerAmount: calculateProjectedWinnerAmount(match.wager ?? 0),
+    projectedWinnerAmount: calculateProjectedWinnerAmount(match.wager ?? '0.000000'),
     commissionRate: MATCH_COMMISSION_RATE,
   };
 }

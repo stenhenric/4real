@@ -9,7 +9,7 @@ export interface IMatch extends Document {
   status: 'waiting' | 'active' | 'completed';
   winnerId?: string; // 'draw', player1Id, or player2Id
   settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
-  wager: number;
+  wager: string;
   isPrivate: boolean;
   inviteTokenHash?: string;
   moveHistory: { userId: string; col: number; row: number }[];
@@ -30,7 +30,7 @@ const MatchSchema: Schema = new Schema({
     type: String,
     enum: ['winner', 'draw', 'waiting_expired', 'active_expired', 'resigned'],
   },
-  wager: { type: Number, default: 0, min: 0 },
+  wager: { type: String, default: '0.000000', match: /^\d+\.\d{6}$/ },
   isPrivate: { type: Boolean, default: false },
   inviteTokenHash: { type: String },
   lastActivityAt: { type: Date, required: true, default: () => new Date(), index: true },

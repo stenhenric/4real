@@ -1,7 +1,9 @@
 import { MerchantConfig as MerchantConfigModel } from '../models/MerchantConfig.ts';
 import { getEnv } from '../config/env.ts';
 import type { MerchantConfigDTO, UpdateMerchantConfigRequestDTO } from '../types/api.ts';
+import { formatRate, parseRate } from '../utils/money.ts';
 import { AuditService } from './audit.service.ts';
+import { CacheKeys, CACHE_TTLS, getOrPopulateJson, invalidateCacheKeys } from './cache.service.ts';
 
 export type MerchantConfig = MerchantConfigDTO;
 
@@ -12,21 +14,20 @@ function getFallbackMerchantConfig(): MerchantConfig {
   const env = getEnv();
 
   return {
-    mpesaNumber: env.MERCHANT_MPESA_NUMBER ?? env.VITE_MERCHANT_MPESA_NUMBER ?? 'Not configured',
-    walletAddress: env.MERCHANT_WALLET_ADDRESS ?? env.VITE_MERCHANT_WALLET_ADDRESS ?? 'Not configured',
+    mpesaNumber: env.MERCHANT_MPESA_NUMBER ?? 'Not configured',
+    walletAddress: env.MERCHANT_WALLET_ADDRESS ?? 'Not configured',
     instructions:
       env.MERCHANT_INSTRUCTIONS
-      ?? env.VITE_MERCHANT_INSTRUCTIONS
       ?? 'Follow merchant instructions provided by support.',
     fiatCurrency: DEFAULT_FIAT_CURRENCY,
     buyRateKesPerUsdt:
       env.MERCHANT_BUY_RATE_KES_PER_USDT
-      ?? env.VITE_MERCHANT_BUY_RATE_KES_PER_USDT
-      ?? 0,
+        ? formatRate(parseRate(env.MERCHANT_BUY_RATE_KES_PER_USDT))
+        : '0.000000',
     sellRateKesPerUsdt:
       env.MERCHANT_SELL_RATE_KES_PER_USDT
-      ?? env.VITE_MERCHANT_SELL_RATE_KES_PER_USDT
-      ?? 0,
+        ? formatRate(parseRate(env.MERCHANT_SELL_RATE_KES_PER_USDT))
+        : '0.000000',
   };
 }
 
@@ -44,11 +45,19 @@ function mergeMerchantConfig(stored: Partial<MerchantConfig> | null | undefined)
 }
 
 export async function getMerchantConfig(): Promise<MerchantConfig> {
-  const stored = await MerchantConfigModel.findOne({ singletonKey: MERCHANT_CONFIG_KEY })
-    .select('mpesaNumber walletAddress instructions fiatCurrency buyRateKesPerUsdt sellRateKesPerUsdt')
-    .lean<Partial<MerchantConfig> | null>();
+  const { value } = await getOrPopulateJson({
+    key: CacheKeys.merchantConfig(),
+    ttlSeconds: CACHE_TTLS.merchantConfig,
+    loader: async () => {
+      const stored = await MerchantConfigModel.findOne({ singletonKey: MERCHANT_CONFIG_KEY })
+        .select('mpesaNumber walletAddress instructions fiatCurrency buyRateKesPerUsdt sellRateKesPerUsdt')
+        .lean<Partial<MerchantConfig> | null>();
 
-  return mergeMerchantConfig(stored);
+      return mergeMerchantConfig(stored);
+    },
+  });
+
+  return value;
 }
 
 export async function updateMerchantConfig(
@@ -95,5 +104,6 @@ export async function updateMerchantConfig(
     });
   }
 
+  await invalidateCacheKeys([CacheKeys.merchantConfig(), CacheKeys.merchantDashboard()]);
   return nextConfig;
 }

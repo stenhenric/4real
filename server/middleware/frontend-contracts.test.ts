@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 
 import { getTransactionAccentClass, isCreditTransaction } from '../../src/features/bank/transactionPresentation.ts';
+import {
+  consumeMagicLink,
+  consumeSuspiciousLogin,
+  consumeVerificationEmail,
+} from '../../src/services/auth.service.ts';
 import request, { ApiClientError } from '../../src/services/api/apiClient.ts';
 import { getMatch, joinMatch } from '../../src/services/matches.service.ts';
 
@@ -87,4 +92,38 @@ test('frontend bank presentation treats refund credits as positive incoming fund
     type: 'SELL_P2P_REFUND',
     amount: 7,
   }), 'bg-green-600');
+});
+
+test('frontend auth service consumes emailed auth tokens with POST requests', async (t) => {
+  const calls: Array<{ input: unknown; init?: RequestInit }> = [];
+  const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
+    calls.push({ input, init });
+    return createJsonResponse({ status: 'authenticated', redirectTo: '/play' });
+  });
+  t.after(() => fetchMock.mock.restore());
+
+  await consumeMagicLink({ token: 'magic-token' });
+  await consumeVerificationEmail({ token: 'verify-token' });
+  await consumeSuspiciousLogin({ token: 'suspicious-token' });
+
+  assert.deepEqual(
+    calls.map((entry) => ({ input: entry.input, method: entry.init?.method, body: entry.init?.body })),
+    [
+      {
+        input: '/api/auth/login/magic-link/consume',
+        method: 'POST',
+        body: JSON.stringify({ token: 'magic-token' }),
+      },
+      {
+        input: '/api/auth/email/verify/consume',
+        method: 'POST',
+        body: JSON.stringify({ token: 'verify-token' }),
+      },
+      {
+        input: '/api/auth/login/suspicious/consume',
+        method: 'POST',
+        body: JSON.stringify({ token: 'suspicious-token' }),
+      },
+    ],
+  );
 });

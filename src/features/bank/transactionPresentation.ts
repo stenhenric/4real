@@ -1,4 +1,5 @@
 import type { TransactionDTO } from '../../types/api';
+import { moneyToNumber } from '../../utils/exact-money.ts';
 
 const CREDIT_TRANSACTION_TYPES = new Set<TransactionDTO['type']>([
   'DEPOSIT',
@@ -10,7 +11,7 @@ const CREDIT_TRANSACTION_TYPES = new Set<TransactionDTO['type']>([
 ]);
 
 export function isCreditTransaction(transaction: Pick<TransactionDTO, 'type' | 'amount'>): boolean {
-  return transaction.amount > 0 || CREDIT_TRANSACTION_TYPES.has(transaction.type);
+  return moneyToNumber(transaction.amount) > 0 || CREDIT_TRANSACTION_TYPES.has(transaction.type);
 }
 
 export function getTransactionAccentClass(transaction: Pick<TransactionDTO, 'type' | 'amount'>): string {

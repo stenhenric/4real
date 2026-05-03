@@ -51,8 +51,9 @@ export class WithdrawalRepository {
     );
   }
 
-  static async findByUserId(userId: string) {
-    return this.collection().find({ userId }).sort({ createdAt: -1 }).toArray();
+  static async findByUserId(userId: string, limit?: number) {
+    const cursor = this.collection().find({ userId }).sort({ createdAt: -1 });
+    return (limit ? cursor.limit(limit) : cursor).toArray();
   }
 
   static async findByWithdrawalIdForUser(withdrawalId: string, userId: string) {

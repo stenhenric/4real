@@ -54,6 +54,7 @@ function registerBaseCleanup(t: TestContext) {
     'findEarliestPendingTransactionTime',
     async () => null,
   );
+  const findOpenByTxHashesMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
   const upsertFailedIngestionMock = mock.method(FailedDepositIngestionRepository, 'upsertFailure', async () => {});
   setWithdrawalWorkerDependenciesForTests({
     withLock: async (_resource, _ttlMs, fn) => fn(),
@@ -68,6 +69,9 @@ function registerBaseCleanup(t: TestContext) {
     } catch {}
     try {
       findEarliestPendingMock.mock.restore();
+    } catch {}
+    try {
+      findOpenByTxHashesMock.mock.restore();
     } catch {}
     try {
       upsertFailedIngestionMock.mock.restore();
@@ -204,7 +208,8 @@ test('pollDeposits ignores already processed transaction hashes', async (t) => {
 
   await pollDeposits();
 
-  assert.equal(memoLookupMock.mock.callCount(), 0);
+  assert.equal(memoLookupMock.mock.callCount(), 1);
+  assert.deepEqual(memoLookupMock.mock.calls[0]?.arguments[0], []);
   assert.equal(processedCreateMock.mock.callCount(), 0);
   assert.equal(markStateMock.mock.callCount(), 1);
   assert.equal(markStateMock.mock.calls[0].arguments[1], 1_700_000_001);
@@ -600,11 +605,16 @@ test('transient ingestion failure keeps cursor pinned and replay succeeds on sec
   const seenMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
   const findByHashMock = mock.method(ProcessedTransactionRepository, 'findByHash', async () => null);
   const findUnmatchedMock = mock.method(UnmatchedDepositRepository, 'findByTxHash', async () => null);
-  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async (memos) =>
-    memos[0] === 'memo-transient-failure'
-      ? [{ memo: 'memo-transient-failure', userId: 'user-failed' }]
-      : [{ memo: 'memo-transient-success', userId: 'user-success' }],
-  );
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async (memos) => {
+    const memoDocs = [];
+    if (memos.includes('memo-transient-failure')) {
+      memoDocs.push({ memo: 'memo-transient-failure', userId: 'user-failed' });
+    }
+    if (memos.includes('memo-transient-success')) {
+      memoDocs.push({ memo: 'memo-transient-success', userId: 'user-success' });
+    }
+    return memoDocs;
+  });
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
   const claimMemoMock = mock.method(DepositMemoRepository, 'claimActiveMemo', async (memo) => {
     if (memo === 'memo-transient-failure') {
@@ -704,7 +714,7 @@ test('transient ingestion failure keeps cursor pinned and replay succeeds on sec
         txHash: 'transient-failure-hash',
         decision: 'credit',
         amountRaw: '1000000',
-        amountUsdt: 1,
+        amountUsdt: '1.000000',
         comment: 'memo-transient-failure',
         memoStatus: 'active',
         candidateUserId: 'user-failed',
@@ -1059,7 +1069,7 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   assert.equal(refundMock.mock.calls[0].arguments[0], 'user-8');
   assert.equal(createTransactionMock.mock.callCount(), 1);
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { type: string }).type, 'WITHDRAW_REFUND');
-  assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { amount: number }).amount, 2);
+  assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { amount: string }).amount, '2.000000');
 });
 
 test('runWithdrawalWorker does not refund seqno timeout paths', async (t) => {

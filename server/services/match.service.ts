@@ -7,6 +7,7 @@ import type { IMatch } from '../models/Match.ts';
 import type { MatchMoveDTO } from '../types/api.ts';
 import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 import { badRequest, conflict, internalServerError, notFound } from '../utils/http-error.ts';
+import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 import { calculateMatchPayout, calculateDrawPayout } from './match-payout.service.ts';
 import { UserService } from './user.service.ts';
 import { AuditService } from './audit.service.ts';
@@ -24,7 +25,7 @@ interface CreateMatchDocumentInput {
   roomId: string;
   player1Id: mongoose.Types.ObjectId;
   p1Username: string;
-  wager: number;
+  wager: string;
   isPrivate: boolean;
   inviteTokenHash?: string | undefined;
   status: IMatch['status'];
@@ -44,6 +45,18 @@ interface MatchSettlementOptions {
 
 function now(): Date {
   return new Date();
+}
+
+function isPositiveUsdtAmount(value: string): boolean {
+  return parseUsdtAmount(value) > 0n;
+}
+
+function negateUsdtAmount(value: string): string {
+  return formatUsdtAmount(-parseUsdtAmount(value));
+}
+
+function subtractUsdtAmounts(left: string, right: string): string {
+  return formatUsdtAmount(parseUsdtAmount(left) - parseUsdtAmount(right));
 }
 
 async function runOwnTransaction<T>(work: (session: mongoose.ClientSession) => Promise<T>): Promise<T> {
@@ -87,7 +100,7 @@ export class MatchService {
     emitPublicEvent = true,
   }: {
     userId: string;
-    wager: number;
+    wager: string;
     isPrivate: boolean;
     requestId?: string | undefined;
     session?: mongoose.ClientSession | undefined;
@@ -101,7 +114,7 @@ export class MatchService {
         throw notFound('User not found', 'USER_NOT_FOUND');
       }
 
-      if (wager > 0) {
+      if (isPositiveUsdtAmount(wager)) {
         const updatedUser = await UserService.deductBalanceSafely(user._id.toString(), wager, activeSession);
         if (!updatedUser) {
           throw badRequest('Insufficient balance to lock wager', 'INSUFFICIENT_BALANCE');
@@ -110,7 +123,7 @@ export class MatchService {
         await TransactionService.createTransaction({
           userId: user._id.toString(),
           type: 'MATCH_WAGER',
-          amount: -wager,
+          amount: negateUsdtAmount(wager),
           referenceId: roomId,
           session: activeSession,
         });
@@ -210,7 +223,7 @@ export class MatchService {
         throw conflict('Match is already full', 'MATCH_ALREADY_FULL');
       }
 
-      if (match.wager > 0) {
+      if (isPositiveUsdtAmount(match.wager)) {
         const updatedUser = await UserService.deductBalanceSafely(userId, match.wager, activeSession);
         if (!updatedUser) {
           throw badRequest('Insufficient balance to join this match', 'INSUFFICIENT_BALANCE');
@@ -219,7 +232,7 @@ export class MatchService {
         await TransactionService.createTransaction({
           userId,
           type: 'MATCH_WAGER',
-          amount: -match.wager,
+          amount: negateUsdtAmount(match.wager),
           referenceId: roomId,
           session: activeSession,
         });
@@ -311,7 +324,7 @@ export class MatchService {
       }
 
       if (match.status === 'waiting') {
-        if (match.wager > 0) {
+        if (isPositiveUsdtAmount(match.wager)) {
           await this.refundUserWager({
             userId: player1Id,
             amount: match.wager,
@@ -475,7 +488,7 @@ export class MatchService {
 
         isPrivate = match.isPrivate;
 
-        if (match.wager > 0) {
+        if (isPositiveUsdtAmount(match.wager)) {
           await this.refundUserWager({
             userId: match.player1Id.toString(),
             amount: match.wager,
@@ -558,7 +571,7 @@ export class MatchService {
       await this.handleEloUpdate(p1IdStr, p2IdStr, winnerId, session);
     }
 
-    if (match.wager > 0) {
+    if (isPositiveUsdtAmount(match.wager)) {
       await this.handleWagerSettlement({
         roomId: match.roomId,
         wager: match.wager,
@@ -640,7 +653,7 @@ export class MatchService {
     timeoutPlayerId,
   }: {
     roomId: string;
-    wager: number;
+    wager: string;
     p1IdStr: string;
     p2IdStr?: string | undefined;
     winnerId: string;
@@ -689,15 +702,15 @@ export class MatchService {
 
     if (timeoutPlayerId) {
       if (timeoutPlayerId === p1IdStr) {
-        p1Refund = wager - commissionAmount;
+        p1Refund = subtractUsdtAmounts(wager, commissionAmount);
         p2Refund = wager;
       } else if (p2IdStr && timeoutPlayerId === p2IdStr) {
         p1Refund = wager;
-        p2Refund = wager - commissionAmount;
+        p2Refund = subtractUsdtAmounts(wager, commissionAmount);
       }
     }
 
-    if (p1Refund > 0) {
+    if (isPositiveUsdtAmount(p1Refund)) {
       await this.refundUserWager({
         userId: p1IdStr,
         amount: p1Refund,
@@ -709,7 +722,7 @@ export class MatchService {
       });
     }
 
-    if (p2IdStr && p2Refund > 0) {
+    if (p2IdStr && isPositiveUsdtAmount(p2Refund)) {
       await this.refundUserWager({
         userId: p2IdStr,
         amount: p2Refund,
@@ -734,7 +747,7 @@ export class MatchService {
     transactionType = 'MATCH_REFUND',
   }: {
     userId: string;
-    amount: number;
+    amount: string;
     roomId: string;
     session: mongoose.ClientSession;
     requestId?: string | undefined;

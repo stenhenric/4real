@@ -94,10 +94,10 @@ test('replayDepositWindow classifies live-shaped transfers without mutating bala
     },
   ]) as Response);
   const seenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
-  const unmatchedMock = mock.method(UnmatchedDepositRepository, 'findByTxHash', async (txHash) => (
-    txHash === 'open-unmatched-hash'
-      ? {
-          txHash,
+  const unmatchedMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async (txHashes) => (
+    txHashes.includes('open-unmatched-hash')
+      ? [{
+          txHash: 'open-unmatched-hash',
           receivedRaw: '3000000',
           comment: 'memo-open',
           senderJettonWallet: SENDER_JETTON_WALLET,
@@ -106,8 +106,8 @@ test('replayDepositWindow classifies live-shaped transfers without mutating bala
           recordedAt: new Date(),
           memoStatus: 'missing',
           resolved: false,
-        }
-      : null
+        }]
+      : []
   ));
   const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => [
     {
@@ -179,6 +179,8 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
       used: memoLookupCount > 1,
     }];
   });
+  const findSeenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const findUnmatchedBatchMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
   const findProcessedMock = mock.method(ProcessedTransactionRepository, 'findByHash', async () => null);
   const findUnmatchedMock = mock.method(UnmatchedDepositRepository, 'findByTxHash', async () => null);
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
@@ -208,6 +210,8 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
 
   t.after(() => fetchMock.mock.restore());
   t.after(() => memoLookupMock.mock.restore());
+  t.after(() => findSeenHashesMock.mock.restore());
+  t.after(() => findUnmatchedBatchMock.mock.restore());
   t.after(() => findProcessedMock.mock.restore());
   t.after(() => findUnmatchedMock.mock.restore());
   t.after(() => startSessionMock.mock.restore());
@@ -229,6 +233,10 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
   assert.deepEqual(result.transfers.map((transfer) => transfer.decision), ['credit', 'unmatched']);
   assert.equal(result.transfers[1].memoStatus, 'inactive');
   assert.equal(result.transfers[0].candidateUsername, 'memo-owner');
+  assert.equal(findSeenHashesMock.mock.callCount(), 1);
+  assert.equal(findUnmatchedBatchMock.mock.callCount(), 1);
+  assert.equal(findProcessedMock.mock.callCount(), 0);
+  assert.equal(findUnmatchedMock.mock.callCount(), 0);
   assert.equal(createDepositMock.mock.callCount(), 1);
   assert.equal(createUnmatchedMock.mock.callCount(), 1);
   assert.equal(creditMock.mock.callCount(), 1);

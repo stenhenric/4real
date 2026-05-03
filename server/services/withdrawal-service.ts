@@ -6,7 +6,7 @@ import { ACCOUNTED_WITHDRAWAL_STATUSES, WithdrawalRepository } from '../reposito
 import { badRequest } from '../utils/http-error.ts';
 import { recordWithdrawalBalanceHoldFailure } from './metrics.service.ts';
 import { UserService } from './user.service.ts';
-import { usdtNumberToRawAmount } from '../utils/money.ts';
+import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 
 const MAX_TRANSACTION_RETRIES = 3;
 
@@ -25,11 +25,11 @@ export async function requestWithdrawal({
 }: {
   userId: string;
   toAddress: string;
-  amountUsdt: number;
+  amountUsdt: string;
   withdrawalId: string;
   session?: ClientSession;
 }) {
-  const amountRaw = usdtNumberToRawAmount(amountUsdt).toString();
+  const amountRaw = parseUsdtAmount(amountUsdt).toString();
 
   const executeWithdrawalMutation = async (activeSession: ClientSession) => {
     const updatedUser = await UserService.deductBalanceSafely(userId, amountUsdt, activeSession);
@@ -56,7 +56,7 @@ export async function requestWithdrawal({
       ACCOUNTED_WITHDRAWAL_STATUSES,
       'createdAt',
     );
-    const dailyLimitRaw = usdtNumberToRawAmount(getEnv().DAILY_WITHDRAWAL_LIMIT_USDT);
+    const dailyLimitRaw = parseUsdtAmount(getEnv().DAILY_WITHDRAWAL_LIMIT_USDT);
     if (accountedTodayRaw + BigInt(amountRaw) > dailyLimitRaw) {
       recordWithdrawalBalanceHoldFailure('daily_limit_exceeded');
       throw badRequest('Daily withdrawal limit exceeded', 'DAILY_WITHDRAWAL_LIMIT_EXCEEDED');
@@ -67,7 +67,7 @@ export async function requestWithdrawal({
       userId,
       toAddress,
       amountRaw,
-      amountDisplay: amountUsdt.toFixed(6),
+      amountDisplay: formatUsdtAmount(amountRaw),
     }, activeSession);
   };
 

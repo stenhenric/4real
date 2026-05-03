@@ -5,7 +5,7 @@ import type { IUser } from '../models/User.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { TransactionService } from './transaction.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
-import { rawAmountToUsdtNumber, usdtNumberToRawAmount } from '../utils/money.ts';
+import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 import { conflict } from '../utils/http-error.ts';
 import { cleanUsername, normalizeEmail, normalizeUsername } from './auth-identity.service.ts';
 
@@ -20,9 +20,9 @@ export interface CreateUserInput {
 }
 
 export class UserService {
-  static async getDisplayBalance(userId: string, session?: mongoose.ClientSession): Promise<number> {
+  static async getDisplayBalance(userId: string, session?: mongoose.ClientSession): Promise<string> {
     const balanceDoc = await UserBalanceRepository.findByUserId(userId, session);
-    return rawAmountToUsdtNumber(UserBalanceRepository.getBalanceRaw(balanceDoc));
+    return formatUsdtAmount(UserBalanceRepository.getBalanceRaw(balanceDoc));
   }
 
   static async ensureSystemCommissionAccountExists(): Promise<void> {
@@ -35,7 +35,7 @@ export class UserService {
         email: 'commission@system.local',
         passwordHash: 'none',
         emailVerifiedAt: new Date(),
-        balance: 0,
+        balance: '0.000000',
         elo: 1000,
         isAdmin: true,
       });
@@ -44,8 +44,8 @@ export class UserService {
     }
   }
 
-  static async routeCommissionToAdmin(amount: number, referenceId: string, session: mongoose.ClientSession): Promise<void> {
-    if (amount <= 0) return;
+  static async routeCommissionToAdmin(amount: string, referenceId: string, session: mongoose.ClientSession): Promise<void> {
+    if (parseUsdtAmount(amount) <= 0n) return;
     
     await this.updateBalance(SYSTEM_COMMISSION_ACCOUNT_ID, amount, session);
     await TransactionService.createTransaction({
@@ -69,7 +69,7 @@ export class UserService {
         passwordHash: userData.passwordHash ?? null,
         emailVerifiedAt: userData.emailVerifiedAt ?? null,
         googleSubject: userData.googleSubject ?? null,
-        balance: 0,
+        balance: '0.000000',
         elo: userData.elo ?? 1000,
         isAdmin: userData.isAdmin ?? false,
       });
@@ -209,29 +209,30 @@ export class UserService {
     );
   }
 
-  static async updateBalance(id: string, amount: number, session?: mongoose.ClientSession): Promise<IUser | null> {
-    const rawDelta = usdtNumberToRawAmount(amount);
+  static async updateBalance(id: string, amount: string, session?: mongoose.ClientSession): Promise<IUser | null> {
+    const rawDelta = parseUsdtAmount(amount);
     if (rawDelta === 0n) {
       return this.findById(id, session);
     }
 
     if (rawDelta < 0n) {
-      return this.deductBalanceSafely(id, Math.abs(amount), session);
+      return this.deductBalanceSafely(id, formatUsdtAmount(-rawDelta), session);
     }
 
     await UserBalanceRepository.adjustBalanceRaw(id, rawDelta.toString(), session);
     return this.findById(id, session);
   }
 
-  static async deductBalanceSafely(id: string, amount: number, session?: mongoose.ClientSession): Promise<IUser | null> {
-    if (amount <= 0) {
+  static async deductBalanceSafely(id: string, amount: string, session?: mongoose.ClientSession): Promise<IUser | null> {
+    const amountRaw = parseUsdtAmount(amount);
+    if (amountRaw <= 0n) {
       return this.findById(id, session);
     }
 
     if (session) {
       const updatedBalance = await UserBalanceRepository.deductBalanceRawIfSufficient(
         id,
-        usdtNumberToRawAmount(amount).toString(),
+        amountRaw.toString(),
         session,
       );
       if (!updatedBalance) {
@@ -245,7 +246,7 @@ export class UserService {
     try {
       let updatedUser: IUser | null = null;
       await ownSession.withTransaction(async () => {
-        updatedUser = await this.deductBalanceSafely(id, amount, ownSession);
+        updatedUser = await this.deductBalanceSafely(id, formatUsdtAmount(amountRaw), ownSession);
       });
       return updatedUser;
     } catch (error) {

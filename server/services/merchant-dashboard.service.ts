@@ -21,6 +21,7 @@ import type {
   MerchantOrderDeskResponseDTO,
   OrderUserDTO,
 } from '../types/api.ts';
+import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
 
 interface MerchantDashboardOrderUser {
@@ -33,7 +34,7 @@ interface MerchantDashboardOrderDocument {
   _id: mongoose.Types.ObjectId;
   userId: MerchantDashboardOrderUser | mongoose.Types.ObjectId | string;
   type: 'BUY' | 'SELL';
-  amount: number;
+  amount: string;
   status: 'PENDING' | 'DONE' | 'REJECTED';
   proof?: MerchantOrderDeskItemDTO['proof'];
   transactionCode?: MerchantOrderDeskItemDTO['transactionCode'];
@@ -49,8 +50,8 @@ interface UserOrderStats {
 }
 
 interface BalanceSnapshot {
-  tonBalanceTon: number | null;
-  onChainUsdtBalanceUsdt: number | null;
+  tonBalanceTon: string | null;
+  onChainUsdtBalanceUsdt: string | null;
   error?: string;
 }
 
@@ -79,6 +80,18 @@ const JOB_LABELS: Record<MerchantJobKey, string> = {
 
 function roundMoney(value: number): number {
   return Number(value.toFixed(2));
+}
+
+function usdtDisplayToNumber(value: string | number): number {
+  return typeof value === 'number' ? value : Number(value);
+}
+
+function usdtNumberToDisplay(value: number): string {
+  return formatUsdtAmount(parseUsdtAmount(value.toFixed(6)));
+}
+
+function tonNumberToDisplay(value: number): string {
+  return value.toFixed(6);
 }
 
 function usdtRawToNumber(value: bigint | string | number): number {
@@ -169,14 +182,15 @@ function evaluateRisk(order: MerchantDashboardOrderDocument, userStats: UserOrde
   const averageDoneAmount = userStats && userStats.doneCount > 0
     ? userStats.doneVolume / userStats.doneCount
     : null;
+  const orderAmount = usdtDisplayToNumber(order.amount);
 
   const riskFlags: string[] = [];
   let score = 0;
 
-  if (order.amount >= 5_000) {
+  if (orderAmount >= 5_000) {
     riskFlags.push('Large ticket size');
     score += 4;
-  } else if (order.amount >= 1_000) {
+  } else if (orderAmount >= 1_000) {
     riskFlags.push('Elevated ticket size');
     score += 2;
   }
@@ -186,7 +200,7 @@ function evaluateRisk(order: MerchantDashboardOrderDocument, userStats: UserOrde
     score += 1;
   }
 
-  if (averageDoneAmount !== null && order.amount >= Math.max(averageDoneAmount * 3, 500)) {
+  if (averageDoneAmount !== null && orderAmount >= Math.max(averageDoneAmount * 3, 500)) {
     riskFlags.push('Above user historical average');
     score += 2;
   }
@@ -237,7 +251,7 @@ async function getOrderStats(userIds: mongoose.Types.ObjectId[]): Promise<Map<st
         },
         doneVolume: {
           $sum: {
-            $cond: [{ $eq: ['$status', 'DONE'] }, '$amount', 0],
+            $cond: [{ $eq: ['$status', 'DONE'] }, { $toDouble: '$amount' }, 0],
           },
         },
       },
@@ -286,7 +300,7 @@ async function fetchOrders(options: {
       id: order._id.toString(),
       user,
       type: order.type,
-      amount: roundMoney(order.amount),
+      amount: order.amount,
       status: order.status,
       createdAt: order.createdAt.toISOString(),
       waitMinutes: risk.waitMinutes,
@@ -406,8 +420,8 @@ async function getBalanceSnapshot(): Promise<BalanceSnapshot> {
     ]);
 
     return {
-      tonBalanceTon: roundMoney(tonRawToNumber(tonBalanceRaw)),
-      onChainUsdtBalanceUsdt: onChainUsdtRaw === null ? null : roundMoney(usdtRawToNumber(onChainUsdtRaw)),
+      tonBalanceTon: tonNumberToDisplay(roundMoney(tonRawToNumber(tonBalanceRaw))),
+      onChainUsdtBalanceUsdt: onChainUsdtRaw === null ? null : usdtNumberToDisplay(roundMoney(usdtRawToNumber(onChainUsdtRaw))),
     };
   } catch (error) {
     return {
@@ -418,7 +432,7 @@ async function getBalanceSnapshot(): Promise<BalanceSnapshot> {
   }
 }
 
-function buildVolumeSeries(orders: Array<{ createdAt: Date; amount: number }>, now: Date) {
+function buildVolumeSeries(orders: Array<{ createdAt: Date; amount: string }>, now: Date) {
   const bucketCount = 6;
   const bucketSizeMs = DAY_IN_MS / bucketCount;
   const dayStart = now.getTime() - DAY_IN_MS;
@@ -427,7 +441,7 @@ function buildVolumeSeries(orders: Array<{ createdAt: Date; amount: number }>, n
     return {
       bucketStart: new Date(bucketStartMs).toISOString(),
       bucketLabel: new Date(bucketStartMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      completedVolumeUsdt: 0,
+      completedVolumeUsdt: '0.000000',
       completedCount: 0,
     };
   });
@@ -441,7 +455,9 @@ function buildVolumeSeries(orders: Array<{ createdAt: Date; amount: number }>, n
     if (!bucket) {
       continue;
     }
-    bucket.completedVolumeUsdt = roundMoney(bucket.completedVolumeUsdt + order.amount);
+    bucket.completedVolumeUsdt = usdtNumberToDisplay(
+      usdtDisplayToNumber(bucket.completedVolumeUsdt) + usdtDisplayToNumber(order.amount),
+    );
     bucket.completedCount += 1;
   }
 
@@ -487,7 +503,7 @@ export class MerchantDashboardService {
       Order.find(trustFilter({ status: 'DONE' as const, createdAt: { $gte: since24h } }))
         .select('amount createdAt')
         .sort({ createdAt: 1 })
-        .lean<Array<{ amount: number; createdAt: Date }>>(),
+        .lean<Array<{ amount: string; createdAt: Date }>>(),
       getRecentDepositsSince(since24h),
       getRecentWithdrawalsSince(since24h),
       getRecentUnmatchedDeposits(5),
@@ -513,35 +529,42 @@ export class MerchantDashboardService {
 
     const pendingOrderCount = pendingOrders.length;
     const highRiskPendingOrderCount = pendingOrders.filter((order) => order.riskLevel === 'high').length;
-    const pendingBuyVolumeUsdt = roundMoney(
+    const pendingBuyVolumeUsdt = usdtNumberToDisplay(roundMoney(
       pendingOrders
         .filter((order) => order.type === 'BUY')
-        .reduce((total, order) => total + order.amount, 0),
-    );
-    const pendingSellVolumeUsdt = roundMoney(
+        .reduce((total, order) => total + usdtDisplayToNumber(order.amount), 0),
+    ));
+    const pendingSellVolumeUsdt = usdtNumberToDisplay(roundMoney(
       pendingOrders
         .filter((order) => order.type === 'SELL')
-        .reduce((total, order) => total + order.amount, 0),
-    );
-    const completedVolume24hUsdt = roundMoney(
-      doneOrders.reduce((total, order) => total + order.amount, 0),
-    );
+        .reduce((total, order) => total + usdtDisplayToNumber(order.amount), 0),
+    ));
+    const completedVolume24hUsdt = usdtNumberToDisplay(roundMoney(
+      doneOrders.reduce((total, order) => total + usdtDisplayToNumber(order.amount), 0),
+    ));
     const oldestPendingMinutes = pendingOrders.length > 0
       ? Math.max(...pendingOrders.map((order) => order.waitMinutes))
       : null;
-    const depositFlow24hUsdt = roundMoney(
+    const depositFlow24hUsdt = usdtNumberToDisplay(roundMoney(
       deposits24h.reduce((total, deposit) => total + Number(deposit.amountDisplay), 0),
-    );
-    const withdrawalFlow24hUsdt = roundMoney(
+    ));
+    const withdrawalFlow24hUsdt = usdtNumberToDisplay(roundMoney(
       withdrawals24h.reduce((total, withdrawal) => total + Number(withdrawal.amountDisplay), 0),
-    );
-    const ledgerUsdtBalanceUsdt = roundMoney(usdtRawToNumber(customerLiabilityUsdtRaw));
+    ));
+    const ledgerUsdtBalanceUsdt = usdtNumberToDisplay(roundMoney(usdtRawToNumber(customerLiabilityUsdtRaw)));
     const usdtDeltaUsdt = balanceSnapshot.onChainUsdtBalanceUsdt === null
       ? null
-      : roundMoney(balanceSnapshot.onChainUsdtBalanceUsdt - ledgerUsdtBalanceUsdt);
-    const systemCommissionUsdt = roundMoney(
+      : usdtNumberToDisplay(roundMoney(
+        usdtDisplayToNumber(balanceSnapshot.onChainUsdtBalanceUsdt) - usdtDisplayToNumber(ledgerUsdtBalanceUsdt),
+      ));
+    const systemCommissionUsdt = usdtNumberToDisplay(roundMoney(
       usdtRawToNumber(UserBalanceRepository.getBalanceRaw(systemCommissionBalance)),
-    );
+    ));
+    const tonBalanceNumber = balanceSnapshot.tonBalanceTon === null ? null : Number(balanceSnapshot.tonBalanceTon);
+    const onChainUsdtNumber = balanceSnapshot.onChainUsdtBalanceUsdt === null
+      ? null
+      : usdtDisplayToNumber(balanceSnapshot.onChainUsdtBalanceUsdt);
+    const usdtDeltaNumber = usdtDeltaUsdt === null ? null : usdtDisplayToNumber(usdtDeltaUsdt);
 
     const alerts: MerchantAlertDTO[] = [];
     const env = getEnv();
@@ -557,52 +580,52 @@ export class MerchantDashboardService {
       });
     }
 
-    if (balanceSnapshot.tonBalanceTon !== null && balanceSnapshot.tonBalanceTon < env.HOT_WALLET_MIN_TON_BALANCE) {
+    if (tonBalanceNumber !== null && tonBalanceNumber < env.HOT_WALLET_MIN_TON_BALANCE) {
       alerts.push({
         id: 'low-ton-balance',
         severity: 'critical',
         category: 'liquidity',
         title: 'Hot wallet TON balance below threshold',
-        description: `Available gas balance is ${balanceSnapshot.tonBalanceTon.toFixed(2)} TON, below the configured ${env.HOT_WALLET_MIN_TON_BALANCE.toFixed(2)} TON minimum.`,
-        metric: `${balanceSnapshot.tonBalanceTon.toFixed(2)} TON`,
+        description: `Available gas balance is ${balanceSnapshot.tonBalanceTon} TON, below the configured ${env.HOT_WALLET_MIN_TON_BALANCE.toFixed(2)} TON minimum.`,
+        metric: `${balanceSnapshot.tonBalanceTon} TON`,
         targetPath: '/merchant/liquidity',
       });
     }
 
     if (
-      balanceSnapshot.onChainUsdtBalanceUsdt !== null
-      && balanceSnapshot.onChainUsdtBalanceUsdt < env.HOT_WALLET_MIN_USDT_BALANCE
+      onChainUsdtNumber !== null
+      && onChainUsdtNumber < env.HOT_WALLET_MIN_USDT_BALANCE
     ) {
       alerts.push({
         id: 'low-usdt-balance',
         severity: 'warning',
         category: 'liquidity',
         title: 'Hot wallet USDT reserve below threshold',
-        description: `On-chain reserve is ${balanceSnapshot.onChainUsdtBalanceUsdt.toFixed(2)} USDT, below the configured ${env.HOT_WALLET_MIN_USDT_BALANCE.toFixed(2)} USDT minimum.`,
-        metric: `${balanceSnapshot.onChainUsdtBalanceUsdt.toFixed(2)} USDT`,
+        description: `On-chain reserve is ${balanceSnapshot.onChainUsdtBalanceUsdt} USDT, below the configured ${env.HOT_WALLET_MIN_USDT_BALANCE.toFixed(2)} USDT minimum.`,
+        metric: `${balanceSnapshot.onChainUsdtBalanceUsdt} USDT`,
         targetPath: '/merchant/liquidity',
       });
     }
 
-    if (usdtDeltaUsdt !== null) {
-      if (usdtDeltaUsdt < 0) {
+    if (usdtDeltaNumber !== null) {
+      if (usdtDeltaNumber < 0) {
         alerts.push({
           id: 'ledger-shortfall',
           severity: 'critical',
           category: 'liquidity',
           title: 'Ledger exceeds on-chain USDT reserves',
-          description: `Customer ledger liabilities exceed the hot wallet reserve by ${Math.abs(usdtDeltaUsdt).toFixed(2)} USDT.`,
-          metric: `${Math.abs(usdtDeltaUsdt).toFixed(2)} USDT`,
+          description: `Customer ledger liabilities exceed the hot wallet reserve by ${usdtNumberToDisplay(Math.abs(usdtDeltaNumber))} USDT.`,
+          metric: `${usdtNumberToDisplay(Math.abs(usdtDeltaNumber))} USDT`,
           targetPath: '/merchant/liquidity',
         });
-      } else if (usdtDeltaUsdt > env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT) {
+      } else if (usdtDeltaNumber > env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT) {
         alerts.push({
           id: 'ledger-mismatch',
           severity: 'warning',
           category: 'liquidity',
           title: 'Hot wallet reserve and ledger diverge',
-          description: `The reserve is ahead of the internal ledger by ${usdtDeltaUsdt.toFixed(2)} USDT, above the configured tolerance of ${env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT.toFixed(2)} USDT.`,
-          metric: `${usdtDeltaUsdt.toFixed(2)} USDT`,
+          description: `The reserve is ahead of the internal ledger by ${usdtDeltaUsdt} USDT, above the configured tolerance of ${env.HOT_WALLET_LEDGER_MISMATCH_TOLERANCE_USDT.toFixed(2)} USDT.`,
+          metric: `${usdtDeltaUsdt} USDT`,
           targetPath: '/merchant/liquidity',
         });
       }
@@ -674,9 +697,9 @@ export class MerchantDashboardService {
         severity: order.riskLevel === 'high' ? 'critical' : 'warning',
         category: 'orders',
         title: `${order.type} order needs manual review`,
-        description: `${order.user.username} submitted ${order.amount.toFixed(2)} USDT. ${order.riskFlags.join(', ')}.`,
+        description: `${order.user.username} submitted ${order.amount} USDT. ${order.riskFlags.join(', ')}.`,
         createdAt: order.createdAt,
-        metric: `${order.amount.toFixed(2)} USDT`,
+        metric: `${order.amount} USDT`,
         targetPath: '/merchant/orders',
       });
     }
@@ -687,7 +710,7 @@ export class MerchantDashboardService {
         severity: 'info',
         category: 'deposits',
         title: 'Recent deposit is waiting for memo reconciliation',
-        description: `Unmatched deposit ${usdtRawToNumber(deposit.receivedRaw).toFixed(2)} USDT with memo "${deposit.comment || 'empty'}".`,
+        description: `Unmatched deposit ${formatUsdtAmount(deposit.receivedRaw)} USDT with memo "${deposit.comment || 'empty'}".`,
         createdAt: deposit.recordedAt.toISOString(),
         targetPath: '/merchant/deposits',
       });

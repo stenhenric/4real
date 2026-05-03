@@ -4,6 +4,7 @@ import { SketchyContainer } from '../../components/SketchyContainer';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
 import { formatCompactNumber, formatDateTime, formatMoney, formatRelativeMinutes } from '../../features/merchant/format';
+import { moneyToNumber } from '../../utils/exact-money.ts';
 
 export default function MerchantDashboardPage() {
   const { dashboard } = useMerchantOutletContext();
@@ -18,7 +19,10 @@ export default function MerchantDashboardPage() {
   }
 
   const criticalCount = dashboard.alerts.filter((alert) => alert.severity === 'critical').length;
-  const maxVolume = Math.max(...dashboard.overview.volumeSeries.map((point) => point.completedVolumeUsdt), 1);
+  const maxVolume = Math.max(
+    ...dashboard.overview.volumeSeries.map((point) => moneyToNumber(point.completedVolumeUsdt)),
+    1,
+  );
 
   return (
     <div className="space-y-6">
@@ -83,7 +87,7 @@ export default function MerchantDashboardPage() {
               <p className="text-4xl font-bold italic">
                 {dashboard.liquidity.usdtDeltaUsdt === null
                   ? 'Unavailable'
-                  : `${dashboard.liquidity.usdtDeltaUsdt >= 0 ? '+' : ''}${formatMoney(dashboard.liquidity.usdtDeltaUsdt)}`}
+                  : `${moneyToNumber(dashboard.liquidity.usdtDeltaUsdt) >= 0 ? '+' : ''}${formatMoney(dashboard.liquidity.usdtDeltaUsdt)}`}
               </p>
               <p className="mt-2 text-sm font-mono opacity-60">On-chain minus internal ledger</p>
               <p className="mt-1 text-xs font-mono opacity-40">Customer liabilities only</p>
@@ -108,9 +112,9 @@ export default function MerchantDashboardPage() {
             <div className="flex h-64 items-end gap-3">
               {dashboard.overview.volumeSeries.map((point) => (
                 <div key={point.bucketStart} className="flex flex-1 flex-col items-center gap-3">
-                  <div className="w-full rounded-t-[24px] border-2 border-ink-black/20 bg-[repeating-linear-gradient(-45deg,rgba(26,54,93,0.15),rgba(26,54,93,0.15)_10px,rgba(26,54,93,0.08)_10px,rgba(26,54,93,0.08)_20px)] px-2 pt-2" style={{ height: `${Math.max(14, (point.completedVolumeUsdt / maxVolume) * 100)}%` }}>
+                  <div className="w-full rounded-t-[24px] border-2 border-ink-black/20 bg-[repeating-linear-gradient(-45deg,rgba(26,54,93,0.15),rgba(26,54,93,0.15)_10px,rgba(26,54,93,0.08)_10px,rgba(26,54,93,0.08)_20px)] px-2 pt-2" style={{ height: `${Math.max(14, (moneyToNumber(point.completedVolumeUsdt) / maxVolume) * 100)}%` }}>
                     <div className="text-center text-[11px] font-mono font-bold text-ink-blue">
-                      {point.completedVolumeUsdt > 0 ? formatCompactNumber(point.completedVolumeUsdt) : '0'}
+                      {moneyToNumber(point.completedVolumeUsdt) > 0 ? formatCompactNumber(point.completedVolumeUsdt) : '0'}
                     </div>
                   </div>
                   <div className="text-center text-[11px] font-mono opacity-60">{point.bucketLabel}</div>
