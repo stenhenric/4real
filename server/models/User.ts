@@ -65,10 +65,6 @@ const UserSchema: Schema = new Schema({
 });
 
 UserSchema.index({ elo: -1 });
-UserSchema.index({ usernameNormalized: 1 }, {
-  unique: true,
-  sparse: true,
-});
 
 export const User = mongoose.model<IUser>('User', UserSchema);
 
