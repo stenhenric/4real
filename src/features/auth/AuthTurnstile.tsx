@@ -1,27 +1,47 @@
-import { Turnstile } from '@marsidev/react-turnstile';
+import { forwardRef, useImperativeHandle, useRef } from 'react';
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
+
+export interface AuthTurnstileRef {
+  reset: () => void;
+}
 
 interface AuthTurnstileProps {
   onSuccess: (token: string) => void;
   onError?: () => void;
+  onExpire?: () => void;
 }
 
-export function AuthTurnstile({ onSuccess, onError }: AuthTurnstileProps) {
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
+  ({ onSuccess, onError, onExpire }, ref) => {
+    const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+    const turnstileRef = useRef<TurnstileInstance>(null);
 
-  if (!siteKey) {
-    return null;
+    useImperativeHandle(ref, () => ({
+      reset: () => {
+        turnstileRef.current?.reset();
+      },
+    }));
+
+    if (!siteKey) {
+      return null;
+    }
+
+    return (
+      <div className="flex justify-center my-4">
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={siteKey}
+          onSuccess={onSuccess}
+          onError={onError}
+          onExpire={onExpire}
+          options={{
+            theme: 'light',
+            refreshExpired: 'auto',
+          }}
+        />
+      </div>
+    );
   }
+);
 
-  return (
-    <div className="flex justify-center my-4">
-      <Turnstile
-        siteKey={siteKey}
-        onSuccess={onSuccess}
-        onError={onError}
-        options={{
-          theme: 'light',
-        }}
-      />
-    </div>
-  );
-}
+AuthTurnstile.displayName = 'AuthTurnstile';
