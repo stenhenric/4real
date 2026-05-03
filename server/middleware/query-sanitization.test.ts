@@ -8,7 +8,6 @@ import { User } from '../models/User.ts';
 import { errorHandler } from './error.middleware.ts';
 import { logger } from '../utils/logger.ts';
 import { MatchService } from '../services/match.service.ts';
-import { UserService } from '../services/user.service.ts';
 
 function registerEnvCleanup(t: TestContext) {
   const previous = {
@@ -125,27 +124,6 @@ test('MatchService.expireStaleMatches trusts both stale-date filters', async (t)
   assert.equal(capturedFilters[1].status, 'active');
   assert.ok((capturedFilters[0].lastActivityAt as { $lt: unknown }).$lt instanceof Date);
   assert.ok((capturedFilters[1].lastActivityAt as { $lt: unknown }).$lt instanceof Date);
-});
-
-test('UserService.bumpTokenVersionIfCurrent trusts the zero-version fallback filter', async (t) => {
-  const capturedFilters: Record<string, unknown>[] = [];
-  const updateOneMock = mock.method(User, 'updateOne', async (filter: Record<string, unknown>) => {
-    capturedFilters.push(filter);
-    return { modifiedCount: 1 } as any;
-  });
-
-  t.after(() => updateOneMock.mock.restore());
-
-  const updated = await UserService.bumpTokenVersionIfCurrent('user-123', 0);
-
-  assert.equal(updated, true);
-  assert.equal(capturedFilters.length, 1);
-  assert.ok(hasTrustedSymbol(capturedFilters[0]));
-  const zeroVersionBranches = capturedFilters[0].$or as Array<Record<string, unknown>>;
-
-  assert.deepEqual(zeroVersionBranches[0], { tokenVersion: 0 });
-  assert.equal((zeroVersionBranches[1].tokenVersion as { $exists: unknown }).$exists, false);
-  assert.ok(hasTrustedSymbol(zeroVersionBranches[1].tokenVersion as object));
 });
 
 test('errorHandler returns INVALID_IDENTIFIER only for identifier cast errors', () => {

@@ -1,10 +1,12 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Activity, ArrowDownToLine, ArrowUpFromLine, Server, Wallet } from 'lucide-react';
+import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
+import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { updateMerchantAdminConfig } from '../../services/merchant-config.service';
 import type { MerchantConfigDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
@@ -103,6 +105,10 @@ export default function LiquidityPage() {
       success('Merchant settlement config updated.');
       await refreshDashboard();
     } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       showError(error instanceof Error ? error.message : 'Failed to update merchant config.');
     } finally {
       setSaving(false);

@@ -7,14 +7,16 @@ import { TransactionService } from './transaction.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
 import { rawAmountToUsdtNumber, usdtNumberToRawAmount } from '../utils/money.ts';
 import { conflict } from '../utils/http-error.ts';
+import { cleanUsername, normalizeEmail, normalizeUsername } from './auth-identity.service.ts';
 
 export interface CreateUserInput {
-  username: string;
+  username?: string | null;
   email: string;
-  passwordHash: string;
+  passwordHash?: string | null;
+  emailVerifiedAt?: Date | null;
+  googleSubject?: string | null;
   elo?: number;
   isAdmin?: boolean;
-  tokenVersion?: number;
 }
 
 export class UserService {
@@ -29,8 +31,10 @@ export class UserService {
       const user = new User({
         _id: new mongoose.Types.ObjectId(SYSTEM_COMMISSION_ACCOUNT_ID),
         username: 'system_commission',
+        usernameNormalized: 'system_commission',
         email: 'commission@system.local',
         passwordHash: 'none',
+        emailVerifiedAt: new Date(),
         balance: 0,
         elo: 1000,
         isAdmin: true,
@@ -57,14 +61,17 @@ export class UserService {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
+      const username = userData.username ? cleanUsername(userData.username) : null;
       const user = new User({
-        username: userData.username,
-        email: userData.email,
-        passwordHash: userData.passwordHash,
+        username,
+        usernameNormalized: username ? normalizeUsername(username) : null,
+        email: normalizeEmail(userData.email),
+        passwordHash: userData.passwordHash ?? null,
+        emailVerifiedAt: userData.emailVerifiedAt ?? null,
+        googleSubject: userData.googleSubject ?? null,
         balance: 0,
         elo: userData.elo ?? 1000,
         isAdmin: userData.isAdmin ?? false,
-        tokenVersion: userData.tokenVersion ?? 0,
       });
       const saved = await user.save({ session });
       await UserBalanceRepository.ensureExists(saved._id.toString(), session, '0');
@@ -84,6 +91,14 @@ export class UserService {
           throw conflict('Username already exists', 'USERNAME_ALREADY_EXISTS', { field: duplicateField });
         }
 
+        if (duplicateField === 'usernameNormalized') {
+          throw conflict('Username already exists', 'USERNAME_ALREADY_EXISTS', { field: 'username' });
+        }
+
+        if (duplicateField === 'googleSubject') {
+          throw conflict('Google account already linked', 'GOOGLE_ACCOUNT_ALREADY_LINKED', { field: 'googleSubject' });
+        }
+
         throw conflict('User already exists', 'USER_ALREADY_EXISTS');
       }
       throw error;
@@ -93,16 +108,105 @@ export class UserService {
   }
 
   static async findByEmail(email: string): Promise<IUser | null> {
-    return User.findOne({ email });
+    return User.findOne({ email: normalizeEmail(email) });
   }
 
   static async findByUsername(username: string): Promise<IUser | null> {
-    return User.findOne({ username });
+    return User.findOne({ usernameNormalized: normalizeUsername(username) });
+  }
+
+  static async findByGoogleSubject(googleSubject: string): Promise<IUser | null> {
+    return User.findOne({ googleSubject });
   }
 
   static async findById(id: string, session?: mongoose.ClientSession): Promise<IUser | null> {
     const query = User.findById(id).select('-passwordHash -__v');
     return session ? query.session(session) : query;
+  }
+
+  static async findAuthUserById(id: string): Promise<IUser | null> {
+    return User.findById(id);
+  }
+
+  static async markEmailVerified(id: string): Promise<IUser | null> {
+    return User.findByIdAndUpdate(
+      id,
+      { $set: { emailVerifiedAt: new Date() } },
+      { returnDocument: 'after' },
+    );
+  }
+
+  static async setPasswordHash(id: string, passwordHash: string): Promise<IUser | null> {
+    return User.findByIdAndUpdate(
+      id,
+      { $set: { passwordHash } },
+      { returnDocument: 'after' },
+    );
+  }
+
+  static async setUsername(id: string, username: string): Promise<IUser | null> {
+    const cleaned = cleanUsername(username);
+    return User.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          username: cleaned,
+          usernameNormalized: normalizeUsername(cleaned),
+        },
+      },
+      { returnDocument: 'after' },
+    );
+  }
+
+  static async linkGoogleAccount(id: string, googleSubject: string): Promise<IUser | null> {
+    return User.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          googleSubject,
+          emailVerifiedAt: new Date(),
+        },
+      },
+      { returnDocument: 'after' },
+    );
+  }
+
+  static async updateMfaState(params: {
+    userId: string;
+    totpSecretEncrypted: string | null;
+    enabledAt: Date | null;
+    recoveryCodeHashes: string[];
+  }): Promise<IUser | null> {
+    return User.findByIdAndUpdate(
+      params.userId,
+      {
+        $set: {
+          'mfa.totpSecretEncrypted': params.totpSecretEncrypted,
+          'mfa.enabledAt': params.enabledAt,
+          'mfa.recoveryCodeHashes': params.recoveryCodeHashes,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+  }
+
+  static async updateSecurityLogin(params: {
+    userId: string;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    suspicious?: boolean;
+  }): Promise<void> {
+    await User.updateOne(
+      { _id: params.userId },
+      {
+        $set: {
+          'security.lastLoginAt': new Date(),
+          'security.lastLoginIp': params.ipAddress ?? null,
+          'security.lastLoginUserAgent': params.userAgent ?? null,
+          ...(params.suspicious ? { 'security.lastSuspiciousLoginAt': new Date() } : {}),
+        },
+      },
+    );
   }
 
   static async updateBalance(id: string, amount: number, session?: mongoose.ClientSession): Promise<IUser | null> {
@@ -171,38 +275,9 @@ export class UserService {
 
   static async getLeaderboard(limit: number = 10): Promise<IUser[]> {
     return User.find(trustFilter({ _id: { $ne: SYSTEM_COMMISSION_ACCOUNT_ID } }))
+      .find({ usernameNormalized: { $ne: null } })
       .sort({ elo: -1 })
       .limit(limit)
       .select('-passwordHash -__v');
-  }
-
-  static async getTokenVersion(id: string): Promise<number | null> {
-    const authState = await this.getAuthState(id);
-    if (!authState) {
-      return null;
-    }
-
-    return authState.tokenVersion;
-  }
-
-  static async getAuthState(id: string): Promise<{ tokenVersion: number; isAdmin: boolean } | null> {
-    const user = await User.findById(id).select('tokenVersion isAdmin').lean();
-    if (!user) {
-      return null;
-    }
-
-    return {
-      tokenVersion: typeof user.tokenVersion === 'number' ? user.tokenVersion : 0,
-      isAdmin: user.isAdmin === true,
-    };
-  }
-
-  static async bumpTokenVersionIfCurrent(id: string, currentTokenVersion: number): Promise<boolean> {
-    const filter = currentTokenVersion === 0
-      ? trustFilter({ _id: id, $or: [{ tokenVersion: 0 }, { tokenVersion: { $exists: false } }] })
-      : { _id: id, tokenVersion: currentTokenVersion };
-
-    const result = await User.updateOne(filter, { $inc: { tokenVersion: 1 } });
-    return result.modifiedCount === 1;
   }
 }

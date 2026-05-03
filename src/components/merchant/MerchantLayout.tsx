@@ -1,8 +1,10 @@
 import { startTransition, useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowDownUp, BellDot, Landmark, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
+import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { RouteLoading } from '../../app/RouteLoading';
+import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { getMerchantDashboard } from '../../services/merchant-dashboard.service';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
@@ -113,6 +115,11 @@ export function MerchantLayout() {
       });
     } catch (loadError) {
       if (isAbortError(loadError)) {
+        return;
+      }
+
+      if (loadError instanceof ApiClientError && isHandledAuthRedirectCode(loadError.code)) {
+        setIsRefreshing(false);
         return;
       }
 

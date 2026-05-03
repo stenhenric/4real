@@ -1,10 +1,12 @@
 import { startTransition, useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Check, ExternalLink, ShieldAlert, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
+import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { formatDateTime, formatMoney, formatRelativeMinutes } from '../../features/merchant/format';
 import { getMerchantOrders } from '../../services/merchant-dashboard.service';
 import { updateOrderStatus } from '../../services/orders.service';
@@ -49,6 +51,11 @@ export default function OrderDeskPage() {
         return;
       }
 
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        setLoading(false);
+        return;
+      }
+
       setLoading(false);
       showError(error instanceof Error ? error.message : 'Failed to load merchant orders.');
     }
@@ -74,6 +81,10 @@ export default function OrderDeskPage() {
         refreshDashboard(),
       ]);
     } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       showError(error instanceof Error ? error.message : 'Failed to update order.');
     } finally {
       setRowAction(null);

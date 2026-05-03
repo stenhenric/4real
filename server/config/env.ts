@@ -12,7 +12,40 @@ const rawEnvSchema = z.object({
   MONGODB_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   MONGODB_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   MONGODB_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
-  JWT_SECRET: z.string().trim().min(1),
+  JWT_SECRET: z.string().trim().optional(),
+  AUTH_ARGON2_MEMORY_KIB: z.coerce.number().int().min(19 * 1024).default(65_536),
+  AUTH_ARGON2_PASSES: z.coerce.number().int().positive().default(3),
+  AUTH_ARGON2_PARALLELISM: z.coerce.number().int().positive().default(1),
+  AUTH_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  AUTH_REFRESH_IDLE_TTL_SECONDS: z.coerce.number().int().positive().default(30 * 24 * 60 * 60),
+  AUTH_SESSION_ABSOLUTE_TTL_SECONDS: z.coerce.number().int().positive().default(90 * 24 * 60 * 60),
+  AUTH_MFA_STEPUP_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  AUTH_DEVICE_COOKIE_TTL_SECONDS: z.coerce.number().int().positive().default(365 * 24 * 60 * 60),
+  AUTH_EMAIL_VERIFY_TTL_SECONDS: z.coerce.number().int().positive().default(24 * 60 * 60),
+  AUTH_PASSWORD_RESET_TTL_SECONDS: z.coerce.number().int().positive().default(30 * 60),
+  AUTH_MAGIC_LINK_TTL_SECONDS: z.coerce.number().int().positive().default(15 * 60),
+  AUTH_SUSPICIOUS_LOGIN_TTL_SECONDS: z.coerce.number().int().positive().default(15 * 60),
+  TOTP_ENCRYPTION_KEY: z.string().trim().optional(),
+  GOOGLE_OAUTH_CLIENT_ID: z.string().trim().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
+  GOOGLE_OAUTH_REDIRECT_PATH: z.string().trim().default('/api/auth/oauth/google/callback'),
+  SMTP_HOST: z.string().trim().optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_SECURE: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
+  SMTP_USERNAME: z.string().trim().optional(),
+  SMTP_PASSWORD: z.string().trim().optional(),
+  SMTP_FROM_EMAIL: z.string().trim().email().optional(),
+  SMTP_EHLO_NAME: z.string().trim().default('localhost'),
+  TURNSTILE_SITE_KEY: z.string().trim().optional(),
+  TURNSTILE_SECRET_KEY: z.string().trim().optional(),
   ALLOWED_ORIGINS: z.string().optional(),
   PUBLIC_APP_ORIGIN: z.string().trim().url().optional(),
   DISABLE_HMR: z
@@ -127,10 +160,11 @@ const rawEnvSchema = z.object({
     }),
 });
 
-export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI' | 'PROOF_ALLOWED_MIME_TYPES'> {
+export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI' | 'PROOF_ALLOWED_MIME_TYPES' | 'TOTP_ENCRYPTION_KEY'> {
   MONGODB_URI: string;
   allowedOrigins: string[];
   proofAllowedMimeTypes: string[];
+  TOTP_ENCRYPTION_KEY: string;
 }
 
 let cachedEnv: AppEnv | null = null;
@@ -177,10 +211,6 @@ export function getEnv(): AppEnv {
     throw new Error(parsed.error.issues.map((issue) => issue.message).join('; '));
   }
 
-  if (parsed.data.NODE_ENV === 'production' && parsed.data.JWT_SECRET.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters long in production');
-  }
-
   const mongoUri = parsed.data.MONGODB_URI ?? (
     parsed.data.NODE_ENV === 'production'
       ? (() => {
@@ -193,11 +223,25 @@ export function getEnv(): AppEnv {
     throw new Error('MONGODB_URI must include an explicit database name (for example /4real)');
   }
 
+  const totpEncryptionKey = parsed.data.TOTP_ENCRYPTION_KEY ?? (
+    parsed.data.NODE_ENV === 'production'
+      ? (() => {
+          throw new Error('TOTP_ENCRYPTION_KEY must be configured in production');
+        })()
+      : Buffer.from('4real-development-auth-key-32b!').toString('base64')
+  );
+
+  const totpKeyBytes = Buffer.from(totpEncryptionKey, 'base64');
+  if (totpKeyBytes.length !== 32) {
+    throw new Error('TOTP_ENCRYPTION_KEY must be a base64-encoded 32-byte key');
+  }
+
   cachedEnv = {
     ...parsed.data,
     MONGODB_URI: mongoUri,
     allowedOrigins: resolveAllowedOrigins(parsed.data.ALLOWED_ORIGINS),
     proofAllowedMimeTypes: resolveProofAllowedMimeTypes(parsed.data.PROOF_ALLOWED_MIME_TYPES),
+    TOTP_ENCRYPTION_KEY: totpEncryptionKey,
   };
 
   return cachedEnv;

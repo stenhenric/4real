@@ -38,7 +38,7 @@ const GamePage = () => {
     enabled: roomAccessReady && Boolean(roomId && user?.id),
     onRoomError: (message) => {
       warning(message);
-      navigate('/');
+      navigate('/play');
     },
     onGameOver: async (nextGameOver) => {
       if (nextGameOver.winnerId === user?.id) {
@@ -75,7 +75,7 @@ const GamePage = () => {
         setRoomAccessReady(false);
         if (match.status !== 'waiting') {
           warning('This match is no longer open for new players.');
-          navigate('/');
+          navigate('/play');
         }
       })
       .catch((error) => {
@@ -84,7 +84,7 @@ const GamePage = () => {
         }
 
         warning(error instanceof Error ? error.message : 'Unable to load match.');
-        navigate('/');
+        navigate('/play');
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -148,7 +148,7 @@ const GamePage = () => {
       }
     } catch (error) {
       warning(error instanceof Error ? error.message : 'Unable to join this match.');
-      navigate('/');
+      navigate('/play');
     } finally {
       setJoining(false);
     }
@@ -164,7 +164,7 @@ const GamePage = () => {
       const settledMatch = await resignMatch(roomId);
       setMatchPreview(settledMatch);
       await refreshUser();
-      navigate('/');
+      navigate('/play');
     } catch (error) {
       warning(error instanceof Error ? error.message : 'Unable to resign the match.');
     } finally {
@@ -200,7 +200,7 @@ const GamePage = () => {
             <SketchyButton className="flex-1" disabled={joining} onClick={() => void handleJoinMatch()}>
               {joining ? 'Joining...' : 'Join Match'}
             </SketchyButton>
-            <SketchyButton className="flex-1" onClick={() => navigate('/')}>
+            <SketchyButton className="flex-1" onClick={() => navigate('/play')}>
               Cancel
             </SketchyButton>
           </div>
@@ -432,7 +432,7 @@ const GamePage = () => {
                   ? 'You are VICTORIOUS!'
                   : 'You were DEFEATED.'}
             </p>
-            <SketchyButton className="w-full" onClick={() => navigate('/')}>
+            <SketchyButton className="w-full" onClick={() => navigate('/play')}>
               Return to Lobby
             </SketchyButton>
           </SketchyContainer>

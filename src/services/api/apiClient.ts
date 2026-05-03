@@ -1,4 +1,5 @@
 import type { ApiErrorDTO } from '../../types/api';
+import { dispatchAuthRedirect, dispatchSessionExpired } from '../../features/auth/auth-events';
 
 interface ApiRequestOptions extends RequestInit {
   skipAuthRefresh?: boolean;
@@ -40,6 +41,19 @@ function isApiErrorPayload(value: unknown): value is ApiErrorDTO {
 }
 
 let activeSessionRefresh: Promise<void> | null = null;
+const PUBLIC_AUTH_ENDPOINTS = new Set([
+  '/auth/login/password',
+  '/auth/register',
+  '/auth/login/magic-link/request',
+  '/auth/password/forgot',
+  '/auth/password/reset',
+  '/auth/email/verify/resend',
+  '/auth/mfa/challenge',
+]);
+
+function shouldSkipSessionExpiredRedirect(endpoint: string) {
+  return PUBLIC_AUTH_ENDPOINTS.has(endpoint);
+}
 
 async function refreshAuthSession(): Promise<void> {
   if (!activeSessionRefresh) {
@@ -82,8 +96,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
     response.status === 401
     && !skipAuthRefresh
     && endpoint !== '/auth/refresh'
-    && endpoint !== '/auth/login'
-    && endpoint !== '/auth/register'
+    && !PUBLIC_AUTH_ENDPOINTS.has(endpoint)
   ) {
     try {
       await refreshAuthSession();
@@ -115,6 +128,47 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
 
   if (!response.ok) {
     if (isApiErrorPayload(data)) {
+      if (
+        response.status === 403
+        && data.code
+        && [
+          'MFA_REQUIRED',
+          'MFA_SETUP_REQUIRED',
+          'PROFILE_COMPLETION_REQUIRED',
+          'EMAIL_VERIFICATION_REQUIRED',
+        ].includes(data.code)
+      ) {
+        const details = (
+          typeof data.details === 'object' && data.details !== null
+            ? data.details as {
+                challengeId?: string;
+                challengeReason?: 'suspicious_login' | 'sensitive_action';
+                nextStep?: string;
+              }
+            : {}
+        );
+
+        dispatchAuthRedirect({
+          code: data.code as
+            | 'MFA_REQUIRED'
+            | 'MFA_SETUP_REQUIRED'
+            | 'PROFILE_COMPLETION_REQUIRED'
+            | 'EMAIL_VERIFICATION_REQUIRED',
+          message: data.detail ?? data.message,
+          nextStep: details.nextStep,
+          challengeId: details.challengeId,
+          challengeReason: details.challengeReason,
+          returnTo:
+            typeof window !== 'undefined'
+              ? `${window.location.pathname}${window.location.search}`
+              : undefined,
+        });
+      }
+
+      if (response.status === 401 && !shouldSkipSessionExpiredRedirect(endpoint)) {
+        dispatchSessionExpired();
+      }
+
       throw new ApiClientError({
         status: response.status,
         code: data.code,
@@ -124,10 +178,18 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
     }
 
     if (typeof data === 'string' && data.trim().length > 0) {
+      if (response.status === 401 && !shouldSkipSessionExpiredRedirect(endpoint)) {
+        dispatchSessionExpired();
+      }
+
       throw new ApiClientError({
         status: response.status,
         message: data,
       });
+    }
+
+    if (response.status === 401 && !shouldSkipSessionExpiredRedirect(endpoint)) {
+      dispatchSessionExpired();
     }
 
     throw new ApiClientError({

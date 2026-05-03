@@ -7,36 +7,83 @@ const positiveMoneySchema = z.coerce
   .number()
   .finite()
   .positive('Amount must be greater than 0');
-const passwordSchema = z
-  .string()
-  .min(10, 'Password must be at least 10 characters long')
-  .max(128)
-  .regex(/[a-z]/, 'Password must include a lowercase letter')
-  .regex(/[A-Z]/, 'Password must include an uppercase letter')
-  .regex(/\d/, 'Password must include a number');
+const passwordSchema = z.string().min(12, 'Password must be at least 12 characters long').max(128);
+const emailSchema = z.string().trim().email();
+const usernameSchema = z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9_-]+$/, 'Username must contain only letters, numbers, underscores, or hyphens');
+const turnstileTokenSchema = z.string().trim().min(1).optional();
 
 export const registerRequestSchema = z.object({
-  username: z.string().trim().min(3).max(32),
-  email: z.string().trim().email().optional(),
+  username: usernameSchema,
+  email: emailSchema,
+  password: passwordSchema,
+  turnstileToken: turnstileTokenSchema,
+});
+
+export const loginPasswordRequestSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1).max(128),
+  turnstileToken: turnstileTokenSchema,
+});
+
+export const magicLinkRequestSchema = z.object({
+  email: emailSchema,
+  redirectTo: z.string().trim().max(2048).optional(),
+  turnstileToken: turnstileTokenSchema,
+});
+
+export const forgotPasswordRequestSchema = z.object({
+  email: emailSchema,
+  turnstileToken: turnstileTokenSchema,
+});
+
+export const passwordResetRequestSchema = z.object({
+  token: z.string().trim().min(1),
   password: passwordSchema,
 });
 
-export const loginRequestSchema = z
+export const emailVerificationResendRequestSchema = z.object({
+  email: emailSchema,
+});
+
+export const mfaChallengeRequestSchema = z
   .object({
-    email: z.string().trim().email().optional(),
-    username: z.string().trim().min(1).optional(),
-    identifier: z.string().trim().min(1).optional(),
-    password: z.string().min(1),
+    challengeId: z.string().trim().min(1),
+    code: z.string().trim().optional(),
+    recoveryCode: z.string().trim().optional(),
   })
   .superRefine((value, ctx) => {
-    if (!value.email && !value.username && !value.identifier) {
+    if (!value.code && !value.recoveryCode) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Provide an email or username',
-        path: ['identifier'],
+        message: 'Provide a TOTP code or recovery code',
+        path: ['code'],
       });
     }
   });
+
+export const mfaTotpVerifyRequestSchema = z.object({
+  setupToken: z.string().trim().min(1),
+  code: z.string().trim().length(6),
+});
+
+export const mfaDisableRequestSchema = z
+  .object({
+    code: z.string().trim().optional(),
+    recoveryCode: z.string().trim().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.code && !value.recoveryCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide a TOTP code or recovery code',
+        path: ['code'],
+      });
+    }
+  });
+
+export const completeProfileRequestSchema = z.object({
+  username: usernameSchema,
+});
 
 export const createMatchRequestSchema = z.object({
   wager: z.coerce.number().finite().min(0).max(100_000).default(0),
@@ -112,7 +159,15 @@ export const prepareTonConnectDepositRequestSchema = z.object({
 });
 
 export type RegisterRequest = z.infer<typeof registerRequestSchema>;
-export type LoginRequest = z.infer<typeof loginRequestSchema>;
+export type LoginPasswordRequest = z.infer<typeof loginPasswordRequestSchema>;
+export type MagicLinkRequest = z.infer<typeof magicLinkRequestSchema>;
+export type ForgotPasswordRequest = z.infer<typeof forgotPasswordRequestSchema>;
+export type PasswordResetRequest = z.infer<typeof passwordResetRequestSchema>;
+export type EmailVerificationResendRequest = z.infer<typeof emailVerificationResendRequestSchema>;
+export type MfaChallengeRequest = z.infer<typeof mfaChallengeRequestSchema>;
+export type MfaTotpVerifyRequest = z.infer<typeof mfaTotpVerifyRequestSchema>;
+export type MfaDisableRequest = z.infer<typeof mfaDisableRequestSchema>;
+export type CompleteProfileRequest = z.infer<typeof completeProfileRequestSchema>;
 export type CreateMatchRequest = z.infer<typeof createMatchRequestSchema>;
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 export type UpdateOrderStatusRequest = z.infer<typeof updateOrderStatusRequestSchema>;

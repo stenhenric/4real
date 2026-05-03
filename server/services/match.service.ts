@@ -132,7 +132,7 @@ export class MatchService {
       return this.createMatch({
         roomId,
         player1Id: user._id,
-        p1Username: user.username,
+        p1Username: user.username ?? 'Player 1',
         wager,
         isPrivate,
         ...(inviteToken ? { inviteTokenHash: this.hashInviteToken(inviteToken) } : {}),
@@ -239,7 +239,7 @@ export class MatchService {
       }
 
       match.player2Id = user._id;
-      match.p2Username = user.username;
+      match.p2Username = user.username ?? 'Player 2';
       match.status = 'active';
       match.lastActivityAt = now();
       return match.save({ session: activeSession });

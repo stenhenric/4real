@@ -5,6 +5,7 @@ import type {
   MatchDTO,
   OrderDTO,
   OrderUserDTO,
+  SessionListItemDTO,
   TransactionDTO,
   UserDTO,
   UserProfileDTO,
@@ -17,6 +18,7 @@ import type { IOrder } from '../models/Order.ts';
 import type { DepositDocument } from '../repositories/deposit.repository.ts';
 import type { WithdrawalDocument } from '../repositories/withdrawal.repository.ts';
 import { calculateMatchPayout } from '../services/match-payout.service.ts';
+import type { IAuthSession } from '../models/AuthSession.ts';
 
 function serializeStats(stats?: IUser['stats']): UserStatsDTO {
   return {
@@ -46,24 +48,56 @@ function serializeOrderUser(user: unknown): string | OrderUserDTO {
   return serializeId(user);
 }
 
-export function serializeAuthUser(user: IUser, balance: number): AuthResponseDTO {
-  const authUser: UserDTO = {
+export function serializeAuthUser(user: IUser, balance: number): UserDTO {
+  return {
     id: user._id.toString(),
-    username: user.username,
+    username: user.username ?? '',
     email: user.email,
     balance,
     elo: user.elo,
     isAdmin: user.isAdmin,
     stats: serializeStats(user.stats),
+    ...(user.emailVerifiedAt ? { emailVerifiedAt: user.emailVerifiedAt.toISOString() } : {}),
+    hasPassword: typeof user.passwordHash === 'string' && user.passwordHash.length > 0,
+    mfaEnabled: user.mfa?.enabledAt instanceof Date,
   };
+}
 
-  return { user: authUser };
+export function serializeSessionListItem(session: IAuthSession, current = false): SessionListItemDTO {
+  return {
+    id: session.sessionId,
+    deviceId: session.deviceId,
+    current,
+    userAgent: session.lastUserAgent ?? null,
+    ipAddress: session.lastIp ?? null,
+    createdAt: session.createdAt.toISOString(),
+    lastSeenAt: session.lastSeenAt.toISOString(),
+    idleExpiresAt: session.idleExpiresAt.toISOString(),
+    absoluteExpiresAt: session.absoluteExpiresAt.toISOString(),
+  };
+}
+
+export function serializeAuthState(params: {
+  status: AuthResponseDTO['status'];
+  user: IUser;
+  balance: number;
+  session?: IAuthSession;
+  message?: string;
+  nextStep?: AuthResponseDTO['nextStep'];
+}): AuthResponseDTO {
+  return {
+    status: params.status,
+    ...(params.message ? { message: params.message } : {}),
+    user: serializeAuthUser(params.user, params.balance),
+    ...(params.session ? { session: serializeSessionListItem(params.session, true) } : {}),
+    ...(params.nextStep ? { nextStep: params.nextStep } : {}),
+  };
 }
 
 export function serializeUserProfile(user: IUser): UserProfileDTO {
   return {
     id: user._id.toString(),
-    username: user.username,
+    username: user.username ?? 'Pending profile',
     elo: user.elo,
     stats: serializeStats(user.stats),
   };
@@ -72,7 +106,7 @@ export function serializeUserProfile(user: IUser): UserProfileDTO {
 export function serializeLeaderboardUser(user: IUser): LeaderboardUserDTO {
   return {
     id: user._id.toString(),
-    username: user.username,
+    username: user.username ?? 'Pending profile',
     elo: user.elo,
   };
 }

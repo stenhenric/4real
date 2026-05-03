@@ -1,11 +1,13 @@
 import { startTransition, useCallback, useEffect, useState } from 'react';
 import { Check, Clock3, RefreshCw, X } from 'lucide-react';
+import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
+import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import {
   getMerchantDeposits,
   reconcileMerchantDeposit,
@@ -59,6 +61,11 @@ export default function DepositsPage() {
       });
     } catch (error) {
       if (isAbortError(error)) {
+        return;
+      }
+
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        setLoading(false);
         return;
       }
 
@@ -117,6 +124,10 @@ export default function DepositsPage() {
         await loadDeposits();
       }
     } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       showError(error instanceof Error ? error.message : 'Failed to resolve deposit review.');
     } finally {
       setRowAction(null);
@@ -145,6 +156,10 @@ export default function DepositsPage() {
         refreshDashboard(),
       ]);
     } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       showError(error instanceof Error ? error.message : 'Failed to replay deposit window.');
     } finally {
       setReplayBusy(null);

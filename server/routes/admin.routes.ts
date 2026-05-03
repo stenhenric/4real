@@ -1,7 +1,7 @@
 import { Router } from 'express';
 
 import { MerchantAdminController } from '../controllers/merchant-admin.controller.ts';
-import { authenticateToken, requireAdmin } from '../middleware/auth.middleware.ts';
+import { authenticateToken, requireAdmin, requireMfaStepUp, requireVerifiedAccount } from '../middleware/auth.middleware.ts';
 import { validateBody } from '../middleware/validate.middleware.ts';
 import { asyncHandler } from '../utils/async-handler.ts';
 import {
@@ -12,7 +12,7 @@ import {
 
 const router = Router();
 
-router.use(authenticateToken, requireAdmin);
+router.use(authenticateToken, requireVerifiedAccount, requireAdmin, requireMfaStepUp);
 
 router.get('/merchant/config', asyncHandler(MerchantAdminController.getConfig));
 router.patch('/merchant/config', validateBody(updateMerchantConfigRequestSchema), asyncHandler(MerchantAdminController.updateConfig));

@@ -71,7 +71,7 @@ const ProfilePage = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      <Link className="inline-flex items-center gap-2 font-bold hover:underline mb-4" to="/">
+      <Link className="inline-flex items-center gap-2 font-bold hover:underline mb-4" to="/play">
         <ArrowLeft size={18} /> Back to Lobby
       </Link>
 

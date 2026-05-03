@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTonAddress, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowUpRight } from 'lucide-react';
+import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { createWithdrawal } from '../../services/transactions.service';
 
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
@@ -47,6 +49,10 @@ const WithdrawPanel = () => {
       setToAddress(connectedWalletAddress || '');
       await refreshUser();
     } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       addToast(error instanceof Error ? error.message : 'Withdrawal failed', 'error');
     } finally {
       setLoading(false);

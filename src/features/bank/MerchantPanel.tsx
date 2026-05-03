@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { ArrowDown, History, StickyNote, Upload } from 'lucide-react';
+import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import {
   createOrder,
   getMerchantConfig,
@@ -183,7 +185,11 @@ const MerchantPanel = () => {
         currentOrders.map((order) => (order._id === orderId ? updatedOrder : order)),
       );
       await refreshUser();
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       showError('Failed to update status.');
     }
   };

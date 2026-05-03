@@ -102,7 +102,7 @@ export class OrderController {
           exchangeRate,
           fiatTotal,
           transactionCode: parsedBody.transactionCode ?? '',
-          username: user.username,
+          username: user.username ?? user.email.split('@')[0] ?? 'player',
           userId: user._id.toString(),
           mimeType: proofImage.contentType,
           filename: proofImage.filename,

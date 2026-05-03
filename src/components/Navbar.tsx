@@ -13,7 +13,7 @@ const Navbar = () => {
     try {
       await logout();
       info('Logged out successfully.');
-      navigate('/auth');
+      navigate('/auth/login');
     } catch (logoutError) {
       error(logoutError instanceof Error ? logoutError.message : 'Unable to log out right now.');
     }
@@ -25,15 +25,15 @@ const Navbar = () => {
       <nav className="border-b-2 border-[#1a1a1a] bg-[#F2EFE9] sticky top-0 z-50">
         <div className="container mx-auto px-3 md:px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3 md:gap-6">
-            <Link to="/" className="relative group">
-              <span className="text-2xl md:text-4xl font-bold italic transform -rotate-2 hover:rotate-0 transition-all inline-block relative z-10" style={{ textShadow: '1px 1px 0px rgba(0,0,0,0.1)' }}>
+            <Link to="/play" className="relative group">
+              <span className="font-display text-2xl md:text-4xl font-bold italic transform -rotate-2 hover:rotate-0 transition-all inline-block relative z-10" style={{ textShadow: '1px 1px 0px rgba(0,0,0,0.1)' }}>
                 4real
               </span>
               <div className="highlighter w-full bottom-1 left-0 group-hover:scale-x-110 transition-transform"></div>
             </Link>
             <div className="hidden md:flex items-center gap-4">
               <NavLink
-                to="/"
+                to="/play"
                 className={({ isActive }) => `flex items-center gap-1 font-bold text-lg ${isActive ? 'underline' : 'hover:underline'}`}
               >
                 <Home size={20} /> Lobby
@@ -70,6 +70,10 @@ const Navbar = () => {
               <TonConnectButton />
             </div>
 
+            <Link to="/auth/security" className="p-2 hover:bg-black/5 rounded-full" aria-label="Open security settings">
+              <ShieldCheck size={24} />
+            </Link>
+
             {/* Profile & Logout — desktop only (on mobile, use bottom nav) */}
             <Link to={`/profile/${user?.id}`} className="hidden md:block p-2 hover:bg-black/5 rounded-full" aria-label="Open profile">
               <User size={24} />
@@ -89,7 +93,7 @@ const Navbar = () => {
       >
         <div className="flex items-center justify-around py-2">
           <NavLink
-            to="/"
+            to="/play"
             end
             className={({ isActive }) =>
               `flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`

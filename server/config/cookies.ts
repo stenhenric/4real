@@ -2,10 +2,9 @@ import type { CookieOptions } from 'express';
 
 import { getEnv } from './env.ts';
 
-export const AUTH_COOKIE_NAME = 'token';
-export const REFRESH_COOKIE_NAME = 'refresh_token';
-const AUTH_COOKIE_MAX_AGE_MS = 15 * 60 * 1000;
-const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+export const AUTH_COOKIE_NAME = '__Host-4real-at';
+export const REFRESH_COOKIE_NAME = '__Host-4real-rt';
+export const DEVICE_COOKIE_NAME = '__Host-4real-did';
 
 function getBaseCookieOptions(): CookieOptions {
   const { NODE_ENV } = getEnv();
@@ -19,16 +18,27 @@ function getBaseCookieOptions(): CookieOptions {
 }
 
 export function getAuthCookieOptions(): CookieOptions {
+  const env = getEnv();
   return {
     ...getBaseCookieOptions(),
-    maxAge: AUTH_COOKIE_MAX_AGE_MS,
+    maxAge: env.AUTH_ACCESS_TTL_SECONDS * 1000,
   };
 }
 
 export function getRefreshCookieOptions(): CookieOptions {
+  const env = getEnv();
   return {
     ...getBaseCookieOptions(),
-    maxAge: REFRESH_COOKIE_MAX_AGE_MS,
+    maxAge: env.AUTH_REFRESH_IDLE_TTL_SECONDS * 1000,
+  };
+}
+
+export function getDeviceCookieOptions(): CookieOptions {
+  const env = getEnv();
+  return {
+    ...getBaseCookieOptions(),
+    httpOnly: true,
+    maxAge: env.AUTH_DEVICE_COOKIE_TTL_SECONDS * 1000,
   };
 }
 
@@ -37,5 +47,9 @@ export function getAuthCookieClearOptions(): CookieOptions {
 }
 
 export function getRefreshCookieClearOptions(): CookieOptions {
+  return getBaseCookieOptions();
+}
+
+export function getDeviceCookieClearOptions(): CookieOptions {
   return getBaseCookieOptions();
 }

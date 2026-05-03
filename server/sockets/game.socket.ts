@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import type { Server } from 'socket.io';
 import { getEnv } from '../config/env.ts';
 
-import { extractSocketToken, verifyAuthToken } from '../services/auth-token.service.ts';
+import { AUTH_COOKIE_NAME } from '../config/cookies.ts';
+import { AuthSessionService } from '../services/auth-session.service.ts';
 import { RealtimeMatchService } from '../services/realtime-match.service.ts';
 import { isSocketRateLimited } from '../services/socket-rate-limit.service.ts';
 import { runWithTraceContext } from '../services/trace-context.service.ts';
@@ -34,19 +35,36 @@ function getSocketErrorPayload(error: unknown): SocketErrorPayload {
   );
 }
 
+function extractAccessToken(cookieHeader?: string): string | undefined {
+  const tokenPair = cookieHeader
+    ?.split(';')
+    .map((pair) => pair.trim())
+    .find((pair) => pair.startsWith(`${AUTH_COOKIE_NAME}=`));
+
+  return tokenPair ? decodeURIComponent(tokenPair.split('=')[1] ?? '') : undefined;
+}
+
 export function registerGameSocketHandlers(io: Server, realtimeMatchService: RealtimeMatchService): void {
   const env = getEnv();
   io.use((socket, next) => {
-    const token = extractSocketToken(socket.handshake);
+    const authToken = typeof socket.handshake.auth?.token === 'string'
+      ? socket.handshake.auth.token
+      : undefined;
+    const token = authToken ?? extractAccessToken(socket.handshake.headers.cookie);
     if (!token) {
       next(new Error('Authentication required'));
       return;
     }
 
-    void verifyAuthToken(token)
-      .then((user) => {
-        socket.data.userId = user.id;
-        socket.data.isAdmin = user.isAdmin;
+    void AuthSessionService.validateAccessToken(token)
+      .then(({ principal }) => {
+        if (!principal.emailVerified || !principal.usernameComplete) {
+          next(new Error('Account setup incomplete'));
+          return;
+        }
+
+        socket.data.userId = principal.id;
+        socket.data.isAdmin = principal.isAdmin;
         next();
       })
       .catch(() => {

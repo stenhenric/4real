@@ -1,7 +1,11 @@
-export interface JwtUser {
+export interface AuthenticatedPrincipalDTO {
   id: string;
   isAdmin: boolean;
-  tokenVersion: number;
+  sessionId: string;
+  deviceId: string;
+  emailVerified: boolean;
+  usernameComplete: boolean;
+  mfaEnabled: boolean;
 }
 
 export interface ApiErrorDTO {
@@ -30,6 +34,9 @@ export interface UserDTO {
   elo: number;
   isAdmin: boolean;
   stats: UserStatsDTO;
+  emailVerifiedAt?: string;
+  hasPassword?: boolean;
+  mfaEnabled?: boolean;
 }
 
 export interface UserProfileDTO {
@@ -45,8 +52,49 @@ export interface LeaderboardUserDTO {
   elo: number;
 }
 
+export interface SessionListItemDTO {
+  id: string;
+  deviceId: string;
+  current: boolean;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  idleExpiresAt: string;
+  absoluteExpiresAt: string;
+}
+
+export type AuthStatus =
+  | 'authenticated'
+  | 'profile_incomplete'
+  | 'pending_email_verification'
+  | 'requires_mfa'
+  | 'magic_link_sent'
+  | 'password_reset_requested'
+  | 'password_reset_complete'
+  | 'email_verification_sent'
+  | 'mfa_enabled'
+  | 'mfa_disabled'
+  | 'sessions_revoked'
+  | 'logged_out'
+  | 'success';
+
 export interface AuthResponseDTO {
-  user: UserDTO;
+  status: AuthStatus;
+  message?: string;
+  user?: UserDTO;
+  session?: SessionListItemDTO;
+  sessions?: SessionListItemDTO[];
+  nextStep?: 'verify_email' | 'mfa_challenge' | 'complete_profile';
+  challengeId?: string;
+  challengeReason?: 'suspicious_login' | 'sensitive_action';
+  redirectTo?: string;
+  email?: string;
+  previewUrl?: string;
+  recoveryCodes?: string[];
+  setupToken?: string;
+  totpSecret?: string;
+  otpauthUrl?: string;
 }
 
 export interface MatchMoveDTO {
