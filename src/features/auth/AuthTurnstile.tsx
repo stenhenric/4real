@@ -22,6 +22,7 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIdRef = useRef<string | null>(null);
     const [isScriptLoaded, setIsScriptLoaded] = useState(!!window.turnstile);
+    const [scriptError, setScriptError] = useState(false);
 
     useImperativeHandle(ref, () => ({
       reset: () => {
@@ -32,29 +33,50 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     }));
 
     useEffect(() => {
-      if (!siteKey) return;
+      if (!siteKey || window.turnstile) {
+        if (window.turnstile) {
+            setIsScriptLoaded(true);
+        }
+        return;
+      }
 
       const scriptId = 'cloudflare-turnstile-script';
+      let script = document.getElementById(scriptId) as HTMLScriptElement | null;
 
-      if (!document.getElementById(scriptId)) {
-        const script = document.createElement('script');
+      let createdScript = false;
+      if (!script) {
+        script = document.createElement('script');
         script.id = scriptId;
         script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
         script.async = true;
         script.defer = true;
-
-        script.onload = () => {
-          setIsScriptLoaded(true);
-        };
-
         document.head.appendChild(script);
-      } else if (window.turnstile) {
-        setIsScriptLoaded(true);
+        createdScript = true;
       }
+
+      const handleLoad = () => {
+        setIsScriptLoaded(true);
+        setScriptError(false);
+      };
+
+      const handleError = () => {
+        setIsScriptLoaded(false);
+        setScriptError(true);
+      };
+
+      script.addEventListener('load', handleLoad);
+      script.addEventListener('error', handleError);
+
+      return () => {
+        if (script) {
+          script.removeEventListener('load', handleLoad);
+          script.removeEventListener('error', handleError);
+        }
+      };
     }, [siteKey]);
 
     useEffect(() => {
-      if (!siteKey || !isScriptLoaded || !window.turnstile || !containerRef.current) return;
+      if (!siteKey || !isScriptLoaded || !window.turnstile || !containerRef.current || scriptError) return;
 
       try {
         if (!widgetIdRef.current) {
@@ -81,13 +103,21 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
           }
         }
       };
-    }, [isScriptLoaded, siteKey, onSuccess, onError, onExpire]);
+    }, [isScriptLoaded, scriptError, siteKey, onSuccess, onError, onExpire]);
 
     if (!siteKey) {
       console.error('[AuthTurnstile] VITE_TURNSTILE_SITE_KEY is missing. TURNSTILE_REQUIRED bot verification will fail.');
       return (
         <div className="my-4 rounded-md border border-red-500 bg-red-50 p-4 text-sm text-red-700 text-center">
           <strong>Configuration Error:</strong> Bot verification is required but not configured.
+        </div>
+      );
+    }
+
+    if (scriptError) {
+      return (
+        <div className="my-4 rounded-md border border-red-500 bg-red-50 p-4 text-sm text-red-700 text-center">
+          <strong>Network Error:</strong> Failed to load bot verification script. Please refresh the page.
         </div>
       );
     }
