@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { AuthTurnstile } from '../../features/auth/AuthTurnstile';
+import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
@@ -54,12 +54,22 @@ export default function LoginPage() {
   const [magicLoading, setMagicLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
+  const turnstileRef = useRef<AuthTurnstileRef>(null);
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
   const verificationState = (location.state ?? null) as { previewUrl?: string } | null;
 
   const handlePasswordLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPasswordLoading(true);
+
+    if (siteKey && !turnstileToken) {
+      showError('Please complete the bot check.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
+      setPasswordLoading(false);
+      return;
+    }
 
     try {
       const response = await loginPassword({ email, password, ...(turnstileToken && { turnstileToken }) });
@@ -89,6 +99,8 @@ export default function LoginPage() {
       });
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Unable to sign in right now.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
     } finally {
       setPasswordLoading(false);
     }
@@ -102,6 +114,14 @@ export default function LoginPage() {
 
     setMagicLoading(true);
 
+    if (siteKey && !turnstileToken) {
+      showError('Please complete the bot check.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
+      setMagicLoading(false);
+      return;
+    }
+
     try {
       const response = await requestMagicLink({ email, redirectTo, ...(turnstileToken && { turnstileToken }) });
       info(response.message ?? 'If the account exists, a sign-in link is on the way.');
@@ -111,6 +131,8 @@ export default function LoginPage() {
       });
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Unable to send a magic link right now.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
     } finally {
       setMagicLoading(false);
     }
@@ -176,9 +198,9 @@ export default function LoginPage() {
             value={password}
           />
 
-          <AuthTurnstile onSuccess={setTurnstileToken} />
+          <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
 
-          <SketchyButton className="w-full py-3 text-base" disabled={passwordLoading} type="submit">
+          <SketchyButton className="w-full py-3 text-base" disabled={passwordLoading || (!!siteKey && !turnstileToken)} type="submit">
             {passwordLoading ? 'Signing in...' : 'Sign in'}
           </SketchyButton>
         </form>
@@ -189,7 +211,7 @@ export default function LoginPage() {
           <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
           <button
             className="w-full rounded-full border border-black/12 bg-white px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-black/5"
-            disabled={magicLoading}
+            disabled={magicLoading || (!!siteKey && !turnstileToken)}
             onClick={() => void handleMagicLink()}
             type="button"
           >
