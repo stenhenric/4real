@@ -23,7 +23,12 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     }));
 
     if (!siteKey) {
-      return null;
+      console.error('[AuthTurnstile] VITE_TURNSTILE_SITE_KEY is missing. TURNSTILE_REQUIRED bot verification will fail.');
+      return (
+        <div className="my-4 rounded-md border border-red-500 bg-red-50 p-4 text-sm text-red-700 text-center">
+          <strong>Configuration Error:</strong> Bot verification is required but not configured.
+        </div>
+      );
     }
 
     return (
