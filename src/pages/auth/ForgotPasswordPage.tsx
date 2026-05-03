@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { AuthTurnstile } from '../../features/auth/AuthTurnstile';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
@@ -10,13 +11,14 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
 
     try {
-      const response = await requestPasswordReset(email);
+      const response = await requestPasswordReset(email, turnstileToken || undefined);
       setPreviewUrl(response.previewUrl ?? null);
       info(response.message ?? 'If the account exists, a reset link is on the way.');
     } catch (error) {
@@ -53,6 +55,8 @@ export default function ForgotPasswordPage() {
             type="email"
             value={email}
           />
+
+          <AuthTurnstile onSuccess={setTurnstileToken} />
 
           <SketchyButton className="w-full py-3 text-base" disabled={loading} type="submit">
             {loading ? 'Sending reset link...' : 'Send reset link'}

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { AuthTurnstile } from '../../features/auth/AuthTurnstile';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
@@ -13,13 +14,14 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
 
     try {
-      const response = await registerAccount({ username, email, password });
+      const response = await registerAccount({ username, email, password, ...(turnstileToken && { turnstileToken }) });
       navigate(sanitizeInternalPath(response.redirectTo) ?? buildVerifyEmailPath({ email: response.email ?? email }), {
         replace: true,
         state: { previewUrl: response.previewUrl },
@@ -88,6 +90,8 @@ export default function RegisterPage() {
             type="password"
             value={password}
           />
+
+          <AuthTurnstile onSuccess={setTurnstileToken} />
 
           <SketchyButton className="w-full py-3 text-base" disabled={loading} type="submit">
             {loading ? 'Creating your account...' : 'Create account'}

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { AuthTurnstile } from '../../features/auth/AuthTurnstile';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
@@ -52,6 +53,7 @@ export default function LoginPage() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [magicLoading, setMagicLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
 
   const verificationState = (location.state ?? null) as { previewUrl?: string } | null;
 
@@ -60,7 +62,7 @@ export default function LoginPage() {
     setPasswordLoading(true);
 
     try {
-      const response = await loginPassword({ email, password });
+      const response = await loginPassword({ email, password, ...(turnstileToken && { turnstileToken }) });
 
       if (response.user) {
         setAuthStateFromResponse(response);
@@ -101,7 +103,7 @@ export default function LoginPage() {
     setMagicLoading(true);
 
     try {
-      const response = await requestMagicLink({ email, redirectTo });
+      const response = await requestMagicLink({ email, redirectTo, ...(turnstileToken && { turnstileToken }) });
       info(response.message ?? 'If the account exists, a sign-in link is on the way.');
       navigate(sanitizeInternalPath(response.redirectTo) ?? buildMagicLinkPath({ email }), {
         replace: false,
@@ -173,6 +175,8 @@ export default function LoginPage() {
             type="password"
             value={password}
           />
+
+          <AuthTurnstile onSuccess={setTurnstileToken} />
 
           <SketchyButton className="w-full py-3 text-base" disabled={passwordLoading} type="submit">
             {passwordLoading ? 'Signing in...' : 'Sign in'}
