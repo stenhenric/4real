@@ -63,6 +63,14 @@ export default function LoginPage() {
     event.preventDefault();
     setPasswordLoading(true);
 
+    if (siteKey && !turnstileToken) {
+      showError('Please complete the bot check.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
+      setPasswordLoading(false);
+      return;
+    }
+
     try {
       const response = await loginPassword({ email, password, ...(turnstileToken && { turnstileToken }) });
 
@@ -105,6 +113,14 @@ export default function LoginPage() {
     }
 
     setMagicLoading(true);
+
+    if (siteKey && !turnstileToken) {
+      showError('Please complete the bot check.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
+      setMagicLoading(false);
+      return;
+    }
 
     try {
       const response = await requestMagicLink({ email, redirectTo, ...(turnstileToken && { turnstileToken }) });

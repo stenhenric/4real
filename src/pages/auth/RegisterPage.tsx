@@ -22,6 +22,14 @@ export default function RegisterPage() {
     event.preventDefault();
     setLoading(true);
 
+    if (siteKey && !turnstileToken) {
+      showError('Please complete the verification.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await registerAccount({ username, email, password, ...(turnstileToken && { turnstileToken }) });
       navigate(sanitizeInternalPath(response.redirectTo) ?? buildVerifyEmailPath({ email: response.email ?? email }), {

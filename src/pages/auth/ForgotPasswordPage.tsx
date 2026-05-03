@@ -19,10 +19,20 @@ export default function ForgotPasswordPage() {
     event.preventDefault();
     setLoading(true);
 
+    if (siteKey && !turnstileToken) {
+      showError('Please complete the bot check.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await requestPasswordReset(email, turnstileToken || undefined);
       setPreviewUrl(response.previewUrl ?? null);
       info(response.message ?? 'If the account exists, a reset link is on the way.');
+      turnstileRef.current?.reset();
+      setTurnstileToken(undefined);
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Unable to start password reset.');
       turnstileRef.current?.reset();
