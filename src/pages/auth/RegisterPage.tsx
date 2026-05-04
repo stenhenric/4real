@@ -28,7 +28,7 @@ export default function RegisterPage() {
   
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || import.meta.env.TURNSTILE_SITE_KEY;
 
   // Validation States
   const passwordsMatch = password && confirmPassword ? password === confirmPassword : true;

@@ -13,7 +13,7 @@ export default function ForgotPasswordPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || import.meta.env.TURNSTILE_SITE_KEY;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

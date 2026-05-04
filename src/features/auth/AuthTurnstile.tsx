@@ -64,7 +64,7 @@ function ensureScript(): Promise<void> {
 
 export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
   ({ onSuccess, onError, onExpire }, ref) => {
-    const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
+    const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY || import.meta.env.TURNSTILE_SITE_KEY) as string | undefined;
 
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIdRef = useRef<string | null>(null);
@@ -95,7 +95,12 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
         'refresh-expired': 'auto',
         callback: (token: string) => onSuccessRef.current(token),
         'error-callback': () => onErrorRef.current?.(),
-        'expired-callback': () => onExpireRef.current?.(),
+        'expired-callback': () => {
+          onExpireRef.current?.();
+          // If refresh-expired is set to 'auto', turnstile will automatically refresh,
+          // but we still want to inform the parent that the old token expired.
+          // The parent will set it to undefined, and then 'callback' will be fired when the new token is generated.
+        },
       });
     }, [siteKey]);
 
@@ -129,7 +134,7 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     if (!siteKey) {
       return (
         <div className="my-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-700">
-          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>VITE_TURNSTILE_SITE_KEY</code>).
+          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>TURNSTILE_SITE_KEY</code>).
         </div>
       );
     }
