@@ -134,7 +134,7 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     if (!siteKey) {
       return (
         <div className="my-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-700">
-          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>TURNSTILE_SITE_KEY</code> or <code>VITE_TURNSTILE_SITE_KEY</code>).
+          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>VITE_TURNSTILE_SITE_KEY</code>).
         </div>
       );
     }
