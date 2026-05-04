@@ -28,6 +28,8 @@ function getErrorMessage(value: string | null) {
   return null;
 }
 
+type LoginStep = 'method_selection' | 'password_entry' | 'magic_link_verification';
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -37,6 +39,7 @@ export default function LoginPage() {
   const { setAuthStateFromResponse } = useAuth();
   const { success, error: showError, info } = useToast();
   
+  const [step, setStep] = useState<LoginStep>('method_selection');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
@@ -51,6 +54,8 @@ export default function LoginPage() {
 
   const handlePasswordLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (step !== 'password_entry') return;
+    
     setPasswordLoading(true);
 
     if (siteKey && !turnstileToken) {
@@ -88,21 +93,19 @@ export default function LoginPage() {
         state: { previewUrl: response.previewUrl ?? verificationState?.previewUrl },
       });
     } catch (error) {
-      // Security: Generic auth errors to prevent account enumeration
       showError('Invalid email or password. Please try again.');
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
-      setPassword(''); // clear password on failure
+      setPassword(''); 
     } finally {
       setPasswordLoading(false);
     }
   };
 
-  const handleMagicLink = async () => {
-    if (email.trim().length === 0) {
-      showError('Enter your email before requesting a magic link.');
-      return;
-    }
+  const handleMagicLinkSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (step !== 'magic_link_verification') return;
+    
     setMagicLoading(true);
 
     if (siteKey && !turnstileToken) {
@@ -141,6 +144,20 @@ export default function LoginPage() {
     }
   };
 
+  const requireEmail = () => {
+    if (email.trim().length === 0) {
+      showError('Please enter your email first.');
+      return false;
+    }
+    return true;
+  };
+
+  const resetStep = () => {
+    setStep('method_selection');
+    setTurnstileToken(undefined);
+    setPassword('');
+  };
+
   return (
     <AuthShell
       eyebrow="Account Access"
@@ -159,64 +176,128 @@ export default function LoginPage() {
       <div className="space-y-6">
         {inlineError ? <AuthNotice tone="warning">{inlineError}</AuthNotice> : null}
 
-        <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
-        
-        <AuthDivider label="Or continue with email" />
+        {step === 'method_selection' && (
+          <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+            <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
+            
+            <AuthDivider label="Or continue with email" />
 
-        <form className="space-y-4" onSubmit={handlePasswordLogin}>
-          <AuthInput
-            autoComplete="email"
-            label="Email"
-            name="email"
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="name@example.com"
-            required
-            type="email"
-            value={email}
-          />
-          
-          <div className="pt-2 relative">
-            <PasswordInput
-              autoComplete="current-password"
-              label="Password"
-              name="password"
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter your password"
-              required
-              value={password}
-            />
-            <div className="absolute top-1 right-1">
-              <Link
-                className="text-[10px] font-bold uppercase tracking-widest text-ink-blue/70 hover:text-ink-blue transition-colors hover:underline"
-                to="/auth/forgot-password"
-              >
-                Forgot password?
-              </Link>
+            <div className="space-y-4">
+              <AuthInput
+                autoComplete="email"
+                label="Email"
+                name="email"
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@example.com"
+                required
+                type="email"
+                value={email}
+              />
+
+              <div className="pt-4 flex flex-col gap-3">
+                <SketchyButton 
+                  className="w-full py-3" 
+                  onClick={() => requireEmail() && setStep('password_entry')}
+                  type="button"
+                  activeColor="#fff9c4"
+                >
+                  Continue with Password
+                </SketchyButton>
+
+                <button
+                  className="w-full rounded-[20px] border-2 border-black/10 bg-white px-4 py-3 text-sm font-bold text-black/60 transition-colors hover:bg-black/5 hover:text-black focus:outline-none focus:border-ink-blue"
+                  onClick={() => requireEmail() && setStep('magic_link_verification')}
+                  type="button"
+                >
+                  Email me a magic link instead
+                </button>
+              </div>
             </div>
           </div>
+        )}
 
-          <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
-
-          <div className="pt-4 flex flex-col gap-3">
-            <SketchyButton 
-              className="w-full py-4 text-xl" 
-              disabled={passwordLoading || magicLoading || (!!siteKey && !turnstileToken)} 
-              type="submit"
-              activeColor="#fff9c4"
+        {step === 'password_entry' && (
+          <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handlePasswordLogin}>
+            <button 
+              type="button" 
+              onClick={resetStep}
+              className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
             >
-              {passwordLoading ? 'Signing in...' : 'Sign in'}
-            </SketchyButton>
-
-            <button
-              className="w-full rounded-[20px] border-2 border-black/10 bg-white px-4 py-3 text-sm font-bold text-black/60 transition-colors hover:bg-black/5 hover:text-black focus:outline-none focus:border-ink-blue"
-              disabled={magicLoading || passwordLoading || (!!siteKey && !turnstileToken)}
-              onClick={() => void handleMagicLink()}
-              type="button"
-            >
-              {magicLoading ? 'Sending your magic link...' : 'Email me a magic link instead'}
+              ← Back to options
             </button>
-          </div>
-        </form>
+            
+            <AuthInput
+              autoComplete="email"
+              label="Email"
+              name="email"
+              disabled
+              type="email"
+              value={email}
+            />
+            
+            <div className="pt-2 relative">
+              <PasswordInput
+                autoComplete="current-password"
+                label="Password"
+                name="password"
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Enter your password"
+                required
+                value={password}
+              />
+              <div className="absolute top-1 right-1">
+                <Link
+                  className="text-[10px] font-bold uppercase tracking-widest text-ink-blue/70 hover:text-ink-blue transition-colors hover:underline"
+                  to="/auth/forgot-password"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+            </div>
+
+            <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
+
+            <div className="pt-4 flex flex-col gap-3">
+              <SketchyButton 
+                className="w-full py-4 text-xl" 
+                disabled={passwordLoading || (!!siteKey && !turnstileToken)} 
+                type="submit"
+                activeColor="#fff9c4"
+              >
+                {passwordLoading ? 'Signing in...' : 'Sign in'}
+              </SketchyButton>
+            </div>
+          </form>
+        )}
+
+        {step === 'magic_link_verification' && (
+          <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handleMagicLinkSubmit}>
+            <button 
+              type="button" 
+              onClick={resetStep}
+              className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
+            >
+              ← Back to options
+            </button>
+
+            <AuthNotice tone="info">
+              Verify you are human to send a magic link to {email}.
+            </AuthNotice>
+
+            <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
+
+            <div className="pt-4 flex flex-col gap-3">
+              <SketchyButton 
+                className="w-full py-4 text-xl" 
+                disabled={magicLoading || (!!siteKey && !turnstileToken)} 
+                type="submit"
+                activeColor="#fff9c4"
+              >
+                {magicLoading ? 'Sending link...' : 'Send Magic Link'}
+              </SketchyButton>
+            </div>
+          </form>
+        )}
       </div>
     </AuthShell>
   );

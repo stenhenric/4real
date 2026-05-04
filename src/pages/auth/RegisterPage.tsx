@@ -10,10 +10,13 @@ import { PasswordInput } from '../../features/auth/components/PasswordInput';
 import { buildVerifyEmailPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { registerAccount, requestGoogleOAuthRedirect } from '../../services/auth.service';
 
+type RegisterStep = 'account_details' | 'verification';
+
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { error: showError } = useToast();
   
+  const [step, setStep] = useState<RegisterStep>('account_details');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,19 +45,30 @@ export default function RegisterPage() {
     }
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    
+  const requireDetails = () => {
+    if (username.trim().length < 3) {
+      showError('Please enter a valid username.');
+      return false;
+    }
+    if (email.trim().length === 0) {
+      showError('Please enter a valid email.');
+      return false;
+    }
     if (!isPasswordValid) {
       showError('Please ensure your password meets all requirements.');
-      return;
+      return false;
     }
-    
     if (password !== confirmPassword) {
       showError('Passwords do not match.');
-      return;
+      return false;
     }
+    return true;
+  };
 
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (step !== 'verification') return;
+    
     if (siteKey && !turnstileToken) {
       showError('Please complete the verification.');
       turnstileRef.current?.reset();
@@ -79,6 +93,11 @@ export default function RegisterPage() {
     }
   };
 
+  const resetStep = () => {
+    setStep('account_details');
+    setTurnstileToken(undefined);
+  };
+
   return (
     <AuthShell
       eyebrow="Create Account"
@@ -95,73 +114,102 @@ export default function RegisterPage() {
       )}
     >
       <div className="space-y-6">
-        <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
-        
-        <AuthDivider label="Or create account with email" />
+        {step === 'account_details' && (
+          <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+            <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
+            
+            <AuthDivider label="Or create account with email" />
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <AuthInput
-            autoComplete="username"
-            label="Public Username"
-            name="username"
-            hint="This is the public handle players see in lobbies."
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="connect4killer"
-            required
-            type="text"
-            value={username}
-            minLength={3}
-            maxLength={32}
-          />
-          <AuthInput
-            autoComplete="email"
-            label="Email"
-            name="email"
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="name@example.com"
-            required
-            type="email"
-            value={email}
-          />
-          
-          <div className="pt-2">
-            <PasswordInput
-              autoComplete="new-password"
-              label="Password"
-              name="password"
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="At least 12 characters"
-              required
-              value={password}
-              showStrengthMeter
-              onValidationChange={setIsPasswordValid}
-            />
+            <div className="space-y-4">
+              <AuthInput
+                autoComplete="username"
+                label="Public Username"
+                name="username"
+                hint="This is the public handle players see in lobbies."
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="connect4killer"
+                required
+                type="text"
+                value={username}
+                minLength={3}
+                maxLength={32}
+              />
+              <AuthInput
+                autoComplete="email"
+                label="Email"
+                name="email"
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@example.com"
+                required
+                type="email"
+                value={email}
+              />
+              
+              <div className="pt-2">
+                <PasswordInput
+                  autoComplete="new-password"
+                  label="Password"
+                  name="password"
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="At least 12 characters"
+                  required
+                  value={password}
+                  showStrengthMeter
+                  onValidationChange={setIsPasswordValid}
+                />
+              </div>
+
+              <AuthInput
+                autoComplete="new-password"
+                label="Confirm Password"
+                name="confirmPassword"
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Confirm your password"
+                required
+                type="password"
+                value={confirmPassword}
+                error={!passwordsMatch ? 'Passwords do not match' : undefined}
+                success={confirmPassword.length > 0 && passwordsMatch}
+              />
+
+              <SketchyButton 
+                className="w-full py-4 text-xl mt-4" 
+                onClick={() => requireDetails() && setStep('verification')}
+                type="button"
+                activeColor="#fff9c4"
+              >
+                Continue
+              </SketchyButton>
+            </div>
           </div>
+        )}
 
-          <AuthInput
-            autoComplete="new-password"
-            label="Confirm Password"
-            name="confirmPassword"
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            placeholder="Confirm your password"
-            required
-            type="password"
-            value={confirmPassword}
-            error={!passwordsMatch ? 'Passwords do not match' : undefined}
-            success={confirmPassword.length > 0 && passwordsMatch}
-          />
+        {step === 'verification' && (
+          <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handleSubmit}>
+            <button 
+              type="button" 
+              onClick={resetStep}
+              className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
+            >
+              ← Back to details
+            </button>
 
-          <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
+            <AuthNotice tone="info">
+              Verify you are human to create the account for {email}.
+            </AuthNotice>
 
-          <SketchyButton 
-            className="w-full py-4 text-xl mt-4" 
-            disabled={loading || !isPasswordValid || !passwordsMatch || (!!siteKey && !turnstileToken)} 
-            type="submit"
-            activeColor="#fff9c4"
-          >
-            {loading ? 'Creating your account...' : 'Create account'}
-          </SketchyButton>
-        </form>
+            <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
+
+            <SketchyButton 
+              className="w-full py-4 text-xl mt-4" 
+              disabled={loading || (!!siteKey && !turnstileToken)} 
+              type="submit"
+              activeColor="#fff9c4"
+            >
+              {loading ? 'Creating your account...' : 'Create account'}
+            </SketchyButton>
+          </form>
+        )}
       </div>
     </AuthShell>
   );
