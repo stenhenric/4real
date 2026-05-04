@@ -18,10 +18,10 @@ export function GoogleAuthButton({
   return (
     <button
       className={cn(
-        'inline-flex w-full items-center justify-center gap-3 rounded-full border border-[#747775] bg-white px-4 py-3 text-sm font-semibold text-[#1f1f1f] shadow-sm transition-colors hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex w-full items-center justify-center gap-3 rough-border bg-white px-4 py-3 text-sm font-bold uppercase tracking-tight text-ink-black shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-40',
         className,
       )}
-      disabled={disabled}
+      disabled={disabled || loading}
       onClick={onClick}
       type="button"
     >
@@ -31,7 +31,7 @@ export function GoogleAuthButton({
         <path d="M5.65 12.03A5.99 5.99 0 0 1 5.29 10c0-.71.12-1.4.36-2.03V4.89H.76A9.99 9.99 0 0 0 0 10c0 1.61.38 3.14 1.06 4.49l4.59-2.46Z" fill="#FBBC05" />
         <path d="M12 3.98c1.47 0 2.78.5 3.81 1.47l2.86-2.86C16.95.98 14.69 0 12 0A9.98 9.98 0 0 0 .76 4.89l4.89 3.08C6.54 5.97 9.05 3.98 12 3.98Z" fill="#EA4335" />
       </svg>
-      <span>{loading ? 'Preparing Google sign-in...' : text}</span>
+      <span>{loading ? 'Preparing...' : text}</span>
     </button>
   );
 }

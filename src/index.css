@@ -17,11 +17,6 @@ body {
   background-size: 100% 24px;
 }
 
-.notebook-bg {
-  background-image: repeating-linear-gradient(var(--color-paper) 0px, var(--color-paper) 23px, #D1D5DB 24px);
-  background-size: 100% 24px;
-}
-
 .paper-texture {
   position: relative;
 }

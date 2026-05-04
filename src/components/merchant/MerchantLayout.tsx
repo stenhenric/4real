@@ -174,7 +174,7 @@ export function MerchantLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-paper notebook-bg paper-texture">
+    <div className="min-h-screen bg-paper paper-texture">
       <div className="mx-auto flex min-h-screen max-w-[1400px] gap-6 px-4 py-6 lg:px-6">
         <aside className="hidden w-72 shrink-0 flex-col gap-4 lg:flex">
           <div className="rough-border bg-white/90 p-5 shadow-lg">

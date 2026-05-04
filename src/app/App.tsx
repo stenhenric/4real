@@ -10,6 +10,8 @@ import { RouteLoading } from './RouteLoading';
 import { useAuth } from './AuthProvider';
 
 const LandingPage = lazy(() => import('../pages/LandingPage'));
+const PrivacyPolicyPage = lazy(() => import('../pages/PrivacyPolicyPage'));
+const TermsOfUsePage = lazy(() => import('../pages/TermsOfUsePage'));
 const BankPage = lazy(() => import('../pages/BankPage'));
 const DashboardPage = lazy(() => import('../pages/DashboardPage'));
 const GamePage = lazy(() => import('../pages/GamePage'));
@@ -57,6 +59,8 @@ export default function App() {
         <Routes>
           <Route element={<PublicLayout />}>
             <Route index element={<LandingPage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms" element={<TermsOfUsePage />} />
             <Route path="/auth" element={<AuthIndexRoute />} />
             <Route path="/auth/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
             <Route path="/auth/register" element={<PublicOnlyRoute><RegisterPage /></PublicOnlyRoute>} />
