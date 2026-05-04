@@ -95,7 +95,12 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
         'refresh-expired': 'auto',
         callback: (token: string) => onSuccessRef.current(token),
         'error-callback': () => onErrorRef.current?.(),
-        'expired-callback': () => onExpireRef.current?.(),
+        'expired-callback': () => {
+          onExpireRef.current?.();
+          // If refresh-expired is set to 'auto', turnstile will automatically refresh,
+          // but we still want to inform the parent that the old token expired.
+          // The parent will set it to undefined, and then 'callback' will be fired when the new token is generated.
+        },
       });
     }, [siteKey]);
 
