@@ -4,13 +4,10 @@ import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTu
 import { SketchyButton } from '../../components/SketchyButton';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
-import {
-  AuthDivider,
-  AuthField,
-  AuthNotice,
-  AuthShell,
-} from '../../features/auth/AuthShell';
+import { AuthDivider, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { GoogleAuthButton } from '../../features/auth/GoogleAuthButton';
+import { AuthInput } from '../../features/auth/components/AuthInput';
+import { PasswordInput } from '../../features/auth/components/PasswordInput';
 import {
   buildMagicLinkPath,
   buildMfaChallengePath,
@@ -25,18 +22,9 @@ import {
 } from '../../services/auth.service';
 
 function getErrorMessage(value: string | null) {
-  if (value === 'google') {
-    return 'Google sign-in did not complete. Try again or use email and password.';
-  }
-
-  if (value === 'suspicious') {
-    return 'That sign-in approval link is invalid or expired. Start the sign-in flow again.';
-  }
-
-  if (value === 'session') {
-    return 'Your session expired. Sign in again to continue.';
-  }
-
+  if (value === 'google') return 'Google sign-in did not complete. Try again or use email and password.';
+  if (value === 'suspicious') return 'That sign-in approval link is invalid or expired. Start the sign-in flow again.';
+  if (value === 'session') return 'Your session expired. Sign in again to continue.';
   return null;
 }
 
@@ -48,11 +36,13 @@ export default function LoginPage() {
   const inlineError = getErrorMessage(searchParams.get('error'));
   const { setAuthStateFromResponse } = useAuth();
   const { success, error: showError, info } = useToast();
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [magicLoading, setMagicLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
@@ -64,7 +54,7 @@ export default function LoginPage() {
     setPasswordLoading(true);
 
     if (siteKey && !turnstileToken) {
-      showError('Please complete the bot check.');
+      showError('Please complete the verification.');
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
       setPasswordLoading(false);
@@ -98,9 +88,11 @@ export default function LoginPage() {
         state: { previewUrl: response.previewUrl ?? verificationState?.previewUrl },
       });
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to sign in right now.');
+      // Security: Generic auth errors to prevent account enumeration
+      showError('Invalid email or password. Please try again.');
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
+      setPassword(''); // clear password on failure
     } finally {
       setPasswordLoading(false);
     }
@@ -111,11 +103,10 @@ export default function LoginPage() {
       showError('Enter your email before requesting a magic link.');
       return;
     }
-
     setMagicLoading(true);
 
     if (siteKey && !turnstileToken) {
-      showError('Please complete the bot check.');
+      showError('Please complete the verification.');
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
       setMagicLoading(false);
@@ -130,7 +121,7 @@ export default function LoginPage() {
         state: { previewUrl: response.previewUrl },
       });
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to send a magic link right now.');
+      showError('Unable to send a magic link right now. Please try again.');
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
     } finally {
@@ -140,17 +131,13 @@ export default function LoginPage() {
 
   const handleGoogle = async () => {
     setGoogleLoading(true);
-
     try {
       const response = await requestGoogleOAuthRedirect(redirectTo);
-      if (!response.redirectTo) {
-        throw new Error('Google sign-in is not available right now.');
-      }
-
+      if (!response.redirectTo) throw new Error('Google sign-in is not available right now.');
       window.location.assign(response.redirectTo);
     } catch (error) {
       setGoogleLoading(false);
-      showError(error instanceof Error ? error.message : 'Unable to start Google sign-in.');
+      showError('Unable to start Google sign-in.');
     }
   };
 
@@ -160,14 +147,10 @@ export default function LoginPage() {
       title="Sign in without friction."
       description="Use email and password, a magic link, or Google. Sensitive actions are step-up protected after you are inside."
       footer={(
-        <p className="text-sm text-black/60">
+        <p className="text-sm text-black/60 font-bold">
           New here?{' '}
-          <Link className="font-semibold text-ink-blue hover:underline" to="/auth/register">
+          <Link className="text-ink-blue hover:underline decoration-wavy underline-offset-2" to="/auth/register">
             Create your account
-          </Link>
-          {' '}or{' '}
-          <Link className="font-semibold text-ink-blue hover:underline" to="/auth/forgot-password">
-            reset your password
           </Link>
           .
         </p>
@@ -176,8 +159,12 @@ export default function LoginPage() {
       <div className="space-y-6">
         {inlineError ? <AuthNotice tone="warning">{inlineError}</AuthNotice> : null}
 
-        <form className="space-y-5" onSubmit={handlePasswordLogin}>
-          <AuthField
+        <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
+        
+        <AuthDivider label="Or continue with email" />
+
+        <form className="space-y-4" onSubmit={handlePasswordLogin}>
+          <AuthInput
             autoComplete="email"
             label="Email"
             name="email"
@@ -187,37 +174,49 @@ export default function LoginPage() {
             type="email"
             value={email}
           />
-          <AuthField
-            autoComplete="current-password"
-            label="Password"
-            name="password"
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Enter your password"
-            required
-            type="password"
-            value={password}
-          />
+          
+          <div className="pt-2 relative">
+            <PasswordInput
+              autoComplete="current-password"
+              label="Password"
+              name="password"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter your password"
+              required
+              value={password}
+            />
+            <div className="absolute top-1 right-1">
+              <Link
+                className="text-[10px] font-bold uppercase tracking-widest text-ink-blue/70 hover:text-ink-blue transition-colors hover:underline"
+                to="/auth/forgot-password"
+              >
+                Forgot password?
+              </Link>
+            </div>
+          </div>
 
           <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
 
-          <SketchyButton className="w-full py-3 text-base" disabled={passwordLoading || (!!siteKey && !turnstileToken)} type="submit">
-            {passwordLoading ? 'Signing in...' : 'Sign in'}
-          </SketchyButton>
+          <div className="pt-4 flex flex-col gap-3">
+            <SketchyButton 
+              className="w-full py-4 text-xl" 
+              disabled={passwordLoading || magicLoading || (!!siteKey && !turnstileToken)} 
+              type="submit"
+              activeColor="#fff9c4"
+            >
+              {passwordLoading ? 'Signing in...' : 'Sign in'}
+            </SketchyButton>
+
+            <button
+              className="w-full rounded-[20px] border-2 border-black/10 bg-white px-4 py-3 text-sm font-bold text-black/60 transition-colors hover:bg-black/5 hover:text-black focus:outline-none focus:border-ink-blue"
+              disabled={magicLoading || passwordLoading || (!!siteKey && !turnstileToken)}
+              onClick={() => void handleMagicLink()}
+              type="button"
+            >
+              {magicLoading ? 'Sending your magic link...' : 'Email me a magic link instead'}
+            </button>
+          </div>
         </form>
-
-        <AuthDivider label="Other secure options" />
-
-        <div className="space-y-3">
-          <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
-          <button
-            className="w-full rounded-full border border-black/12 bg-white px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-black/5"
-            disabled={magicLoading || (!!siteKey && !turnstileToken)}
-            onClick={() => void handleMagicLink()}
-            type="button"
-          >
-            {magicLoading ? 'Sending your magic link...' : 'Email me a magic link'}
-          </button>
-        </div>
       </div>
     </AuthShell>
   );
