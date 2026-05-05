@@ -61,14 +61,14 @@ export class UserService {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-      const username = userData.username ? cleanUsername(userData.username) : null;
+      const username = userData.username ? cleanUsername(userData.username) : undefined;
       const user = new User({
         username,
-        usernameNormalized: username ? normalizeUsername(username) : null,
+        usernameNormalized: username ? normalizeUsername(username) : undefined,
         email: normalizeEmail(userData.email),
-        passwordHash: userData.passwordHash ?? null,
-        emailVerifiedAt: userData.emailVerifiedAt ?? null,
-        googleSubject: userData.googleSubject ?? null,
+        passwordHash: userData.passwordHash ?? undefined,
+        emailVerifiedAt: userData.emailVerifiedAt ?? undefined,
+        googleSubject: userData.googleSubject ?? undefined,
         balance: '0.000000',
         elo: userData.elo ?? 1000,
         isAdmin: userData.isAdmin ?? false,
