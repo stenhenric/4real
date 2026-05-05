@@ -9,6 +9,7 @@ import { AuthInput } from '../../features/auth/components/AuthInput';
 import { PasswordInput } from '../../features/auth/components/PasswordInput';
 import { buildVerifyEmailPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { registerAccount, requestGoogleOAuthRedirect } from '../../services/auth.service';
+import { ApiClientError } from '../../services/api/apiClient';
 
 type RegisterStep = 'account_details' | 'verification';
 
@@ -25,6 +26,7 @@ export default function RegisterPage() {
   const [isPasswordValid, setIsPasswordValid] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | undefined>();
   
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
@@ -85,9 +87,16 @@ export default function RegisterPage() {
         state: { previewUrl: response.previewUrl },
       });
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to create your account right now.');
-      turnstileRef.current?.reset();
-      setTurnstileToken(undefined);
+      if (error instanceof ApiClientError && error.code === 'USERNAME_ALREADY_EXISTS') {
+        // Send the user back to the details step so they can pick a different username
+        setStep('account_details');
+        setUsernameError('That username is already taken. Please choose another.');
+        setTurnstileToken(undefined);
+      } else {
+        showError(error instanceof Error ? error.message : 'Unable to create your account right now.');
+        turnstileRef.current?.reset();
+        setTurnstileToken(undefined);
+      }
     } finally {
       setLoading(false);
     }
@@ -125,8 +134,12 @@ export default function RegisterPage() {
                 autoComplete="username"
                 label="Public Username"
                 name="username"
-                hint="This is the public handle players see in lobbies."
-                onChange={(event) => setUsername(event.target.value)}
+                hint={usernameError ? undefined : 'This is the public handle players see in lobbies.'}
+                error={usernameError}
+                onChange={(event) => {
+                  setUsername(event.target.value);
+                  if (usernameError) setUsernameError(undefined);
+                }}
                 placeholder="connect4killer"
                 required
                 type="text"
