@@ -66,7 +66,7 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
   ({ onSuccess, onError, onExpire }, ref) => {
     const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
-    const containerRef = useRef<HTMLDivElement>(null);
+    const containerIdRef = useRef(`turnstile-${Math.random().toString(36).slice(2, 11)}`);
     const widgetIdRef = useRef<string | null>(null);
 
     // Stable callback refs — changing the JS callbacks won't cause the widget
@@ -87,8 +87,11 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     }));
 
     const renderWidget = useCallback(() => {
-      if (!containerRef.current || widgetIdRef.current) return;
-      widgetIdRef.current = window.turnstile.render(containerRef.current, {
+      // Ensure the element actually exists in the DOM
+      const el = document.getElementById(containerIdRef.current);
+      if (!el || widgetIdRef.current) return;
+      
+      widgetIdRef.current = window.turnstile.render(el, {
         sitekey: siteKey,
         theme: 'light',
         size: 'normal',
@@ -111,7 +114,12 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
 
       ensureScript()
         .then(() => {
-          if (!cancelled) renderWidget();
+          if (!cancelled) {
+            // Delay rendering slightly to ensure DOM is fully painted and mounted
+            setTimeout(() => {
+              if (!cancelled) renderWidget();
+            }, 100);
+          }
         })
         .catch((err: unknown) => {
           console.error('[AuthTurnstile]', err);
@@ -142,7 +150,7 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     return (
       // Outer wrapper always present so layout doesn't shift once the iframe loads.
       <div className="my-2 flex min-h-[70px] items-center justify-center">
-        <div ref={containerRef} />
+        <div id={containerIdRef.current} />
       </div>
     );
   },
