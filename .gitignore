@@ -3,6 +3,7 @@ build/
 dist/
 coverage/
 .generated/
+.worktrees/
 playwright-report/
 test-results/
 .kiro/
