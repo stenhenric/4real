@@ -17,10 +17,10 @@ import { applyClearSiteDataHeaders, applyNoStoreHeaders } from '../http/cache-po
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeAuthState, serializeSessionListItem } from '../serializers/api.ts';
+import { AuthEmailService } from '../services/auth-email.service.ts';
 import { cleanUsername, normalizeEmail } from '../services/auth-identity.service.ts';
 import { AuthMfaService } from '../services/auth-mfa.service.ts';
 import { AuthSessionService } from '../services/auth-session.service.ts';
-import { sendEmail } from '../services/email.service.ts';
 import { GoogleOAuthService } from '../services/google-oauth.service.ts';
 import { OneTimeTokenService } from '../services/one-time-token.service.ts';
 import { assertValidPassword } from '../services/password-policy.service.ts';
@@ -167,99 +167,6 @@ async function buildAuthState(userId: string, sessionId?: string) {
   };
 }
 
-async function sendVerificationEmail(userId: string, email: string): Promise<string> {
-  await OneTimeTokenService.revokeActiveTokensForUser(userId, ['email_verification']);
-  const token = await OneTimeTokenService.create({
-    userId,
-    type: 'email_verification',
-    expiresAt: new Date(Date.now() + (getEnv().AUTH_EMAIL_VERIFY_TTL_SECONDS * 1000)),
-  });
-  const verificationUrl = createAbsoluteUrl(`/auth/verify-email?token=${encodeURIComponent(token)}`);
-
-  await sendEmail({
-    to: email,
-    subject: 'Verify your 4real account',
-    text: [
-      'Verify your 4real email address to activate your account.',
-      '',
-      verificationUrl,
-    ].join('\n'),
-  });
-
-  return verificationUrl;
-}
-
-async function sendPasswordResetEmail(userId: string, email: string): Promise<string> {
-  await OneTimeTokenService.revokeActiveTokensForUser(userId, ['password_reset']);
-  const token = await OneTimeTokenService.create({
-    userId,
-    type: 'password_reset',
-    expiresAt: new Date(Date.now() + (getEnv().AUTH_PASSWORD_RESET_TTL_SECONDS * 1000)),
-  });
-  const resetUrl = createAbsoluteUrl(`/auth/reset-password?token=${encodeURIComponent(token)}`);
-
-  await sendEmail({
-    to: email,
-    subject: 'Reset your 4real password',
-    text: [
-      'Use the link below to reset your 4real password.',
-      '',
-      resetUrl,
-    ].join('\n'),
-  });
-
-  return resetUrl;
-}
-
-async function sendMagicLinkEmail(userId: string, email: string, redirectTo?: string): Promise<string> {
-  await OneTimeTokenService.revokeActiveTokensForUser(userId, ['magic_link']);
-  const token = await OneTimeTokenService.create({
-    userId,
-    type: 'magic_link',
-    expiresAt: new Date(Date.now() + (getEnv().AUTH_MAGIC_LINK_TTL_SECONDS * 1000)),
-    ...(redirectTo ? { metadata: { redirectTo } } : {}),
-  });
-  const magicLinkUrl = createAbsoluteUrl(`/auth/magic-link?token=${encodeURIComponent(token)}`);
-
-  await sendEmail({
-    to: email,
-    subject: 'Your 4real magic sign-in link',
-    text: [
-      'Use the link below to sign in to 4real.',
-      '',
-      magicLinkUrl,
-    ].join('\n'),
-  });
-
-  return magicLinkUrl;
-}
-
-async function sendSuspiciousLoginEmail(userId: string, email: string): Promise<string> {
-  await OneTimeTokenService.revokeActiveTokensForUser(userId, ['suspicious_login']);
-  const token = await OneTimeTokenService.create({
-    userId,
-    type: 'suspicious_login',
-    expiresAt: new Date(Date.now() + (getEnv().AUTH_SUSPICIOUS_LOGIN_TTL_SECONDS * 1000)),
-  });
-  const approvalUrl = createAbsoluteUrl(`/auth/approve-login?token=${encodeURIComponent(token)}`);
-
-  await sendEmail({
-    to: email,
-    subject: 'Approve your 4real sign-in',
-    text: [
-      'We blocked a sign-in from a new device. Approve it with the link below.',
-      '',
-      approvalUrl,
-    ].join('\n'),
-  });
-
-  return approvalUrl;
-}
-
-function maybeIncludePreviewUrl(url: string) {
-  return getEnv().NODE_ENV === 'production' ? {} : { previewUrl: url };
-}
-
 export class AuthController {
   static async register(req: Request, res: Response): Promise<void> {
     const body = req.body as RegisterRequest;
@@ -276,13 +183,12 @@ export class AuthController {
 
     if (existingUser) {
       if (!existingUser.emailVerifiedAt) {
-        const verificationUrl = await sendVerificationEmail(existingUser._id.toString(), existingUser.email);
+        await AuthEmailService.sendVerificationEmail(existingUser._id.toString(), existingUser.email);
         res.status(202).json({
           status: 'pending_email_verification',
           message: 'Verify your email to continue.',
           email: existingUser.email,
           redirectTo: buildPendingEmailVerificationRedirect(existingUser.email),
-          ...maybeIncludePreviewUrl(verificationUrl),
         });
         return;
       }
@@ -301,13 +207,12 @@ export class AuthController {
       passwordHash,
     });
 
-    const verificationUrl = await sendVerificationEmail(user._id.toString(), user.email);
+    await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
     res.status(202).json({
       status: 'pending_email_verification',
       message: 'Verify your email to continue.',
       email: user.email,
       redirectTo: buildPendingEmailVerificationRedirect(user.email),
-      ...maybeIncludePreviewUrl(verificationUrl),
     });
   }
 
@@ -333,13 +238,12 @@ export class AuthController {
     }
 
     if (!user.emailVerifiedAt) {
-      const verificationUrl = await sendVerificationEmail(user._id.toString(), user.email);
+      await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
       res.status(202).json({
         status: 'pending_email_verification',
         message: 'Verify your email to continue.',
         email: user.email,
         redirectTo: buildPendingEmailVerificationRedirect(user.email),
-        ...maybeIncludePreviewUrl(verificationUrl),
       });
       return;
     }
@@ -365,7 +269,7 @@ export class AuthController {
         return;
       }
 
-      const approvalUrl = await sendSuspiciousLoginEmail(user._id.toString(), user.email);
+      await AuthEmailService.sendSuspiciousLoginEmail(user._id.toString(), user.email);
       await UserService.updateSecurityLogin({
         userId: user._id.toString(),
         ipAddress: metadata.ipAddress,
@@ -377,7 +281,6 @@ export class AuthController {
         message: 'Check your email to approve this sign-in.',
         email: user.email,
         redirectTo: buildSuspiciousLoginRedirect(user.email),
-        ...maybeIncludePreviewUrl(approvalUrl),
       });
       return;
     }
@@ -413,7 +316,7 @@ export class AuthController {
       return;
     }
 
-    const magicLinkUrl = await sendMagicLinkEmail(
+    await AuthEmailService.sendMagicLinkEmail(
       user._id.toString(),
       user.email,
       sanitizeRedirectPath(body.redirectTo),
@@ -422,7 +325,6 @@ export class AuthController {
       status: 'magic_link_sent',
       message: 'If that email is registered, a sign-in link is on the way.',
       redirectTo: buildMagicLinkPendingRedirect(email),
-      ...maybeIncludePreviewUrl(magicLinkUrl),
     });
   }
 
@@ -516,12 +418,11 @@ export class AuthController {
       return;
     }
 
-    const verificationUrl = await sendVerificationEmail(user._id.toString(), user.email);
+    await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
     res.status(202).json({
       status: 'email_verification_sent',
       message: 'If the account exists, a verification email is on the way.',
       redirectTo: buildPendingEmailVerificationRedirect(user.email),
-      ...maybeIncludePreviewUrl(verificationUrl),
     });
   }
 
@@ -560,11 +461,10 @@ export class AuthController {
       return;
     }
 
-    const previewUrl = await sendPasswordResetEmail(user._id.toString(), user.email);
+    await AuthEmailService.sendPasswordResetEmail(user._id.toString(), user.email);
     res.status(202).json({
       status: 'password_reset_requested',
       message: 'If the account exists, a reset email is on the way.',
-      ...maybeIncludePreviewUrl(previewUrl),
     });
   }
 

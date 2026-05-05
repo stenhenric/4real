@@ -28,21 +28,11 @@ const rawEnvSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().trim().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
   GOOGLE_OAUTH_REDIRECT_PATH: z.string().trim().default('/api/auth/oauth/google/callback'),
-  SMTP_HOST: z.string().trim().optional(),
-  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-  SMTP_SECURE: z
-    .union([z.boolean(), z.string(), z.number()])
-    .optional()
-    .transform((value) => {
-      if (typeof value === 'boolean') return value;
-      if (typeof value === 'number') return value !== 0;
-      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-      return false;
-    }),
-  SMTP_USERNAME: z.string().trim().optional(),
-  SMTP_PASSWORD: z.string().trim().optional(),
-  SMTP_FROM_EMAIL: z.string().trim().email().optional(),
-  SMTP_EHLO_NAME: z.string().trim().default('localhost'),
+  GOOGLE_CLIENT_ID: z.string().trim().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().trim().optional(),
+  GOOGLE_REFRESH_TOKEN: z.string().trim().optional(),
+  GOOGLE_REDIRECT_URI: z.string().trim().optional(),
+  EMAIL_FROM: z.string().trim().optional(),
   TURNSTILE_SITE_KEY: z.string().trim().optional(),
   TURNSTILE_SECRET_KEY: z.string().trim().optional(),
   ALLOWED_ORIGINS: z.string().optional(),
@@ -150,6 +140,11 @@ export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI'
   allowedOrigins: string[];
   proofAllowedMimeTypes: string[];
   TOTP_ENCRYPTION_KEY: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  GOOGLE_REFRESH_TOKEN: string;
+  GOOGLE_REDIRECT_URI: string;
+  EMAIL_FROM: string;
 }
 
 let cachedEnv: AppEnv | null = null;
@@ -214,6 +209,35 @@ function isMongoTlsConfigured(uri: string): boolean {
   }
 }
 
+function requireConfiguredString(value: string | undefined, key: string): string {
+  if (!value || value.trim().length === 0) {
+    throw new Error(`${key} must be configured`);
+  }
+
+  return value.trim();
+}
+
+function requireConfiguredUrl(value: string | undefined, key: string): string {
+  const resolved = requireConfiguredString(value, key);
+
+  try {
+    return new URL(resolved).toString();
+  } catch {
+    throw new Error(`${key} must be a valid URL`);
+  }
+}
+
+function requireConfiguredEmail(value: string | undefined, key: string): string {
+  const resolved = requireConfiguredString(value, key);
+  const parsed = z.string().email().safeParse(resolved);
+
+  if (!parsed.success) {
+    throw new Error(`${key} must be a valid email address`);
+  }
+
+  return parsed.data;
+}
+
 export function getEnv(): AppEnv {
   if (cachedEnv) {
     return cachedEnv;
@@ -261,6 +285,12 @@ export function getEnv(): AppEnv {
     throw new Error('TOTP_ENCRYPTION_KEY must be a base64-encoded 32-byte key');
   }
 
+  const gmailClientId = requireConfiguredString(parsed.data.GOOGLE_CLIENT_ID, 'GOOGLE_CLIENT_ID');
+  const gmailClientSecret = requireConfiguredString(parsed.data.GOOGLE_CLIENT_SECRET, 'GOOGLE_CLIENT_SECRET');
+  const gmailRefreshToken = requireConfiguredString(parsed.data.GOOGLE_REFRESH_TOKEN, 'GOOGLE_REFRESH_TOKEN');
+  const gmailRedirectUri = requireConfiguredUrl(parsed.data.GOOGLE_REDIRECT_URI, 'GOOGLE_REDIRECT_URI');
+  const emailFrom = requireConfiguredEmail(parsed.data.EMAIL_FROM, 'EMAIL_FROM');
+
   cachedEnv = {
     ...parsed.data,
     MONGODB_URI: mongoUri,
@@ -268,6 +298,11 @@ export function getEnv(): AppEnv {
     allowedOrigins: resolveAllowedOrigins(parsed.data.ALLOWED_ORIGINS),
     proofAllowedMimeTypes: resolveProofAllowedMimeTypes(parsed.data.PROOF_ALLOWED_MIME_TYPES),
     TOTP_ENCRYPTION_KEY: totpEncryptionKey,
+    GOOGLE_CLIENT_ID: gmailClientId,
+    GOOGLE_CLIENT_SECRET: gmailClientSecret,
+    GOOGLE_REFRESH_TOKEN: gmailRefreshToken,
+    GOOGLE_REDIRECT_URI: gmailRedirectUri,
+    EMAIL_FROM: emailFrom,
   };
 
   return cachedEnv;

@@ -201,6 +201,37 @@ export function recordBackgroundJobRun(params: {
   );
 }
 
+export function recordEmailDelivery(params: {
+  emailType: string;
+  provider: 'gmail';
+  outcome: 'success' | 'failure';
+  category: string;
+  recipientDomain: string;
+  attempt: number;
+  durationMs: number;
+}): void {
+  const labels = {
+    emailType: params.emailType,
+    provider: params.provider,
+    outcome: params.outcome,
+    category: params.category,
+    recipientDomain: params.recipientDomain,
+    attempt: params.attempt,
+  };
+
+  incrementCounter(
+    'email_delivery_total',
+    'Total email delivery attempts grouped by provider, type, outcome, and category.',
+    labels,
+  );
+  observeHistogram(
+    'email_delivery_duration_ms',
+    'Observed email delivery duration in milliseconds.',
+    labels,
+    params.durationMs,
+  );
+}
+
 export function recordWithdrawalBalanceHoldFailure(reason: string): void {
   incrementCounter(
     'withdrawal_balance_hold_failures_total',

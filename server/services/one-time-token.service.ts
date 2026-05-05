@@ -53,4 +53,15 @@ export class OneTimeTokenService {
       { $set: { consumedAt: new Date() } },
     );
   }
+
+  static async revoke(type: OneTimeTokenType, token: string): Promise<void> {
+    await OneTimeToken.updateOne(
+      {
+        type,
+        tokenHash: hashOpaqueToken(token),
+        consumedAt: null,
+      },
+      { $set: { consumedAt: new Date() } },
+    );
+  }
 }
