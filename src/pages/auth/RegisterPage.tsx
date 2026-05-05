@@ -48,6 +48,10 @@ export default function RegisterPage() {
   };
 
   const requireDetails = () => {
+    if (usernameError) {
+      showError(usernameError);
+      return false;
+    }
     if (username.trim().length < 3) {
       showError('Please enter a valid username.');
       return false;
