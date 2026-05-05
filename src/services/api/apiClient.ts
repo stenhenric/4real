@@ -42,6 +42,7 @@ function isApiErrorPayload(value: unknown): value is ApiErrorDTO {
 
 let activeSessionRefresh: Promise<void> | null = null;
 const PUBLIC_AUTH_ENDPOINTS = new Set([
+  '/auth/me',
   '/auth/login/password',
   '/auth/register',
   '/auth/login/magic-link/request',

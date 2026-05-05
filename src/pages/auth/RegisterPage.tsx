@@ -120,7 +120,7 @@ export default function RegisterPage() {
             
             <AuthDivider label="Or create account with email" />
 
-            <div className="space-y-4">
+            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (requireDetails()) setStep('verification'); }}>
               <AuthInput
                 autoComplete="username"
                 label="Public Username"
@@ -174,13 +174,12 @@ export default function RegisterPage() {
 
               <SketchyButton 
                 className="w-full py-4 text-xl mt-4" 
-                onClick={() => requireDetails() && setStep('verification')}
-                type="button"
+                type="submit"
                 activeColor="#fff9c4"
               >
                 Continue
               </SketchyButton>
-            </div>
+            </form>
           </div>
         )}
 
