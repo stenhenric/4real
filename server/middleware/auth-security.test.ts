@@ -131,6 +131,70 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
   }
 });
 
+test('register with an unverified existing email returns pending_email_verification before username conflicts', async (t) => {
+  const previousSmtpFrom = process.env.SMTP_FROM_EMAIL;
+  const previousSmtpHost = process.env.SMTP_HOST;
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.SMTP_FROM_EMAIL = 'noreply@example.com';
+  process.env.SMTP_HOST = '';
+  process.env.TURNSTILE_SECRET_KEY = '';
+  resetEnvCacheForTests();
+
+  try {
+    const findByEmailMock = t.mock.method(UserService, 'findByEmail', async () => createMockUser({
+      email: 'alice@example.com',
+      emailVerifiedAt: null,
+    }));
+    const findByUsernameMock = t.mock.method(UserService, 'findByUsername', async () => createMockUser({
+      _id: { toString: () => 'user-2' },
+      username: 'colliding-name',
+      email: 'other@example.com',
+    }));
+    const revokeTokensMock = t.mock.method(OneTimeTokenService, 'revokeActiveTokensForUser', async () => undefined);
+    const createTokenMock = t.mock.method(OneTimeTokenService, 'create', async () => 'verify-token');
+
+    const req = {
+      body: {
+        username: 'new-username',
+        email: 'alice@example.com',
+        password: 'paper-lobby-stakes-2026',
+        turnstileToken: 'token',
+      },
+      ip: '127.0.0.1',
+      cookies: {},
+      get: () => undefined,
+    } as any;
+    const res = createResponseMock() as any;
+
+    await AuthController.register(req, res);
+
+    assert.equal(findByEmailMock.mock.callCount(), 1);
+    assert.equal(findByUsernameMock.mock.callCount(), 1);
+    assert.equal(revokeTokensMock.mock.callCount(), 1);
+    assert.equal(createTokenMock.mock.callCount(), 1);
+    assert.equal(res.statusCode, 202);
+    assert.equal((res.payload as { status?: string }).status, 'pending_email_verification');
+    assert.equal((res.payload as { email?: string }).email, 'alice@example.com');
+  } finally {
+    if (previousSmtpFrom === undefined) {
+      delete process.env.SMTP_FROM_EMAIL;
+    } else {
+      process.env.SMTP_FROM_EMAIL = previousSmtpFrom;
+    }
+    if (previousSmtpHost === undefined) {
+      delete process.env.SMTP_HOST;
+    } else {
+      process.env.SMTP_HOST = previousSmtpHost;
+    }
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
+    resetEnvCacheForTests();
+  }
+});
+
 function createResponseMock() {
   const headers = new Map<string, string>();
   const cookies: Array<{ name: string; value: string; options: unknown }> = [];
