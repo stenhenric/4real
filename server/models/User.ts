@@ -35,12 +35,12 @@ export interface IUser extends Document {
 }
 
 const UserSchema: Schema = new Schema({
-  username: { type: String, default: null, trim: true },
-  usernameNormalized: { type: String, default: null, unique: true, sparse: true, index: true },
-  email: { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
-  passwordHash: { type: String, default: null },
-  emailVerifiedAt: { type: Date, default: null, index: true },
-  googleSubject: { type: String, default: null, unique: true, sparse: true, index: true },
+  username: { type: String, default: undefined, trim: true },
+  usernameNormalized: { type: String, default: undefined, unique: true, sparse: true },
+  email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+  passwordHash: { type: String, default: undefined },
+  emailVerifiedAt: { type: Date, default: undefined, index: true },
+  googleSubject: { type: String, default: undefined, unique: true, sparse: true },
   balance: { type: String, default: '0.000000', match: /^\d+\.\d{6}$/ },
   elo: { type: Number, default: 1000, min: 0 },
   stats: {
