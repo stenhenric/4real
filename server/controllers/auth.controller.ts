@@ -274,10 +274,6 @@ export class AuthController {
       UserService.findByUsername(username),
     ]);
 
-    if (existingUsername) {
-      throw conflict('Username already exists', 'USERNAME_ALREADY_EXISTS', { field: 'username' });
-    }
-
     if (existingUser) {
       if (!existingUser.emailVerifiedAt) {
         const verificationUrl = await sendVerificationEmail(existingUser._id.toString(), existingUser.email);
@@ -292,6 +288,10 @@ export class AuthController {
       }
 
       throw conflict('Email already exists', 'EMAIL_ALREADY_EXISTS', { field: 'email' });
+    }
+
+    if (existingUsername) {
+      throw conflict('Username already exists', 'USERNAME_ALREADY_EXISTS', { field: 'username' });
     }
 
     const passwordHash = await hashPassword(body.password);
