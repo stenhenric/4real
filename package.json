@@ -9,7 +9,7 @@
     "build": "vite build && tsc --project tsconfig.server.json",
     "preview": "vite preview",
     "test": "npm run test:integration",
-    "test:unit": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/config/env.test.ts server/services/email/gmail-service.test.ts server/services/auth-email.service.test.ts server/middleware/auth-security.test.ts server/middleware/frontend-contracts.test.ts server/middleware/logging-and-schemas.test.ts server/middleware/migration-services.test.ts server/middleware/security.middleware.test.ts server/middleware/static-files.test.ts",
+    "test:unit": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/config/env.test.ts server/services/email/gmail-service.test.ts server/services/auth-email.service.test.ts server/services/auth-session.service.test.ts server/middleware/auth-security.test.ts server/middleware/frontend-contracts.test.ts server/middleware/logging-and-schemas.test.ts server/middleware/migration-services.test.ts server/middleware/security.middleware.test.ts server/middleware/static-files.test.ts",
     "test:integration": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/middleware/*.test.ts",
     "test:e2e": "npm run build && playwright test",
     "test:all": "npm run lint && npm run test:unit && npm run test:integration && npm run test:e2e",
