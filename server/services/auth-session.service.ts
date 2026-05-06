@@ -71,7 +71,21 @@ function getTtlSeconds(targetDate: Date): number {
   return Math.max(1, Math.floor((targetDate.getTime() - Date.now()) / 1000));
 }
 
-function getCurrentSessionFilter() {
+/**
+ * Returns a **fresh** filter object that matches only active (non-revoked,
+ * non-expired) sessions.
+ *
+ * ⚠️  IMPORTANT — Mongoose mutation hazard (mongoose ^9.x):
+ * Mongoose's `Query.prototype.merge()` shallow-copies the filter into
+ * `query._conditions`, meaning nested condition objects such as
+ * `{ $gt: Date }` are shared by reference.  `Query.prototype.cast()` then
+ * mutates those nested objects in-place via `SchemaDate.prototype.castQuery`.
+ *
+ * RULE: call this function **once per Mongoose query** and inline the result.
+ * Never store the return value in a variable and pass it to multiple queries.
+ * Each query must receive its own independent filter object.
+ */
+function buildSessionFilter() {
   return {
     revokedAt: null,
     absoluteExpiresAt: { $gt: new Date() },
@@ -236,7 +250,7 @@ export class AuthSessionService {
     const existingSessions = await AuthSession.find({
       userId: params.user._id,
       deviceId: params.metadata.deviceId,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),
     });
     for (const existingSession of existingSessions) {
       await revokeSessionDocument(existingSession, 'device_replaced');
@@ -286,7 +300,7 @@ export class AuthSessionService {
     const session = await AuthSession.findOne({
       sessionId: record.sessionId,
       currentAccessTokenHash: accessTokenHash,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),
     });
     if (!session) {
       throw unauthorized('Session expired', 'SESSION_EXPIRED');
@@ -318,7 +332,7 @@ export class AuthSessionService {
 
     const session = await AuthSession.findOne({
       currentRefreshTokenHash: refreshTokenHash,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),
     });
     if (!session) {
       throw unauthorized('Refresh token required', 'UNAUTHENTICATED');
@@ -400,7 +414,7 @@ export class AuthSessionService {
   static async revokeSession(sessionId: string, reason = 'session_revoked'): Promise<boolean> {
     const session = await AuthSession.findOne({
       sessionId,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),
     });
     if (!session) {
       return false;
@@ -413,7 +427,7 @@ export class AuthSessionService {
   static async revokeAllSessionsForUser(userId: string, reason = 'all_sessions_revoked'): Promise<void> {
     const sessions = await AuthSession.find({
       userId,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),
     });
 
     for (const session of sessions) {
@@ -425,7 +439,7 @@ export class AuthSessionService {
     const sessions = await AuthSession.find({
       userId,
       sessionId: { $ne: currentSessionId },
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),
     });
 
     for (const session of sessions) {
@@ -436,7 +450,7 @@ export class AuthSessionService {
   static async listSessions(userId: string, currentSessionId?: string) {
     const sessions = await AuthSession.find({
       userId,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),
     }).sort({ lastSeenAt: -1 });
 
     return sessions.map((session) => ({
@@ -453,10 +467,15 @@ export class AuthSessionService {
   }
 
   static async isSuspiciousLogin(userId: string, deviceId: string): Promise<boolean> {
+    // ⚠️  Two separate Mongoose queries run here. Each MUST receive its own
+    // independent filter object — never reuse a filter across queries because
+    // Mongoose 9.x mutates nested condition objects (e.g. { $gt: Date }) in-place
+    // during SchemaDate.castQuery, causing a double-$gt CastError on the second
+    // query if the same object reference is passed again.
     const existingSession = await AuthSession.findOne({
       userId,
       deviceId,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),  // fresh filter — Query 1
     });
     if (existingSession) {
       return false;
@@ -464,7 +483,7 @@ export class AuthSessionService {
 
     const anotherActiveSession = await AuthSession.exists({
       userId,
-      ...getCurrentSessionFilter(),
+      ...buildSessionFilter(),  // independent fresh filter — Query 2
     });
     return Boolean(anotherActiveSession);
   }
