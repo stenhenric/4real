@@ -1,6 +1,7 @@
 import { useState, useRef, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
+import { getTurnstileSiteKey } from '../../features/auth/turnstile-config';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
@@ -48,7 +49,7 @@ export default function LoginPage() {
   
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  const siteKey = getTurnstileSiteKey();
 
   const verificationState = (location.state ?? null) as { previewUrl?: string } | null;
 

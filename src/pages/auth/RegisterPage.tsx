@@ -1,6 +1,7 @@
 import { useState, useRef, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
+import { getTurnstileSiteKey } from '../../features/auth/turnstile-config';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthNotice, AuthShell, AuthDivider } from '../../features/auth/AuthShell';
@@ -30,7 +31,7 @@ export default function RegisterPage() {
   
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  const siteKey = getTurnstileSiteKey();
 
   // Validation States
   const passwordsMatch = password && confirmPassword ? password === confirmPassword : true;

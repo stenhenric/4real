@@ -1,4 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback } from 'react';
+import { getTurnstileSiteKey } from './turnstile-config';
 
 export interface AuthTurnstileRef {
   reset: () => void;
@@ -64,7 +65,7 @@ function ensureScript(): Promise<void> {
 
 export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
   ({ onSuccess, onError, onExpire }, ref) => {
-    const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
+    const siteKey = getTurnstileSiteKey();
 
     const containerIdRef = useRef(`turnstile-${Math.random().toString(36).slice(2, 11)}`);
     const widgetIdRef = useRef<string | null>(null);
@@ -142,7 +143,7 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     if (!siteKey) {
       return (
         <div className="my-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-700">
-          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>VITE_TURNSTILE_SITE_KEY</code>).
+          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>VITE_TURNSTILE_SITE_KEY</code> or <code>TURNSTILE_SITE_KEY</code>).
         </div>
       );
     }

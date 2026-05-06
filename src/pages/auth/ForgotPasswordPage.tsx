@@ -1,6 +1,7 @@
 import { useState, useRef, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
+import { getTurnstileSiteKey } from '../../features/auth/turnstile-config';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
@@ -13,7 +14,7 @@ export default function ForgotPasswordPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  const siteKey = getTurnstileSiteKey();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
