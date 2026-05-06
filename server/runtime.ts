@@ -16,6 +16,7 @@ import { registerPublicMatchEvents } from './sockets/public-match-events.ts';
 import { startBackgroundJobs } from './services/background-jobs.service.ts';
 import { disconnectRedis, getRedisClient } from './services/redis.service.ts';
 import { UserService } from './services/user.service.ts';
+import { getBuildInfo } from './utils/build-info.ts';
 
 export async function startServer() {
   const env = getEnv();
@@ -81,6 +82,7 @@ export async function startServer() {
   logger.info('server.started', {
     port,
     nodeEnv: env.NODE_ENV,
+    build: getBuildInfo(),
   });
 
   const shutdown = async (signal: string) => {
