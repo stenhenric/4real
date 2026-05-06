@@ -401,7 +401,8 @@ export class AuthController {
       const redirectTarget = sanitizeRedirectPath(googleProfile.redirectTo)
         ?? buildPostAuthRedirect(user.username);
       res.redirect(302, redirectTarget);
-    } catch {
+    } catch (err) {
+      console.error('Google OAuth callback error:', err);
       res.redirect(302, '/auth/login?error=google');
     }
   }
