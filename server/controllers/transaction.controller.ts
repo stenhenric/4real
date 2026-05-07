@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import type { Response } from 'express';
 import { Address } from '@ton/ton';
 import { v4 as uuidv4 } from 'uuid';
 

@@ -28,6 +28,7 @@ import { hashPassword, needsPasswordRehash, verifyPassword } from '../services/p
 import { verifyTurnstileToken } from '../services/auth-turnstile.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { badRequest, conflict, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
+import { logger } from '../utils/logger.ts';
 import type {
   CompleteProfileRequest,
   ConsumeMagicLinkRequest,
@@ -402,7 +403,33 @@ export class AuthController {
         ?? buildPostAuthRedirect(user.username);
       res.redirect(302, redirectTarget);
     } catch (err) {
-      console.error('Google OAuth callback error:', err);
+      const errorCode = typeof err === 'object'
+        && err !== null
+        && 'code' in err
+        && typeof (err as { code?: unknown }).code === 'string'
+        ? (err as { code: string }).code
+        : 'GOOGLE_SIGNIN_FAILED';
+      const operation = typeof err === 'object'
+        && err !== null
+        && 'details' in err
+        && typeof (err as { details?: { operation?: unknown } }).details?.operation === 'string'
+        ? (err as { details: { operation: string } }).details.operation
+        : 'handleGoogleCallback';
+
+      const sanitizedError = err && typeof err === 'object'
+        ? {
+            name: 'name' in err && typeof err.name === 'string' ? err.name : undefined,
+            message: 'message' in err && typeof err.message === 'string' ? err.message : undefined,
+            code: 'code' in err && typeof err.code === 'string' ? err.code : undefined,
+            status: 'status' in err && typeof err.status === 'number' ? err.status : undefined,
+          }
+        : { message: String(err) };
+
+      logger.error('auth.google_callback_failed', {
+        errorCode,
+        operation,
+        error: sanitizedError,
+      });
       res.redirect(302, '/auth/login?error=google');
     }
   }

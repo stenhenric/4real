@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 
 import { applyPublicCacheHeaders } from '../http/cache-policy.ts';
 import { serializeLeaderboardUser, serializeUserProfile } from '../serializers/api.ts';

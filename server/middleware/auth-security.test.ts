@@ -15,11 +15,15 @@ import {
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { AuthController } from '../controllers/auth.controller.ts';
 import { decodeBase32 } from '../services/auth-crypto.service.ts';
+import { AuthEmailService } from '../services/auth-email.service.ts';
 import { AuthSessionService } from '../services/auth-session.service.ts';
+import { GoogleOAuthService } from '../services/google-oauth.service.ts';
 import { assertValidPassword } from '../services/password-policy.service.ts';
 import { OneTimeTokenService } from '../services/one-time-token.service.ts';
 import { createTotpSetup, verifyTotpCode } from '../services/totp.service.ts';
 import { UserService } from '../services/user.service.ts';
+import { serviceUnavailable } from '../utils/http-error.ts';
+import { logger } from '../utils/logger.ts';
 
 function createTotpCode(secret: string, timestampMs: number) {
   const secretBytes = decodeBase32(secret);
@@ -132,11 +136,7 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
 });
 
 test('register with an unverified existing email returns pending_email_verification before username conflicts', async (t) => {
-  const previousSmtpFrom = process.env.SMTP_FROM_EMAIL;
-  const previousSmtpHost = process.env.SMTP_HOST;
   const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
-  process.env.SMTP_FROM_EMAIL = 'noreply@example.com';
-  process.env.SMTP_HOST = '';
   process.env.TURNSTILE_SECRET_KEY = '';
   resetEnvCacheForTests();
 
@@ -150,8 +150,11 @@ test('register with an unverified existing email returns pending_email_verificat
       username: 'colliding-name',
       email: 'other@example.com',
     }));
-    const revokeTokensMock = t.mock.method(OneTimeTokenService, 'revokeActiveTokensForUser', async () => undefined);
-    const createTokenMock = t.mock.method(OneTimeTokenService, 'create', async () => 'verify-token');
+    const sendVerificationMock = t.mock.method(
+      AuthEmailService,
+      'sendVerificationEmail',
+      async () => 'http://127.0.0.1:3000/auth/verify-email?token=verify-token',
+    );
 
     const req = {
       body: {
@@ -170,22 +173,11 @@ test('register with an unverified existing email returns pending_email_verificat
 
     assert.equal(findByEmailMock.mock.callCount(), 1);
     assert.equal(findByUsernameMock.mock.callCount(), 1);
-    assert.equal(revokeTokensMock.mock.callCount(), 1);
-    assert.equal(createTokenMock.mock.callCount(), 1);
+    assert.equal(sendVerificationMock.mock.callCount(), 1);
     assert.equal(res.statusCode, 202);
     assert.equal((res.payload as { status?: string }).status, 'pending_email_verification');
     assert.equal((res.payload as { email?: string }).email, 'alice@example.com');
   } finally {
-    if (previousSmtpFrom === undefined) {
-      delete process.env.SMTP_FROM_EMAIL;
-    } else {
-      process.env.SMTP_FROM_EMAIL = previousSmtpFrom;
-    }
-    if (previousSmtpHost === undefined) {
-      delete process.env.SMTP_HOST;
-    } else {
-      process.env.SMTP_HOST = previousSmtpHost;
-    }
     if (previousTurnstileSecret === undefined) {
       delete process.env.TURNSTILE_SECRET_KEY;
     } else {
@@ -193,6 +185,85 @@ test('register with an unverified existing email returns pending_email_verificat
     }
     resetEnvCacheForTests();
   }
+});
+
+test('register surfaces EMAIL_DELIVERY_FAILED after creating a pending-verification user', async (t) => {
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = '';
+  resetEnvCacheForTests();
+
+  try {
+    const createdUser = createMockUser({
+      username: 'new-username',
+      email: 'new@example.com',
+      emailVerifiedAt: null,
+    });
+    const findByEmailMock = t.mock.method(UserService, 'findByEmail', async () => null);
+    const findByUsernameMock = t.mock.method(UserService, 'findByUsername', async () => null);
+    const createUserMock = t.mock.method(UserService, 'createUser', async () => createdUser);
+    const sendVerificationMock = t.mock.method(AuthEmailService, 'sendVerificationEmail', async () => {
+      throw serviceUnavailable('Unable to send the requested email right now', 'EMAIL_DELIVERY_FAILED');
+    });
+
+    const req = {
+      body: {
+        username: 'new-username',
+        email: 'new@example.com',
+        password: 'paper-lobby-stakes-2026',
+        turnstileToken: 'token',
+      },
+      ip: '127.0.0.1',
+      cookies: {},
+      get: () => undefined,
+    } as any;
+    const res = createResponseMock() as any;
+
+    await assert.rejects(
+      () => AuthController.register(req, res),
+      (error: unknown) => typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: string }).code === 'EMAIL_DELIVERY_FAILED',
+    );
+
+    assert.equal(findByEmailMock.mock.callCount(), 1);
+    assert.equal(findByUsernameMock.mock.callCount(), 1);
+    assert.equal(createUserMock.mock.callCount(), 1);
+    assert.equal(sendVerificationMock.mock.callCount(), 1);
+    assert.equal(res.payload, undefined);
+  } finally {
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
+    resetEnvCacheForTests();
+  }
+});
+
+test('resendVerificationEmail surfaces EMAIL_DELIVERY_FAILED for pending-verification accounts', async (t) => {
+  const user = createMockUser({ emailVerifiedAt: null });
+  const userMock = t.mock.method(UserService, 'findByEmail', async () => user);
+  const sendVerificationMock = t.mock.method(AuthEmailService, 'sendVerificationEmail', async () => {
+    throw serviceUnavailable('Unable to send the requested email right now', 'EMAIL_DELIVERY_FAILED');
+  });
+
+  const req = {
+    body: { email: 'alice@example.com' },
+  } as any;
+  const res = createResponseMock() as any;
+
+  await assert.rejects(
+    () => AuthController.resendVerificationEmail(req, res),
+    (error: unknown) => typeof error === 'object'
+      && error !== null
+      && 'code' in error
+      && (error as { code?: string }).code === 'EMAIL_DELIVERY_FAILED',
+  );
+
+  assert.equal(userMock.mock.callCount(), 1);
+  assert.equal(sendVerificationMock.mock.callCount(), 1);
+  assert.equal(res.payload, undefined);
 });
 
 function createResponseMock() {
@@ -231,6 +302,11 @@ function createResponseMock() {
     },
     send(payload?: unknown) {
       this.payload = payload;
+      return this;
+    },
+    redirect(statusOrUrl: number | string, maybeUrl?: string) {
+      this.statusCode = typeof statusOrUrl === 'number' ? statusOrUrl : 302;
+      this.payload = typeof statusOrUrl === 'string' ? statusOrUrl : maybeUrl;
       return this;
     },
   };
@@ -341,6 +417,52 @@ test('consumeVerificationEmail issues a session and routes the browser to the ve
   assert.equal(balanceMock.mock.callCount(), 1);
   assert.equal(res.getHeader('cache-control'), 'no-store, max-age=0');
   assert.equal((res.payload as { redirectTo?: string }).redirectTo, '/auth/verified');
+});
+
+test('handleGoogleCallback redirects to login and logs stable session failure details when session creation fails', async (t) => {
+  const googleProfileMock = t.mock.method(GoogleOAuthService, 'consumeCallback', async () => ({
+    googleSubject: 'google-sub-1',
+    email: 'alice@example.com',
+    name: 'Alice',
+    picture: null,
+    redirectTo: '/play',
+  }));
+  const userLookupMock = t.mock.method(UserService, 'findByGoogleSubject', async () => createMockUser());
+  const sessionError = serviceUnavailable('Authentication session unavailable', 'AUTH_SESSION_UNAVAILABLE', {
+    operation: 'createSession',
+  });
+  const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => {
+    throw sessionError;
+  });
+  const loggerMock = t.mock.method(logger, 'error', () => undefined);
+
+  const req = {
+    query: {
+      state: 'oauth-state',
+      code: 'oauth-code',
+    },
+    cookies: {},
+    ip: '127.0.0.1',
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const res = createResponseMock() as any;
+
+  await AuthController.handleGoogleCallback(req, res);
+
+  assert.equal(googleProfileMock.mock.callCount(), 1);
+  assert.equal(userLookupMock.mock.callCount(), 1);
+  assert.equal(sessionMock.mock.callCount(), 1);
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.payload, '/auth/login?error=google');
+  assert.equal(loggerMock.mock.callCount(), 1);
+  assert.deepEqual(loggerMock.mock.calls[0]?.arguments.slice(0, 2), [
+    'auth.google_callback_failed',
+    {
+      errorCode: 'AUTH_SESSION_UNAVAILABLE',
+      operation: 'createSession',
+      error: sessionError,
+    },
+  ]);
 });
 
 test('logout clears site data and removes all session cookies', async (t) => {

@@ -1,6 +1,7 @@
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import type { Express, RequestHandler } from 'express';
 import express from 'express';
 import helmet from 'helmet';
 import mongoose from 'mongoose';
@@ -12,22 +13,52 @@ import { csrfProtectionMiddleware } from './middleware/csrf.middleware.ts';
 import { errorHandler, notFoundApiHandler } from './middleware/error.middleware.ts';
 import { createGeneralRateLimiter } from './middleware/rate-limit.middleware.ts';
 import { requestContextMiddleware } from './middleware/request-context.middleware.ts';
-import { registerApiRoutes } from './routes/index.ts';
-import { registerFrontendMiddleware } from './http/frontend.ts';
 import { renderMetrics } from './services/metrics.service.ts';
 import { probeBullmq } from './services/bullmq-jobs.service.ts';
 import { getHotWalletRuntime } from './services/hot-wallet-runtime.service.ts';
 import { probeRedis } from './services/redis.service.ts';
+import { getBuildInfo } from './utils/build-info.ts';
 
 interface AppStatusProvider {
   isShuttingDown: () => boolean;
   getBackgroundJobs: () => unknown;
 }
 
-export async function createApp(statusProvider: AppStatusProvider) {
+interface AppDependencies {
+  registerApiRoutes: (app: Express) => Promise<void> | void;
+  registerFrontendMiddleware: (app: Express) => Promise<void>;
+  createGeneralRateLimiter: () => RequestHandler;
+  probeRedis: typeof probeRedis;
+  probeBullmq: typeof probeBullmq;
+  getHotWalletRuntime: typeof getHotWalletRuntime;
+}
+
+const defaultAppDependencies: AppDependencies = {
+  registerApiRoutes: async (app) => {
+    const { registerApiRoutes } = await import('./routes/index.ts');
+    return registerApiRoutes(app);
+  },
+  registerFrontendMiddleware: async (app) => {
+    const { registerFrontendMiddleware } = await import('./http/frontend.ts');
+    await registerFrontendMiddleware(app);
+  },
+  createGeneralRateLimiter,
+  probeRedis,
+  probeBullmq,
+  getHotWalletRuntime,
+};
+
+export async function createApp(
+  statusProvider: AppStatusProvider,
+  dependencyOverrides: Partial<AppDependencies> = {},
+) {
   const env = getEnv();
   const trustProxy = getTrustProxySetting();
   const publicAppOrigin = getPublicAppOrigin();
+  const appDependencies: AppDependencies = {
+    ...defaultAppDependencies,
+    ...dependencyOverrides,
+  };
   const app = express();
   app.set('etag', 'strong');
 
@@ -50,19 +81,25 @@ export async function createApp(statusProvider: AppStatusProvider) {
   app.use(cookieParser());
 
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok' });
+    res.json({
+      status: 'ok',
+      build: getBuildInfo(),
+    });
   });
 
   app.get('/api/health/live', (_req, res) => {
-    res.json({ status: 'ok' });
+    res.json({
+      status: 'ok',
+      build: getBuildInfo(),
+    });
   });
 
   app.get('/api/health/ready', async (_req, res) => {
-    const redis = await probeRedis();
-    const bullmq = await probeBullmq();
+    const redis = await appDependencies.probeRedis();
+    const bullmq = await appDependencies.probeBullmq();
     const hotWalletRuntime = (() => {
       try {
-        getHotWalletRuntime();
+        appDependencies.getHotWalletRuntime();
         return 'up' as const;
       } catch {
         return 'down' as const;
@@ -85,6 +122,7 @@ export async function createApp(statusProvider: AppStatusProvider) {
       status: isReady ? 'ready' : 'not_ready',
       checks,
       uptimeSeconds: Math.floor(process.uptime()),
+      build: getBuildInfo(),
     });
   });
 
@@ -102,13 +140,13 @@ export async function createApp(statusProvider: AppStatusProvider) {
     });
   });
 
-  app.use('/api', createGeneralRateLimiter());
+  app.use('/api', appDependencies.createGeneralRateLimiter());
   app.use('/api', apiNoStoreMiddleware);
   app.use('/api', csrfProtectionMiddleware);
-  registerApiRoutes(app);
+  await appDependencies.registerApiRoutes(app);
   app.use('/api', notFoundApiHandler);
 
-  await registerFrontendMiddleware(app);
+  await appDependencies.registerFrontendMiddleware(app);
   app.use(errorHandler);
 
   return app;
