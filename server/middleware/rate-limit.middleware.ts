@@ -26,6 +26,7 @@ export function createGeneralRateLimiter() {
     windowMs: env.GENERAL_RATE_LIMIT_WINDOW_MS,
     max: env.GENERAL_RATE_LIMIT_MAX,
     standardHeaders: true,
+    requestPropertyName: 'generalRateLimit',
     legacyHeaders: false,
     message: {
       code: 'RATE_LIMITED',
@@ -43,6 +44,7 @@ export function createAuthRateLimiter() {
     windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
     max: env.AUTH_RATE_LIMIT_MAX,
     standardHeaders: true,
+    requestPropertyName: 'authRateLimit',
     legacyHeaders: false,
     skipSuccessfulRequests: true,
     message: {
@@ -61,6 +63,7 @@ export function createWithdrawalRateLimiter() {
     windowMs: env.WITHDRAWAL_RATE_LIMIT_WINDOW_MS,
     max: env.WITHDRAWAL_RATE_LIMIT_MAX,
     standardHeaders: true,
+    requestPropertyName: 'withdrawalRateLimit',
     legacyHeaders: false,
     message: {
       code: 'WITHDRAWAL_RATE_LIMITED',
