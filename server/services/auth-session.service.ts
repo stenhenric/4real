@@ -8,6 +8,7 @@ import { getRedisClient } from './redis.service.ts';
 import { createOpaqueToken, hashOpaqueToken } from './auth-crypto.service.ts';
 import { HttpError, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
 import { logger, type Logger } from '../utils/logger.ts';
+import { redact } from '../utils/redact.ts';
 import { UserService } from './user.service.ts';
 
 const ACCESS_KEY_PREFIX = 'auth:access:';
@@ -89,17 +90,157 @@ function getTtlSeconds(targetDate: Date): number {
 /**
  * IMPORTANT:
  * Mongoose mutates query objects during casting.
- * NEVER reuse objects returned by this function.
- * Always call inline.
+ * NEVER reuse objects returned by this function (or any parent query object that spreads it).
  */
 export function buildActiveSessionQuery() {
   const now = Date.now();
 
-  return {
+  return structuredClone({
     revokedAt: null,
     absoluteExpiresAt: { $gt: new Date(now) },
     idleExpiresAt: { $gt: new Date(now) },
-  };
+  });
+}
+
+function isObjectId(value: unknown): boolean {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && '_bsontype' in value
+    && (value as { _bsontype?: unknown })._bsontype === 'ObjectId',
+  );
+}
+
+function deepCloneForMongoose<T>(value: T): T {
+  if (value instanceof Date) {
+    return new Date(value.getTime()) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => deepCloneForMongoose(entry)) as T;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  if (isObjectId(value)) {
+    return value;
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, deepCloneForMongoose(entry)]),
+  ) as T;
+}
+
+function normalizeForDebug(value: unknown): unknown {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (isObjectId(value)) {
+    return (value as { toString: () => string }).toString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeForDebug(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, normalizeForDebug(entry)]),
+    );
+  }
+
+  return value;
+}
+
+let previousAuthSessionQuery: unknown | null = null;
+
+function shouldDebugAuthSessionQueries(): boolean {
+  const flag = process.env.AUTH_SESSION_QUERY_DEBUG?.trim().toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on';
+}
+
+function debugAuthSessionQuery<T extends Record<string, unknown>>(label: string, query: T): T {
+  if (!shouldDebugAuthSessionQueries()) {
+    return query;
+  }
+
+  const previous = previousAuthSessionQuery as Record<string, unknown> | null;
+  logger.debug('auth.session_query_debug', {
+    label,
+    sameQueryIdentity: query === previous,
+    sameIdleExpiresAtIdentity: Boolean(previous && query.idleExpiresAt && query.idleExpiresAt === previous.idleExpiresAt),
+    query: JSON.stringify(redact(normalizeForDebug(query))),
+  });
+  previousAuthSessionQuery = query;
+  return query;
+}
+
+function snapshotAuthSessionQuery(query: Record<string, unknown>): string {
+  return JSON.stringify(redact(normalizeForDebug(query)));
+}
+
+function debugAuthSessionQueryMutation(label: string, beforeSnapshot: string | null, query: Record<string, unknown>): void {
+  if (!shouldDebugAuthSessionQueries() || !beforeSnapshot) {
+    return;
+  }
+
+  const afterSnapshot = snapshotAuthSessionQuery(query);
+  logger.debug('auth.session_query_mutation', {
+    label,
+    mutated: beforeSnapshot !== afterSnapshot,
+    before: beforeSnapshot,
+    after: afterSnapshot,
+  });
+}
+
+async function authSessionFind<TDoc = unknown>(label: string, filter: Record<string, unknown>): Promise<TDoc[]> {
+  const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
+  const result = await AuthSession.find(clonedFilter) as unknown as TDoc[];
+  debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
+  return result;
+}
+
+async function authSessionFindSorted<TDoc = unknown>(
+  label: string,
+  filter: Record<string, unknown>,
+  sort: Record<string, 1 | -1>,
+): Promise<TDoc[]> {
+  const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
+  const result = await AuthSession.find(clonedFilter).sort(sort) as unknown as TDoc[];
+  debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
+  return result;
+}
+
+async function authSessionFindOne<TDoc = unknown>(
+  label: string,
+  filter: Record<string, unknown>,
+): Promise<TDoc | null> {
+  const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
+  const result = await AuthSession.findOne(clonedFilter) as unknown as TDoc | null;
+  debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
+  return result;
+}
+
+async function authSessionExists(
+  label: string,
+  filter: Record<string, unknown>,
+): Promise<unknown> {
+  const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
+  const result = await AuthSession.exists(clonedFilter);
+  debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
+  return result;
 }
 
 function createAccessRedisPayload(params: {
@@ -283,7 +424,7 @@ export class AuthSessionService {
       const accessTokenHash = hashOpaqueToken(accessToken);
       const refreshTokenHash = hashOpaqueToken(refreshToken);
 
-      const existingSessions = await AuthSession.find({
+      const existingSessions = await authSessionFind<IAuthSession>('AuthSession.find.createSession.existingSessions', {
         userId: params.user._id,
         deviceId: params.metadata.deviceId,
         ...buildActiveSessionQuery(),
@@ -335,7 +476,7 @@ export class AuthSessionService {
         throw unauthorized('Access token required', 'UNAUTHENTICATED');
       }
 
-      const session = await AuthSession.findOne({
+      const session = await authSessionFindOne<IAuthSession>('AuthSession.findOne.validateAccessToken.session', {
         sessionId: record.sessionId,
         currentAccessTokenHash: accessTokenHash,
         ...buildActiveSessionQuery(),
@@ -370,7 +511,7 @@ export class AuthSessionService {
         throw unauthorized('Session replay detected', 'SESSION_REPLAY_DETECTED');
       }
 
-      const session = await AuthSession.findOne({
+      const session = await authSessionFindOne<IAuthSession>('AuthSession.findOne.refreshSession.session', {
         currentRefreshTokenHash: refreshTokenHash,
         ...buildActiveSessionQuery(),
       });
@@ -433,7 +574,7 @@ export class AuthSessionService {
         const accessHash = hashOpaqueToken(params.accessToken);
         const accessRecord = parseAccessRedisPayload(await getRedis().get(getAccessRedisKey(accessHash)));
         if (accessRecord) {
-          session = await AuthSession.findOne({
+          session = await authSessionFindOne<IAuthSession>('AuthSession.findOne.logoutFromTokens.sessionByAccess', {
             sessionId: accessRecord.sessionId,
             currentAccessTokenHash: accessHash,
           });
@@ -441,7 +582,7 @@ export class AuthSessionService {
       }
 
       if (!session && params.refreshToken) {
-        session = await AuthSession.findOne({
+        session = await authSessionFindOne<IAuthSession>('AuthSession.findOne.logoutFromTokens.sessionByRefresh', {
           currentRefreshTokenHash: hashOpaqueToken(params.refreshToken),
         });
       }
@@ -456,7 +597,7 @@ export class AuthSessionService {
 
   static async revokeSession(sessionId: string, reason = 'session_revoked'): Promise<boolean> {
     return withSessionStoreBoundary('revokeSession', async () => {
-      const session = await AuthSession.findOne({
+      const session = await authSessionFindOne<IAuthSession>('AuthSession.findOne.revokeSession.session', {
         sessionId,
         ...buildActiveSessionQuery(),
       });
@@ -471,7 +612,7 @@ export class AuthSessionService {
 
   static async revokeAllSessionsForUser(userId: string, reason = 'all_sessions_revoked'): Promise<void> {
     await withSessionStoreBoundary('revokeAllSessionsForUser', async () => {
-      const sessions = await AuthSession.find({
+      const sessions = await authSessionFind<IAuthSession>('AuthSession.find.revokeAllSessionsForUser.sessions', {
         userId,
         ...buildActiveSessionQuery(),
       });
@@ -484,7 +625,7 @@ export class AuthSessionService {
 
   static async revokeOtherSessionsForUser(userId: string, currentSessionId: string): Promise<void> {
     await withSessionStoreBoundary('revokeOtherSessionsForUser', async () => {
-      const sessions = await AuthSession.find({
+      const sessions = await authSessionFind<IAuthSession>('AuthSession.find.revokeOtherSessionsForUser.sessions', {
         userId,
         sessionId: { $ne: currentSessionId },
         ...buildActiveSessionQuery(),
@@ -498,10 +639,10 @@ export class AuthSessionService {
 
   static async listSessions(userId: string, currentSessionId?: string) {
     return withSessionStoreBoundary('listSessions', async () => {
-      const sessions = await AuthSession.find({
+      const sessions = await authSessionFindSorted<IAuthSession>('AuthSession.find.listSessions.sessions', {
         userId,
         ...buildActiveSessionQuery(),
-      }).sort({ lastSeenAt: -1 });
+      }, { lastSeenAt: -1 });
 
       return sessions.map((session) => ({
         id: session.sessionId,
@@ -519,7 +660,7 @@ export class AuthSessionService {
 
   static async isSuspiciousLogin(userId: string, deviceId: string): Promise<boolean> {
     return withSessionStoreBoundary('isSuspiciousLogin', async () => {
-      const existingSession = await AuthSession.findOne({
+      const existingSession = await authSessionFindOne<IAuthSession>('AuthSession.findOne.isSuspiciousLogin.deviceSession', {
         userId,
         deviceId,
         ...buildActiveSessionQuery(),
@@ -528,7 +669,7 @@ export class AuthSessionService {
         return false;
       }
 
-      const anotherActiveSession = await AuthSession.exists({
+      const anotherActiveSession = await authSessionExists('AuthSession.exists.isSuspiciousLogin.anotherActiveSession', {
         userId,
         ...buildActiveSessionQuery(),
       });
