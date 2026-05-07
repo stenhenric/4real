@@ -29,7 +29,7 @@ export class OneTimeTokenService {
         type,
         tokenHash: hashOpaqueToken(token),
         consumedAt: null,
-        expiresAt: { $gt: now },
+        expiresAt: { $gt: new Date() },
       },
       { $set: { consumedAt: now } },
       { new: true },
