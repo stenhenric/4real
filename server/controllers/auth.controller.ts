@@ -416,10 +416,19 @@ export class AuthController {
         ? (err as { details: { operation: string } }).details.operation
         : 'handleGoogleCallback';
 
+      const sanitizedError = err && typeof err === 'object'
+        ? {
+            name: 'name' in err && typeof err.name === 'string' ? err.name : undefined,
+            message: 'message' in err && typeof err.message === 'string' ? err.message : undefined,
+            code: 'code' in err && typeof err.code === 'string' ? err.code : undefined,
+            status: 'status' in err && typeof err.status === 'number' ? err.status : undefined,
+          }
+        : { message: String(err) };
+
       logger.error('auth.google_callback_failed', {
         errorCode,
         operation,
-        error: err,
+        error: sanitizedError,
       });
       res.redirect(302, '/auth/login?error=google');
     }

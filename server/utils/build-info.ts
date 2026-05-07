@@ -73,8 +73,7 @@ function detectBuiltAt(): string {
 function detectAuthSessionFixPresence(gitSha: string): boolean | null {
   if (
     gitSha === REQUIRED_AUTH_SESSION_FIX_GIT_SHA
-    || gitSha.startsWith(REQUIRED_AUTH_SESSION_FIX_GIT_SHA)
-    || REQUIRED_AUTH_SESSION_FIX_GIT_SHA.startsWith(gitSha)
+    || (gitSha.length >= REQUIRED_AUTH_SESSION_FIX_GIT_SHA.length && gitSha.startsWith(REQUIRED_AUTH_SESSION_FIX_GIT_SHA))
   ) {
     return true;
   }

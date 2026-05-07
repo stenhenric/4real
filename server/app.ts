@@ -36,7 +36,7 @@ interface AppDependencies {
 const defaultAppDependencies: AppDependencies = {
   registerApiRoutes: async (app) => {
     const { registerApiRoutes } = await import('./routes/index.ts');
-    registerApiRoutes(app);
+    return registerApiRoutes(app);
   },
   registerFrontendMiddleware: async (app) => {
     const { registerFrontendMiddleware } = await import('./http/frontend.ts');
