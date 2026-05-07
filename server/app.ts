@@ -70,6 +70,27 @@ export async function createApp(
 
   app.disable('x-powered-by');
   app.locals.statusProvider = statusProvider;
+
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/.')) {
+      return res.sendStatus(404);
+    }
+
+    const decodedPath = (() => {
+      try {
+        return decodeURIComponent(req.path);
+      } catch {
+        return req.path;
+      }
+    })();
+
+    if (decodedPath.includes('/.') || req.path.includes('/.')) {
+      return res.sendStatus(404);
+    }
+
+    return next();
+  });
+
   app.use(requestContextMiddleware);
   app.use(helmet({
     contentSecurityPolicy: false,
