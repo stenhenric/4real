@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDownUp, BellDot, Landmark, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
@@ -93,6 +93,7 @@ export function MerchantLayout() {
   const location = useLocation();
   const { error: showError } = useToast();
   const [dashboard, setDashboard] = useState<MerchantDashboardDTO | null>(null);
+  const dashboardRef = useRef<MerchantDashboardDTO | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +108,7 @@ export function MerchantLayout() {
 
     try {
       const nextDashboard = await getMerchantDashboard(signal);
+      dashboardRef.current = nextDashboard;
       startTransition(() => {
         setDashboard(nextDashboard);
         setStatus('ready');
@@ -126,14 +128,14 @@ export function MerchantLayout() {
       const message = loadError instanceof Error ? loadError.message : 'Failed to load merchant dashboard.';
       setIsRefreshing(false);
       setError(message);
-      if (!dashboard) {
+      if (!dashboardRef.current) {
         setStatus('error');
       }
       if (mode === 'manual') {
         showError(message);
       }
     }
-  }, [dashboard, showError]);
+  }, [showError]);
 
   useEffect(() => {
     const controller = new AbortController();

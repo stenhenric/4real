@@ -9,6 +9,7 @@ import { createOpaqueToken, hashOpaqueToken } from './auth-crypto.service.ts';
 import { HttpError, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
 import { logger, type Logger } from '../utils/logger.ts';
 import { redact } from '../utils/redact.ts';
+import { trustFilter } from '../utils/trusted-filter.ts';
 import { UserService } from './user.service.ts';
 
 const ACCESS_KEY_PREFIX = 'auth:access:';
@@ -201,8 +202,13 @@ function debugAuthSessionQueryMutation(label: string, beforeSnapshot: string | n
   });
 }
 
-async function authSessionFind<TDoc = unknown>(label: string, filter: Record<string, unknown>): Promise<TDoc[]> {
+function prepareAuthSessionFilter(label: string, filter: Record<string, unknown>): Record<string, unknown> {
   const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  return trustFilter(clonedFilter);
+}
+
+async function authSessionFind<TDoc = unknown>(label: string, filter: Record<string, unknown>): Promise<TDoc[]> {
+  const clonedFilter = prepareAuthSessionFilter(label, filter);
   const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
   const result = await AuthSession.find(clonedFilter) as unknown as TDoc[];
   debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
@@ -214,7 +220,7 @@ async function authSessionFindSorted<TDoc = unknown>(
   filter: Record<string, unknown>,
   sort: Record<string, 1 | -1>,
 ): Promise<TDoc[]> {
-  const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  const clonedFilter = prepareAuthSessionFilter(label, filter);
   const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
   const result = await AuthSession.find(clonedFilter).sort(sort) as unknown as TDoc[];
   debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
@@ -225,7 +231,7 @@ async function authSessionFindOne<TDoc = unknown>(
   label: string,
   filter: Record<string, unknown>,
 ): Promise<TDoc | null> {
-  const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  const clonedFilter = prepareAuthSessionFilter(label, filter);
   const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
   const result = await AuthSession.findOne(clonedFilter) as unknown as TDoc | null;
   debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
@@ -236,7 +242,7 @@ async function authSessionExists(
   label: string,
   filter: Record<string, unknown>,
 ): Promise<unknown> {
-  const clonedFilter = deepCloneForMongoose(debugAuthSessionQuery(label, filter));
+  const clonedFilter = prepareAuthSessionFilter(label, filter);
   const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
   const result = await AuthSession.exists(clonedFilter);
   debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
@@ -598,6 +604,22 @@ export class AuthSessionService {
   static async revokeSession(sessionId: string, reason = 'session_revoked'): Promise<boolean> {
     return withSessionStoreBoundary('revokeSession', async () => {
       const session = await authSessionFindOne<IAuthSession>('AuthSession.findOne.revokeSession.session', {
+        sessionId,
+        ...buildActiveSessionQuery(),
+      });
+      if (!session) {
+        return false;
+      }
+
+      await revokeSessionDocument(session, reason);
+      return true;
+    });
+  }
+
+  static async revokeSessionForUser(userId: string, sessionId: string, reason = 'session_revoked'): Promise<boolean> {
+    return withSessionStoreBoundary('revokeSessionForUser', async () => {
+      const session = await authSessionFindOne<IAuthSession>('AuthSession.findOne.revokeSessionForUser.session', {
+        userId,
         sessionId,
         ...buildActiveSessionQuery(),
       });

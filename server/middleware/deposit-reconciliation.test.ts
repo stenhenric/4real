@@ -145,6 +145,40 @@ test('replayDepositWindow classifies live-shaped transfers without mutating bala
   assert.equal(result.transfers[0].candidateUsername, 'memo-owner');
 });
 
+test('replayDepositWindow formats large raw deposit amounts without floating-point rounding', async (t) => {
+  registerCleanup(t);
+
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'large-amount-hash',
+      transaction_now: 1_700_000_105,
+      jetton_master: USDT_MASTER,
+      amount: '9007199254740993',
+      source: SENDER_OWNER_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+      decoded_forward_payload: { comment: 'large-unmatched' },
+    },
+  ]) as Response);
+  const seenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const unmatchedMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => []);
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => seenHashesMock.mock.restore());
+  t.after(() => unmatchedMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+
+  const result = await replayDepositWindow({
+    sinceUnixTime: 1_700_000_000,
+    untilUnixTime: 1_700_000_200,
+    dryRun: true,
+  });
+
+  assert.equal(result.transfers.length, 1);
+  assert.equal(result.transfers[0].amountRaw, '9007199254740993');
+  assert.equal(result.transfers[0].amountUsdt, '9007199254.740993');
+});
+
 test('replayDepositWindow apply returns post-ingestion decisions when a memo is consumed mid-run', async (t) => {
   registerCleanup(t);
 

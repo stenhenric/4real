@@ -100,6 +100,35 @@ test('createSession queries active device sessions with an active-session filter
   });
 });
 
+test('createSession active-session operators survive mongoose sanitizeFilter', async (t) => {
+  const user = createMockUser();
+  const originalFind = AuthSession.find.bind(AuthSession);
+
+  t.mock.method(AuthSession, 'find', async (filter: Record<string, any>) => {
+    mongoose.sanitizeFilter(filter);
+    originalFind(filter).cast(AuthSession);
+    return [];
+  });
+  t.mock.method(AuthSession, 'create', async () => {
+    throw serviceUnavailable('stop after trusted filter verification', 'STOP_AFTER_TRUSTED_FILTER_VERIFICATION');
+  });
+
+  await assert.rejects(
+    () => AuthSessionService.createSession({
+      user,
+      metadata: {
+        deviceId: 'device-1',
+        ipAddress: '127.0.0.1',
+        userAgent: 'test-agent',
+      },
+    }),
+    (error: unknown) => typeof error === 'object'
+      && error !== null
+      && 'code' in error
+      && (error as { code?: string }).code === 'STOP_AFTER_TRUSTED_FILTER_VERIFICATION',
+  );
+});
+
 test('validateAccessToken queries the current session with an active-session filter', async (t) => {
   const accessToken = 'access-token';
   const accessTokenHash = hashOpaqueToken(accessToken);

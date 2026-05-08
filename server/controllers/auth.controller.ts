@@ -593,7 +593,7 @@ export class AuthController {
       throw badRequest('Session id is required', 'SESSION_ID_REQUIRED');
     }
 
-    await AuthSessionService.revokeSession(sessionId, 'user_session_revoked');
+    await AuthSessionService.revokeSessionForUser(req.user.id, sessionId, 'user_session_revoked');
     if (sessionId === req.user.sessionId) {
       clearSessionCookies(res);
       applyClearSiteDataHeaders(res);

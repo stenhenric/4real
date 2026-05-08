@@ -11,7 +11,7 @@ type RouteExpectation = {
 const MOCK_TON_WALLETS = [{
   app_name: 'mock-wallet',
   name: 'Mock Wallet',
-  image: 'https://example.com/mock-wallet.png',
+  image: 'http://127.0.0.1:4317/tonconnect-icon.svg',
   about_url: 'https://example.com/mock-wallet',
   universal_url: 'https://example.com/mock-wallet/connect',
   bridge: [{ type: 'sse', url: 'https://example.com/mock-wallet/bridge' }],
@@ -54,6 +54,25 @@ async function stubTonConnectWallets(page: Page) {
   });
 }
 
+async function installTurnstileStub(page: Page) {
+  await page.addInitScript(() => {
+    (window as unknown as {
+      turnstile: {
+        render: (_element: HTMLElement, options: { callback?: (token: string) => void }) => string;
+        reset: () => void;
+        remove: () => void;
+      };
+    }).turnstile = {
+      render: (_element, options) => {
+        window.setTimeout(() => options.callback?.('e2e-turnstile-token'), 0);
+        return 'e2e-turnstile-widget';
+      },
+      reset: () => {},
+      remove: () => {},
+    };
+  });
+}
+
 async function expectRouteToRender(page: Page, route: RouteExpectation) {
   await page.goto(route.path);
 
@@ -75,12 +94,13 @@ test.beforeEach(async ({ request }) => {
 });
 
 test('public routes when opened anonymously render their primary surfaces without runtime errors', async ({ page }) => {
+  await installTurnstileStub(page);
   await stubTonConnectWallets(page);
   const health = installErrorCollectors(page, {
     ignoreConsole: [/Failed to load resource: the server responded with a status of 401 \(Unauthorized\)/i],
   });
   const routes: RouteExpectation[] = [
-    { path: '/', heading: /real competition, clean settlement, visible security/i },
+    { path: '/', heading: /get real\.\s*connect\s*4/i },
     { path: '/auth/login?error=session', heading: /sign in without friction/i },
     { path: '/auth/register', heading: /enter with a verified identity/i },
     { path: '/auth/forgot-password', heading: /reset access without exposing account state/i },
@@ -103,10 +123,10 @@ test('player routes when a session is preloaded render the lobby leaderboard ban
   await stubTonConnectWallets(page);
   const health = installErrorCollectors(page);
   const routes: RouteExpectation[] = [
-    { path: '/play', heading: /central lobby/i },
     { path: '/leaderboard', text: /leaderboard/i },
     { path: '/bank', heading: /the bank/i },
     { path: '/profile/user-player-one', heading: /player-one/i },
+    { path: '/play', heading: /central lobby/i },
   ];
 
   try {

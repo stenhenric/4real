@@ -23,6 +23,7 @@ import { recordDepositIngestionDecision, registerMetricsCollector, setUnmatchedD
 import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
 import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
+import { formatUsdtAmount } from '../utils/money.ts';
 import { badRequest, conflict, notFound } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 
@@ -89,7 +90,7 @@ export interface DepositReviewItem {
 }
 
 function toUsdtDisplay(amountRaw: string): string {
-  return (Number(amountRaw) / 1e6).toFixed(6);
+  return formatUsdtAmount(amountRaw);
 }
 
 function isDuplicateKeyError(error: unknown): error is { code: number } {

@@ -785,6 +785,15 @@ function createApp() {
     res.json({ status: 'ready' });
   });
 
+  app.get('/tonconnect-manifest.json', (req, res) => {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    res.json({
+      url: origin,
+      name: '4real',
+      iconUrl: `${origin}/tonconnect-icon.svg`,
+    });
+  });
+
   app.post('/api/auth/register', (req, res) => {
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const username = String(req.body?.username ?? '').trim();
@@ -1408,7 +1417,7 @@ const app = createApp();
 const server = http.createServer(app);
 io = new SocketIOServer(server, {
   cors: {
-    origin: '*',
+    origin: ['http://127.0.0.1:4317', 'http://localhost:4317'],
     credentials: true,
   },
 });

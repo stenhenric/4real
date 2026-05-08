@@ -22,7 +22,7 @@ import {
   parseRate,
   parseUsdtAmount,
 } from '../utils/money.ts';
-import { parseMultipartForm } from '../utils/multipart.ts';
+import { matchesDeclaredImageType, parseMultipartForm } from '../utils/multipart.ts';
 import { badRequest, notFound, payloadTooLarge, serviceUnavailable, unsupportedMediaType } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 import {
@@ -81,6 +81,10 @@ export class OrderController {
 
       if (!env.proofAllowedMimeTypes.includes(proofImage.contentType)) {
         throw unsupportedMediaType('Unsupported proof image type', 'UNSUPPORTED_PROOF_IMAGE_TYPE');
+      }
+
+      if (!matchesDeclaredImageType(proofImage.contentType, proofImage.data)) {
+        throw unsupportedMediaType('Proof image content does not match the declared image type', 'PROOF_IMAGE_SIGNATURE_MISMATCH');
       }
     }
 

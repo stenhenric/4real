@@ -38,6 +38,7 @@ function withEmailEnv(run: () => Promise<void> | void) {
     GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN,
     GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
     EMAIL_FROM: process.env.EMAIL_FROM,
+    TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
   };
 
   process.env.NODE_ENV = 'test';
@@ -48,6 +49,7 @@ function withEmailEnv(run: () => Promise<void> | void) {
   process.env.GOOGLE_REFRESH_TOKEN = 'gmail-refresh-token';
   process.env.GOOGLE_REDIRECT_URI = 'http://127.0.0.1:3000/api/internal/gmail/oauth2/callback';
   process.env.EMAIL_FROM = 'botandbag@gmail.com';
+  process.env.TURNSTILE_SECRET_KEY = '';
   resetEnvCacheForTests();
 
   return Promise.resolve(run()).finally(() => {

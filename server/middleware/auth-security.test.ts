@@ -14,8 +14,10 @@ import {
 } from '../config/cookies.ts';
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { AuthController } from '../controllers/auth.controller.ts';
+import { requireMfaStepUpIfEnabled } from '../middleware/auth.middleware.ts';
 import { decodeBase32 } from '../services/auth-crypto.service.ts';
 import { AuthEmailService } from '../services/auth-email.service.ts';
+import { AuthMfaService } from '../services/auth-mfa.service.ts';
 import { AuthSessionService } from '../services/auth-session.service.ts';
 import { GoogleOAuthService } from '../services/google-oauth.service.ts';
 import { assertValidPassword } from '../services/password-policy.service.ts';
@@ -460,7 +462,12 @@ test('handleGoogleCallback redirects to login and logs stable session failure de
     {
       errorCode: 'AUTH_SESSION_UNAVAILABLE',
       operation: 'createSession',
-      error: sessionError,
+      error: {
+        name: 'ServiceUnavailableError',
+        message: 'Authentication session unavailable',
+        code: 'AUTH_SESSION_UNAVAILABLE',
+        status: undefined,
+      },
     },
   ]);
 });
@@ -486,8 +493,8 @@ test('logout clears site data and removes all session cookies', async (t) => {
   );
 });
 
-test('revokeSession clears site data when the current session is revoked', async (t) => {
-  const revokeMock = t.mock.method(AuthSessionService, 'revokeSession', async () => undefined);
+test('revokeSession scopes revocation to the authenticated user and clears site data when current', async (t) => {
+  const revokeMock = t.mock.method(AuthSessionService, 'revokeSessionForUser', async () => true);
   const listMock = t.mock.method(AuthSessionService, 'listSessions', async () => []);
   const req = {
     user: {
@@ -508,6 +515,75 @@ test('revokeSession clears site data when the current session is revoked', async
   await AuthController.revokeSession(req, res);
 
   assert.equal(revokeMock.mock.callCount(), 1);
+  assert.deepEqual(revokeMock.mock.calls[0]?.arguments, [
+    'user-1',
+    'session-1',
+    'user_session_revoked',
+  ]);
   assert.equal(listMock.mock.callCount(), 1);
   assert.equal(res.getHeader('clear-site-data'), '"cache", "cookies", "storage"');
+});
+
+test('requireMfaStepUpIfEnabled allows first-time MFA setup without a step-up', async () => {
+  const req = {
+    user: {
+      id: 'user-1',
+      sessionId: 'session-1',
+      deviceId: 'device-1',
+      isAdmin: false,
+      emailVerified: true,
+      usernameComplete: true,
+      mfaEnabled: false,
+    },
+  } as any;
+  const res = createResponseMock() as any;
+  let capturedError: unknown = null;
+  let nextCalled = false;
+
+  await new Promise<void>((resolve) => {
+    requireMfaStepUpIfEnabled(req, res, (error?: unknown) => {
+      capturedError = error;
+      nextCalled = true;
+      resolve();
+    });
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(capturedError, undefined);
+});
+
+test('requireMfaStepUpIfEnabled requires a fresh step-up before replacing existing MFA', async (t) => {
+  const expiryMock = t.mock.method(AuthSessionService, 'getMfaStepUpExpiry', async () => null);
+  const challengeMock = t.mock.method(AuthMfaService, 'createChallenge', async () => 'challenge-1');
+  const req = {
+    user: {
+      id: 'user-1',
+      sessionId: 'session-1',
+      deviceId: 'device-1',
+      isAdmin: false,
+      emailVerified: true,
+      usernameComplete: true,
+      mfaEnabled: true,
+    },
+  } as any;
+  const res = createResponseMock() as any;
+  let capturedError: { statusCode?: number; code?: string; details?: Record<string, unknown> } | undefined;
+
+  await new Promise<void>((resolve) => {
+    requireMfaStepUpIfEnabled(req, res, (error?: typeof capturedError) => {
+      capturedError = error;
+      resolve();
+    });
+  });
+
+  assert.equal(expiryMock.mock.callCount(), 1);
+  assert.equal(challengeMock.mock.callCount(), 1);
+  assert.deepEqual(challengeMock.mock.calls[0]?.arguments[0], {
+    userId: 'user-1',
+    mode: 'stepup',
+    sessionId: 'session-1',
+  });
+  assert.equal(capturedError?.statusCode, 403);
+  assert.equal(capturedError?.code, 'MFA_REQUIRED');
+  assert.equal(capturedError?.details?.challengeId, 'challenge-1');
 });

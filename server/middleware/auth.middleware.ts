@@ -72,19 +72,7 @@ export const requireVerifiedAccount = (req: AuthRequest, _res: Response, next: N
   next();
 };
 
-export const requireMfaStepUp = (req: AuthRequest, _res: Response, next: NextFunction): void => {
-  if (!req.user) {
-    next(unauthorized('Access token required', 'UNAUTHENTICATED'));
-    return;
-  }
-
-  if (!req.user.mfaEnabled) {
-    next(forbidden('Set up MFA to continue', 'MFA_SETUP_REQUIRED', {
-      nextStep: 'setup_mfa',
-    }));
-    return;
-  }
-
+function requireFreshMfaStepUp(req: AuthenticatedRequest, next: NextFunction): void {
   void AuthSessionService.getMfaStepUpExpiry(req.user.sessionId)
     .then(async (expiresAt) => {
       if (expiresAt && expiresAt.getTime() > Date.now()) {
@@ -93,9 +81,9 @@ export const requireMfaStepUp = (req: AuthRequest, _res: Response, next: NextFun
       }
 
       const challengeId = await AuthMfaService.createChallenge({
-        userId: req.user!.id,
+        userId: req.user.id,
         mode: 'stepup',
-        sessionId: req.user!.sessionId,
+        sessionId: req.user.sessionId,
       });
       next(forbidden('Additional verification required', 'MFA_REQUIRED', {
         challengeId,
@@ -111,4 +99,34 @@ export const requireMfaStepUp = (req: AuthRequest, _res: Response, next: NextFun
 
       next(forbidden('Additional verification required', 'MFA_REQUIRED'));
     });
+}
+
+export const requireMfaStepUp = (req: AuthRequest, _res: Response, next: NextFunction): void => {
+  if (!req.user) {
+    next(unauthorized('Access token required', 'UNAUTHENTICATED'));
+    return;
+  }
+
+  if (!req.user.mfaEnabled) {
+    next(forbidden('Set up MFA to continue', 'MFA_SETUP_REQUIRED', {
+      nextStep: 'setup_mfa',
+    }));
+    return;
+  }
+
+  requireFreshMfaStepUp(req as AuthenticatedRequest, next);
+};
+
+export const requireMfaStepUpIfEnabled = (req: AuthRequest, _res: Response, next: NextFunction): void => {
+  if (!req.user) {
+    next(unauthorized('Access token required', 'UNAUTHENTICATED'));
+    return;
+  }
+
+  if (!req.user.mfaEnabled) {
+    next();
+    return;
+  }
+
+  requireFreshMfaStepUp(req as AuthenticatedRequest, next);
 };

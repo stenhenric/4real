@@ -2,7 +2,7 @@ import { Router } from 'express';
 
 import { AuthController } from '../controllers/auth.controller.ts';
 import { asyncHandler } from '../utils/async-handler.ts';
-import { authenticateToken, requireMfaStepUp } from '../middleware/auth.middleware.ts';
+import { authenticateToken, requireMfaStepUp, requireMfaStepUpIfEnabled } from '../middleware/auth.middleware.ts';
 import { createAuthRateLimiter } from '../middleware/rate-limit.middleware.ts';
 import { validateBody } from '../middleware/validate.middleware.ts';
 import {
@@ -48,7 +48,7 @@ router.post('/logout', asyncHandler(AuthController.logout));
 router.get('/sessions', authenticateToken, asyncHandler(AuthController.listSessions));
 router.delete('/sessions/:sessionId', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.revokeSession));
 router.post('/sessions/revoke-others', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.revokeOtherSessions));
-router.post('/mfa/totp/setup', authenticateToken, asyncHandler(AuthController.startTotpSetup));
+router.post('/mfa/totp/setup', authenticateToken, requireMfaStepUpIfEnabled, asyncHandler(AuthController.startTotpSetup));
 router.post('/mfa/totp/verify', authenticateToken, validateBody(mfaTotpVerifyRequestSchema), asyncHandler(AuthController.verifyTotpSetup));
 router.post('/mfa/disable', authenticateToken, requireMfaStepUp, validateBody(mfaDisableRequestSchema), asyncHandler(AuthController.disableMfa));
 router.post('/mfa/recovery-codes/regenerate', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.regenerateRecoveryCodes));

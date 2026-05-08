@@ -24,8 +24,7 @@ export async function loginAs(page: Page, email: string) {
     Object.entries(cookies).map(([name, value]) => ({
       name,
       value,
-      domain: parsedUrl.hostname,
-      path: '/',
+      url: parsedUrl.origin,
       httpOnly: true,
       sameSite: 'Lax',
     })),

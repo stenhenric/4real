@@ -8,6 +8,7 @@ import { cleanUsername, normalizeEmail, normalizeUsername } from '../services/au
 import { resetCacheServiceForTests } from '../services/cache.service.ts';
 import { calculateMatchPayout } from '../services/match-payout.service.ts';
 import { getMerchantConfig, updateMerchantConfig } from '../services/merchant-config.service.ts';
+import { matchesDeclaredImageType } from '../utils/multipart.ts';
 import { createOrderRequestSchema, loginPasswordRequestSchema } from '../validation/request-schemas.ts';
 
 const restoreEnv = (key: keyof NodeJS.ProcessEnv, value: string | undefined) => {
@@ -68,6 +69,17 @@ test('createOrderRequestSchema validates type and amount without trusting proof 
 
   assert.equal(valid.success, true);
   assert.equal(invalid.success, false);
+});
+
+test('matchesDeclaredImageType rejects spoofed proof image MIME types', () => {
+  const spoofedPng = Buffer.from('<html><script>alert("proof")</script></html>', 'utf8');
+  const validPng = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d,
+  ]);
+
+  assert.equal(matchesDeclaredImageType('image/png', spoofedPng), false);
+  assert.equal(matchesDeclaredImageType('image/png', validPng), true);
 });
 
 test('calculateMatchPayout keeps commission math on the backend', () => {

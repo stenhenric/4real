@@ -6,6 +6,28 @@ test.beforeEach(async ({ request }) => {
 });
 
 test('boots the app, enforces auth, supports register verify login logout, and preserves the session', async ({ page }) => {
+  const passwordInput = () => page.getByLabel('Password', { exact: true });
+  await page.addInitScript(() => {
+    let latestOptions: { callback?: (token: string) => void } | undefined;
+    const issueToken = () => window.setTimeout(() => latestOptions?.callback?.('e2e-turnstile-token'), 0);
+
+    (window as unknown as {
+      turnstile: {
+        render: (_element: HTMLElement, options: { callback?: (token: string) => void }) => string;
+        reset: () => void;
+        remove: () => void;
+      };
+    }).turnstile = {
+      render: (_element, options) => {
+        latestOptions = options;
+        issueToken();
+        return 'e2e-turnstile-widget';
+      },
+      reset: issueToken,
+      remove: () => {},
+    };
+  });
+
   const healthResponse = await page.request.get('/api/health');
   expect(healthResponse.ok()).toBeTruthy();
 
@@ -17,7 +39,9 @@ test('boots the app, enforces auth, supports register verify login logout, and p
 
   await page.getByLabel('Public Username').fill('audit-user');
   await page.getByLabel('Email').fill('audit-user@example.com');
-  await page.getByLabel('Password').fill(DEFAULT_PASSWORD);
+  await passwordInput().fill(DEFAULT_PASSWORD);
+  await page.getByLabel('Confirm Password', { exact: true }).fill(DEFAULT_PASSWORD);
+  await page.getByRole('button', { name: /^continue$/i }).click();
   await page.getByRole('button', { name: /create account/i }).click();
 
   await expect(page).toHaveURL(/\/auth\/verify-email\?email=audit-user%40example\.com/);
@@ -36,12 +60,16 @@ test('boots the app, enforces auth, supports register verify login logout, and p
   await expect(page).toHaveURL(/\/auth\/login$/);
 
   await page.getByLabel('Email').fill('audit-user@example.com');
-  await page.getByLabel('Password').fill('WrongPassword123!');
-  await page.getByLabel('Password').press('Enter');
+  await page.getByRole('button', { name: /continue with password/i }).click();
+  const signInButton = page.getByRole('button', { name: /^sign in$/i });
+  await expect(signInButton).toBeEnabled();
+  await passwordInput().fill('WrongPassword123!');
+  await signInButton.click();
   await expectToast(page, /invalid email or password/i);
 
-  await page.getByLabel('Password').fill(DEFAULT_PASSWORD);
-  await page.getByLabel('Password').press('Enter');
+  await expect(signInButton).toBeEnabled();
+  await passwordInput().fill(DEFAULT_PASSWORD);
+  await signInButton.click();
   await expect(page).toHaveURL(/\/play$/);
   await expect(page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
 });
