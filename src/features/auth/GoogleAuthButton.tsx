@@ -1,3 +1,4 @@
+import { SketchyButton } from '../../components/SketchyButton';
 import { cn } from '../../utils/cn';
 
 interface GoogleAuthButtonProps {
@@ -16,12 +17,13 @@ export function GoogleAuthButton({
   text = 'Continue with Google',
 }: GoogleAuthButtonProps) {
   return (
-    <button
+    <SketchyButton
       className={cn(
-        'inline-flex w-full items-center justify-center gap-3 rough-border bg-white px-4 py-3 text-sm font-bold uppercase tracking-tight text-ink-black shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-40',
+        'inline-flex w-full items-center justify-center gap-3 bg-white px-4 py-3 text-sm font-bold uppercase tracking-tight text-ink-black shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-40',
         className,
       )}
       disabled={disabled || loading}
+      fill="#ffffff"
       onClick={onClick}
       type="button"
     >
@@ -32,6 +34,6 @@ export function GoogleAuthButton({
         <path d="M12 3.98c1.47 0 2.78.5 3.81 1.47l2.86-2.86C16.95.98 14.69 0 12 0A9.98 9.98 0 0 0 .76 4.89l4.89 3.08C6.54 5.97 9.05 3.98 12 3.98Z" fill="#EA4335" />
       </svg>
       <span>{loading ? 'Preparing...' : text}</span>
-    </button>
+    </SketchyButton>
   );
 }

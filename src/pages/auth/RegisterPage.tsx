@@ -62,7 +62,7 @@ export default function RegisterPage() {
       return false;
     }
     if (!isPasswordValid) {
-      showError('Please ensure your password meets all requirements.');
+      showError('Password requirements not met.');
       return false;
     }
     if (password !== confirmPassword) {
@@ -203,13 +203,13 @@ export default function RegisterPage() {
 
         {step === 'verification' && (
           <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handleSubmit}>
-            <button 
+            <SketchyButton
               type="button" 
               onClick={resetStep}
               className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
             >
               ← Back to details
-            </button>
+            </SketchyButton>
 
             <AuthNotice tone="info">
               Verify you are human to create the account for {email}.

@@ -1,3 +1,4 @@
+import { ensureAuthSessionIndexes } from '../models/AuthSession.ts';
 import { Match } from '../models/Match.ts';
 import { Order } from '../models/Order.ts';
 import { Transaction } from '../models/Transaction.ts';
@@ -32,6 +33,7 @@ export async function setupIndexes() {
     JettonWalletCacheRepository.ensureIndexes(),
     UnmatchedDepositRepository.ensureIndexes(),
     FailedDepositIngestionRepository.ensureIndexes(),
+    ensureAuthSessionIndexes(),
     User.createIndexes(),
     Match.createIndexes(),
     Order.createIndexes(),

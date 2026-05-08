@@ -25,16 +25,16 @@ const DepositPanel = () => {
 
   const handleDepositTonConnect = async () => {
     if (!wallet) {
-      addToast('Please connect your wallet first', 'error');
+      addToast('Connect your wallet first.', 'error');
       return;
     }
 
     if (!memoData) {
-      addToast('Please generate a memo first', 'error');
+      addToast('Generate a memo first.', 'error');
       return;
     }
     if (!connectedWalletAddress) {
-      addToast('Please connect your wallet first', 'error');
+      addToast('Connect your wallet first.', 'error');
       return;
     }
 
@@ -53,7 +53,7 @@ const DepositPanel = () => {
       });
 
       await tonConnectUI.sendTransaction(prepared.transaction);
-      addToast('Transaction sent successfully! Waiting for confirmation...', 'success');
+      addToast('Transaction sent. Awaiting confirmation.', 'success');
     } catch (error) {
       addToast(error instanceof Error ? error.message : 'Transaction failed', 'error');
     } finally {
@@ -67,7 +67,7 @@ const DepositPanel = () => {
     try {
       const data = await createDepositMemo();
       setMemoData(data);
-      addToast('Deposit memo generated successfully!', 'success');
+      addToast('Deposit memo generated.', 'success');
     } catch (error) {
       addToast(error instanceof Error ? error.message : 'Failed to generate memo', 'error');
     } finally {
@@ -126,13 +126,15 @@ const DepositPanel = () => {
                     type="text"
                     value={memoData.address}
                   />
-                  <button
+                  <SketchyButton
                     className="bg-ink-black text-white px-4 rounded-r hover:bg-black/80 transition-colors flex items-center gap-2"
+                    fill="#1a1a1a"
+                    stroke="#1a1a1a"
                     onClick={() => void copyToClipboard(memoData.address)}
                     type="button"
                   >
                     <Copy size={16} /> Copy
-                  </button>
+                  </SketchyButton>
                 </div>
               </div>
 
@@ -151,13 +153,15 @@ const DepositPanel = () => {
                     type="text"
                     value={memoData.memo}
                   />
-                  <button
+                  <SketchyButton
                     className="bg-green-700 text-white px-4 rounded-r hover:bg-green-800 transition-colors flex items-center gap-2"
+                    fill="#15803d"
+                    stroke="#166534"
                     onClick={() => void copyToClipboard(memoData.memo)}
                     type="button"
                   >
                     <Copy size={16} /> Copy
-                  </button>
+                  </SketchyButton>
                 </div>
                 <p className="text-xs text-red-500 font-bold mt-1 ml-1">
                   * You MUST include this memo, otherwise your funds will be lost.
@@ -190,7 +194,7 @@ const DepositPanel = () => {
                     value={depositAmount}
                   />
                 </div>
-                <button
+                <SketchyButton
                   aria-describedby={!wallet ? 'wallet-connect-required' : undefined}
                   className={`w-full font-bold py-3 px-4 rounded text-center transition-colors shadow-md border-2 border-black ${
                     !wallet || sendingTransaction
@@ -198,11 +202,12 @@ const DepositPanel = () => {
                       : 'bg-ink-blue hover:opacity-90 text-white'
                   }`}
                   disabled={!wallet || sendingTransaction}
+                  fill={!wallet || sendingTransaction ? '#d1d5db' : '#2962ff'}
                   onClick={handleDepositTonConnect}
                   type="button"
                 >
                   {sendingTransaction ? 'Sending...' : 'Deposit via TonConnect'}
-                </button>
+                </SketchyButton>
                 {!wallet && (
                   <p className="text-xs text-red-500 mt-2 text-center" id="wallet-connect-required">
                   Please connect your wallet first

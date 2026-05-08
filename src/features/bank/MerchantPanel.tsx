@@ -156,7 +156,7 @@ const MerchantPanel = () => {
         });
 
         setOrders((currentOrders) => [order, ...currentOrders]);
-        success('Buy order submitted. Merchant is reviewing your payment proof.');
+        success('Buy order submitted.');
       } else {
         const order = await createOrder({
           type: 'SELL',
@@ -164,7 +164,7 @@ const MerchantPanel = () => {
         });
 
         setOrders((currentOrders) => [order, ...currentOrders]);
-        success('Sell order placed. Merchant will review your payout.');
+        success('Sell order placed.');
       }
 
       resetTradeForm();
@@ -294,34 +294,36 @@ const MerchantPanel = () => {
 
           <SketchyContainer className="bg-white/80 shadow-xl" roughness={0.5}>
             <div className="flex gap-4 mb-8" role="tablist" aria-label="Merchant trade types">
-              <button
+              <SketchyButton
                 aria-controls="merchant-buy-panel"
                 aria-selected={activeTab === 'buy'}
                 className={cn(
                   'flex-1 py-3 text-xl font-bold border-b-4 transition-all uppercase tracking-tighter',
                   activeTab === 'buy' ? 'border-ink-black bg-black/5 scale-105' : 'border-transparent opacity-30',
                 )}
+                fill={activeTab === 'buy' ? '#f3f4f6' : 'transparent'}
                 id="merchant-buy-tab"
                 onClick={() => handleTabChange('buy')}
                 role="tab"
                 type="button"
               >
                 Buy USDT
-              </button>
-              <button
+              </SketchyButton>
+              <SketchyButton
                 aria-controls="merchant-sell-panel"
                 aria-selected={activeTab === 'sell'}
                 className={cn(
                   'flex-1 py-3 text-xl font-bold border-b-4 transition-all uppercase tracking-tighter',
                   activeTab === 'sell' ? 'border-ink-black bg-black/5 scale-105' : 'border-transparent opacity-30',
                 )}
+                fill={activeTab === 'sell' ? '#f3f4f6' : 'transparent'}
                 id="merchant-sell-tab"
                 onClick={() => handleTabChange('sell')}
                 role="tab"
                 type="button"
               >
                 Sell USDT
-              </button>
+              </SketchyButton>
             </div>
 
             <form
@@ -521,20 +523,24 @@ const MerchantPanel = () => {
 
                         {isAdmin && order.status === 'PENDING' && (
                           <div className="flex gap-2 mt-3 justify-end">
-                            <button
+                            <SketchyButton
                               className="text-[11px] font-bold text-green-700 hover:scale-110 transition-transform bg-green-100 px-2 rounded"
+                              fill="#dcfce7"
+                              stroke="#15803d"
                               onClick={() => void handleStatusUpdate(order._id, 'DONE')}
                               type="button"
                             >
                               DONE
-                            </button>
-                            <button
+                            </SketchyButton>
+                            <SketchyButton
                               className="text-[11px] font-bold text-red-700 hover:scale-110 transition-transform bg-red-100 px-2 rounded"
+                              fill="#fee2e2"
+                              stroke="#b91c1c"
                               onClick={() => void handleStatusUpdate(order._id, 'REJECTED')}
                               type="button"
                             >
                               FAIL
-                            </button>
+                            </SketchyButton>
                             {order.proof?.url ? (
                               <a
                                 href={order.proof.url}

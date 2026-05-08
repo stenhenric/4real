@@ -4,6 +4,7 @@ import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { LogOut, Home, Landmark, ShieldCheck, User } from 'lucide-react';
 import { formatMoneyValue } from '../utils/exact-money.ts';
+import { SketchyButton } from './SketchyButton';
 
 const Navbar = () => {
   const { userData, user, logout } = useAuth();
@@ -80,9 +81,15 @@ const Navbar = () => {
               <User size={24} />
             </Link>
             
-            <button onClick={handleLogout} className="hidden md:block p-2 hover:text-red-600 transition-colors" aria-label="Log out" type="button">
+            <SketchyButton
+              activeColor="#fee2e2"
+              aria-label="Log out"
+              className="hidden p-2 transition-colors hover:text-red-600 md:block"
+              onClick={handleLogout}
+              type="button"
+            >
               <LogOut size={24} />
-            </button>
+            </SketchyButton>
           </div>
         </div>
       </nav>
@@ -121,14 +128,17 @@ const Navbar = () => {
             <User size={22} />
             Profile
           </NavLink>
-          <button
+          <SketchyButton
+            activeColor="#fee2e2"
             onClick={handleLogout}
-            className="flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 text-black/50 hover:text-red-600 transition-colors"
+            className="px-4 py-1 text-xs font-bold text-black/50 transition-colors hover:text-red-600"
             type="button"
           >
-            <LogOut size={22} />
-            Logout
-          </button>
+            <span className="flex flex-col items-center gap-0.5">
+              <LogOut size={22} />
+              Logout
+            </span>
+          </SketchyButton>
         </div>
       </nav>
     </>

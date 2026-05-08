@@ -402,8 +402,8 @@ async function revokeSessionDocument(document: IAuthSession, reason: string): Pr
 
   document.revokedAt = new Date();
   document.revokeReason = reason;
-  document.currentAccessTokenHash = null;
-  document.currentRefreshTokenHash = null;
+  document.currentAccessTokenHash = undefined;
+  document.currentRefreshTokenHash = undefined;
   await document.save();
 }
 

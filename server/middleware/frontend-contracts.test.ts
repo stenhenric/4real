@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import test, { mock } from 'node:test';
 
+import {
+  TOAST_AUTO_DISMISS_MS,
+  TOAST_MESSAGE_TARGET_LENGTH,
+  compactToastQueue,
+  type ToastQueueItem,
+} from '../../src/app/toast-rules.ts';
 import { getTransactionAccentClass, isCreditTransaction } from '../../src/features/bank/transactionPresentation.ts';
 import {
   consumeMagicLink,
@@ -27,6 +35,84 @@ function createJsonResponse(data: unknown, status = 200) {
     },
   } as Response;
 }
+
+function collectSourceFiles(directory: string): string[] {
+  return readdirSync(directory).flatMap((entry) => {
+    const path = join(directory, entry);
+    const stat = statSync(path);
+    if (stat.isDirectory()) {
+      return collectSourceFiles(path);
+    }
+
+    return path.endsWith('.ts') || path.endsWith('.tsx') ? [path] : [];
+  });
+}
+
+test('frontend toast strings stay within the guideline target', () => {
+  const toastCallPattern = /(?<![.\w])(?:addToast|success|showError|error|warning|info)\((.*)/g;
+  const stringLiteralPattern = /(['"`])((?:(?!\1).)*)\1/g;
+  const offenders: string[] = [];
+
+  for (const filePath of collectSourceFiles('src')) {
+    const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
+
+    lines.forEach((line, index) => {
+      let callMatch: RegExpExecArray | null;
+      while ((callMatch = toastCallPattern.exec(line))) {
+        const callSource = callMatch[1] ?? '';
+        for (const literalMatch of callSource.matchAll(stringLiteralPattern)) {
+          const message = literalMatch[2] ?? '';
+          if (message.length > TOAST_MESSAGE_TARGET_LENGTH) {
+            offenders.push(`${filePath}:${index + 1} (${message.length}) ${message}`);
+          }
+        }
+      }
+
+      toastCallPattern.lastIndex = 0;
+    });
+  }
+
+  assert.deepEqual(offenders, []);
+});
+
+test('frontend toast queue replaces rapid duplicate messages', () => {
+  const existingToast: ToastQueueItem = {
+    id: 'existing',
+    message: 'Copied to clipboard.',
+    rotation: 0.25,
+    type: 'success',
+  };
+  const duplicateToast: ToastQueueItem = {
+    id: 'duplicate',
+    message: 'Copied to clipboard.',
+    rotation: -0.25,
+    type: 'success',
+  };
+
+  assert.deepEqual(compactToastQueue([existingToast], duplicateToast), {
+    replacedIds: ['existing'],
+    toasts: [duplicateToast],
+  });
+});
+
+test('frontend toast timing follows the auto-dismiss guideline', () => {
+  assert.equal(TOAST_AUTO_DISMISS_MS, 5000);
+});
+
+test('frontend buttons render through SketchyButton', () => {
+  const rawButtons = collectSourceFiles('src')
+    .filter((filePath) => filePath.endsWith('.tsx') && !filePath.endsWith(join('components', 'SketchyButton.tsx')))
+    .flatMap((filePath) => {
+      const source = readFileSync(filePath, 'utf8');
+      return source
+        .split(/\r?\n/)
+        .map((line, index) => ({ line, lineNumber: index + 1 }))
+        .filter(({ line }) => /<button\b/.test(line))
+        .map(({ lineNumber }) => `${filePath}:${lineNumber}`);
+    });
+
+  assert.deepEqual(rawButtons, []);
+});
 
 test('ApiClientError preserves status, code, and details from backend responses', async (t) => {
   const fetchMock = mock.method(globalThis, 'fetch', async () => createJsonResponse({

@@ -70,7 +70,7 @@ export default function VerifyEmailPage() {
     try {
       const response = await resendVerificationEmail(email);
       setPreviewUrl(response.previewUrl ?? null);
-      info(response.message ?? 'If the account exists, a verification email is on the way.');
+      info(response.message ?? 'If it exists, a verification email is on the way.');
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Unable to resend verification email.');
     } finally {

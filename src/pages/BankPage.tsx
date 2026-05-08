@@ -58,13 +58,13 @@ const BankPage = () => {
 
     return (
       <div className="space-y-4">
-        <button
+        <SketchyButton
           className="text-sm font-bold uppercase underline hover:opacity-70 transition-opacity mb-4 inline-block"
           onClick={() => setActiveView('portal')}
           type="button"
         >
           &larr; Back to Bank Portal
-        </button>
+        </SketchyButton>
         <Suspense fallback={<RouteLoading message="Loading bank portal..." />}>
           <ActivePanel />
         </Suspense>

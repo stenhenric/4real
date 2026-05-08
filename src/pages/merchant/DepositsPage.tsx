@@ -97,7 +97,7 @@ export default function DepositsPage() {
     const note = notes[deposit.txHash]?.trim();
 
     if (action === 'credit' && userId.length === 0) {
-      showError('Select or enter a user ID before crediting the deposit.');
+      showError('Select a user before crediting deposit.');
       return;
     }
 
@@ -178,7 +178,7 @@ export default function DepositsPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {(['open', 'resolved'] as const).map((filter) => (
-            <button
+            <SketchyButton
               key={filter}
               className={cn(
                 'rounded-full border-2 px-4 py-2 text-sm font-bold transition-colors',
@@ -186,11 +186,12 @@ export default function DepositsPage() {
                   ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
               )}
+              fill={statusFilter === filter ? '#dbeafe' : '#ffffff'}
               onClick={() => setStatusFilter(filter)}
               type="button"
             >
               {filter === 'open' ? 'Open reviews' : 'Resolved'}
-            </button>
+            </SketchyButton>
           ))}
         </div>
       </div>

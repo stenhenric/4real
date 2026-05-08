@@ -108,7 +108,7 @@ export default function SecuritySettingsPage() {
         otpauthUrl: response.otpauthUrl,
       });
       setSetupCode('');
-      info('Scan the secret with your authenticator app, then verify with a 6-digit code.');
+      info('Scan secret, then enter a 6-digit code.');
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Unable to start MFA setup.');
     } finally {
@@ -192,7 +192,7 @@ export default function SecuritySettingsPage() {
       const response = await revokeSession(session.id);
       if (session.current) {
         clearAuth();
-        info('Current session revoked. Sign in again to continue.');
+        info('Session revoked. Sign in again.');
         navigate('/auth/login', { replace: true });
         return;
       }
@@ -273,15 +273,16 @@ export default function SecuritySettingsPage() {
                 One active session per device. Revoke lost or old devices from here.
               </p>
             </div>
-            <button
+            <SketchyButton
               className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
               disabled={sessionAction === 'others' || otherSessions.length === 0}
+              fill="#ffffff"
               onClick={() => void handleRevokeOtherSessions()}
               type="button"
             >
               <RefreshCcw size={16} />
               Revoke others
-            </button>
+            </SketchyButton>
           </div>
 
           {sessionsLoading ? (
@@ -313,15 +314,17 @@ export default function SecuritySettingsPage() {
                       ) : null}
                     </div>
 
-                    <button
+                    <SketchyButton
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-ink-red transition-colors hover:bg-red-100"
                       disabled={sessionAction === session.id}
+                      fill="#fef2f2"
+                      stroke="#fecaca"
                       onClick={() => void handleRevokeSession(session)}
                       type="button"
                     >
                       <Trash2 size={16} />
                       {session.current ? 'Revoke this session' : 'Revoke device'}
-                    </button>
+                    </SketchyButton>
                   </div>
                 </div>
               ))}
@@ -368,27 +371,29 @@ export default function SecuritySettingsPage() {
                       type="text"
                       value={setup.totpSecret}
                     />
-                    <button
+                    <SketchyButton
                       className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
+                      fill="#ffffff"
                       onClick={() => void copyToClipboard(setup.totpSecret, 'Secret copied.')}
                       type="button"
                     >
                       <Copy size={16} />
                       Copy secret
-                    </button>
+                    </SketchyButton>
                     <AuthTextarea
                       label="OTP Auth URL"
                       readOnly={true}
                       value={setup.otpauthUrl}
                     />
-                    <button
+                    <SketchyButton
                       className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
+                      fill="#ffffff"
                       onClick={() => void copyToClipboard(setup.otpauthUrl, 'OTP Auth URL copied.')}
                       type="button"
                     >
                       <Copy size={16} />
                       Copy OTP Auth URL
-                    </button>
+                    </SketchyButton>
 
                     <form className="space-y-4" onSubmit={handleVerifySetup}>
                       <AuthField
@@ -423,15 +428,16 @@ export default function SecuritySettingsPage() {
                       Recovery codes are your offline fallback. Regenerating them invalidates the previous set.
                     </p>
                   </div>
-                  <button
+                  <SketchyButton
                     className="inline-flex items-center justify-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
                     disabled={recoveryBusy}
+                    fill="#ffffff"
                     onClick={() => void handleRegenerateRecoveryCodes()}
                     type="button"
                   >
                     <RefreshCcw size={16} />
                     {recoveryBusy ? 'Refreshing...' : 'Regenerate recovery codes'}
-                  </button>
+                  </SketchyButton>
                 </div>
               </div>
 
@@ -479,14 +485,15 @@ export default function SecuritySettingsPage() {
                   Store these offline. Each code can be used once.
                 </p>
               </div>
-              <button
+              <SketchyButton
                 className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
+                fill="#ffffff"
                 onClick={() => void copyToClipboard(recoveryCodes.join('\n'), 'Recovery codes copied.')}
                 type="button"
               >
                 <Copy size={16} />
                 Copy all
-              </button>
+              </SketchyButton>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {recoveryCodes.map((code) => (

@@ -105,7 +105,7 @@ export default function OrderDeskPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {ORDER_TYPE_FILTERS.map((filter) => (
-            <button
+            <SketchyButton
               key={filter}
               className={cn(
                 'rounded-full border-2 px-4 py-2 text-sm font-bold transition-colors',
@@ -113,6 +113,7 @@ export default function OrderDeskPage() {
                   ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
               )}
+              fill={typeFilter === filter ? '#dbeafe' : '#ffffff'}
               onClick={() => {
                 setPage(1);
                 setTypeFilter(filter);
@@ -120,7 +121,7 @@ export default function OrderDeskPage() {
               type="button"
             >
               {filter}
-            </button>
+            </SketchyButton>
           ))}
 
           <select
@@ -279,22 +280,22 @@ export default function OrderDeskPage() {
             Showing page {deskData.pagination.page} of {deskData.pagination.totalPages} • {deskData.pagination.total} total orders
           </p>
           <div className="flex items-center gap-2">
-            <button
+            <SketchyButton
               className="rounded-full border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
               disabled={deskData.pagination.page <= 1}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               type="button"
             >
               Previous
-            </button>
-            <button
+            </SketchyButton>
+            <SketchyButton
               className="rounded-full border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
               disabled={deskData.pagination.page >= deskData.pagination.totalPages}
               onClick={() => setPage((current) => Math.min(deskData.pagination.totalPages, current + 1))}
               type="button"
             >
               Next
-            </button>
+            </SketchyButton>
           </div>
         </div>
       ) : null}

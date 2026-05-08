@@ -16,6 +16,8 @@ export const SketchyButton = ({
   fill = 'transparent',
   stroke = '#1a1a1a',
   activeColor = '#e5e7eb',
+  onMouseEnter,
+  onMouseLeave,
   type = 'button',
   ...props 
 }: SketchyButtonProps) => {
@@ -46,8 +48,14 @@ export const SketchyButton = ({
   return (
     <button
       ref={elementRef}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={(event) => {
+        setHovered(true);
+        onMouseEnter?.(event);
+      }}
+      onMouseLeave={(event) => {
+        setHovered(false);
+        onMouseLeave?.(event);
+      }}
       className={cn(
         "relative px-6 py-2 font-bold transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue disabled:opacity-50 disabled:cursor-not-allowed",
         className
@@ -61,7 +69,7 @@ export const SketchyButton = ({
         height={size.height} 
         className="absolute top-0 left-0 pointer-events-none z-0"
       />
-      <span className="relative z-10">{children}</span>
+      <span className="relative z-10 flex min-w-0 items-center justify-center gap-2">{children}</span>
     </button>
   );
 };

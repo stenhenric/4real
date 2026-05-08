@@ -234,7 +234,9 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 <div className="tape w-16 h-6 -top-2 left-4 -rotate-2 opacity-60"></div>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-2xl font-bold italic tracking-tight underline decoration-wavy">Draft Creation</h3>
-                  <button onClick={resetDraft} className="text-sm font-bold uppercase opacity-50 hover:opacity-100">Cancel</button>
+                  <SketchyButton className="text-sm font-bold uppercase opacity-50 hover:opacity-100" onClick={resetDraft}>
+                    Cancel
+                  </SketchyButton>
                 </div>
                 
                 {draftStep === 1 && (

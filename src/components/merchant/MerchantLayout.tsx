@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom
 import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { RouteLoading } from '../../app/RouteLoading';
+import { SketchyButton } from '../SketchyButton';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { getMerchantDashboard } from '../../services/merchant-dashboard.service';
 import { isAbortError } from '../../utils/isAbortError';
@@ -270,17 +271,17 @@ export function MerchantLayout() {
                 <div className="rounded-full border border-black/10 bg-black/5 px-4 py-2 text-sm font-mono">
                   TON gas {formatMoney(dashboard?.liquidity.tonBalanceTon)}
                 </div>
-                <button
+                <SketchyButton
                   className="inline-flex items-center gap-2 rounded-full border-2 border-ink-black px-4 py-2 text-sm font-bold transition-colors hover:bg-black/5 disabled:opacity-60"
+                  disabled={isRefreshing}
                   onClick={() => {
                     void loadDashboard('manual');
                   }}
-                  disabled={isRefreshing}
                   type="button"
                 >
                   <RefreshCw size={16} className={cn(isRefreshing && 'animate-spin')} />
                   Refresh
-                </button>
+                </SketchyButton>
               </div>
             </div>
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import mongoose from 'mongoose';
 
-import { AuthSession } from '../models/AuthSession.ts';
+import { AuthSession, ensureAuthSessionIndexes } from '../models/AuthSession.ts';
 import { serviceUnavailable } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 import { UserService } from './user.service.ts';
@@ -216,6 +216,96 @@ test('refreshSession queries the refresh session with an active-session filter',
   });
   assert(redisCalls.some((entry) => entry.method === 'setex'));
   assert(redisCalls.some((entry) => entry.method === 'del'));
+});
+
+test('logoutFromTokens removes token hashes when revoking a session', async (t) => {
+  const accessToken = 'access-token';
+  const accessTokenHash = hashOpaqueToken(accessToken);
+  const userId = new mongoose.Types.ObjectId();
+  const session = createMockSession({
+    sessionId: 'session-1',
+    userId,
+    currentAccessTokenHash: accessTokenHash,
+    currentRefreshTokenHash: 'refresh-hash',
+  });
+  const redisCalls: Array<{ method: string; args: unknown[] }> = [];
+  let savedAccessTokenHash: unknown = 'not-saved';
+  let savedRefreshTokenHash: unknown = 'not-saved';
+
+  session.save = async function saveRevokedSession(this: any) {
+    savedAccessTokenHash = this.currentAccessTokenHash;
+    savedRefreshTokenHash = this.currentRefreshTokenHash;
+  };
+
+  setAuthSessionDependenciesForTests({
+    getRedisClient: () => ({
+      get: async () => JSON.stringify({
+        userId: userId.toString(),
+        sessionId: 'session-1',
+        deviceId: 'device-1',
+      }),
+      setex: async (...args: unknown[]) => {
+        redisCalls.push({ method: 'setex', args });
+        return 'OK';
+      },
+      del: async (...args: unknown[]) => {
+        redisCalls.push({ method: 'del', args });
+        return 1;
+      },
+    }) as any,
+  });
+  t.after(() => resetAuthSessionDependenciesForTests());
+  t.mock.method(AuthSession, 'findOne', async () => session);
+
+  await AuthSessionService.logoutFromTokens({ accessToken });
+
+  assert.equal(savedAccessTokenHash, undefined);
+  assert.equal(savedRefreshTokenHash, undefined);
+  assert.equal(session.revokeReason, 'logout');
+  assert(session.revokedAt instanceof Date);
+  assert(redisCalls.some((entry) => entry.method === 'setex'));
+  assert(redisCalls.some((entry) => entry.method === 'del'));
+});
+
+test('AuthSession refresh-token uniqueness only indexes string hashes', () => {
+  const refreshIndex = AuthSession.schema.indexes().find(([fields]) => (
+    fields.currentRefreshTokenHash === 1
+  ));
+
+  assert(refreshIndex);
+  assert.equal(refreshIndex[1]?.unique, true);
+  assert.deepEqual(refreshIndex[1]?.partialFilterExpression, {
+    currentRefreshTokenHash: { $type: 'string' },
+  });
+  assert.equal(refreshIndex[1]?.sparse, undefined);
+});
+
+test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index', async (t) => {
+  const calls: string[] = [];
+
+  t.mock.method(AuthSession.collection, 'indexes', async () => [
+    { name: '_id_', key: { _id: 1 } },
+    {
+      name: 'currentRefreshTokenHash_1',
+      key: { currentRefreshTokenHash: 1 },
+      unique: true,
+      sparse: true,
+    },
+  ] as any);
+  t.mock.method(AuthSession.collection, 'dropIndex', async (name: string) => {
+    calls.push(`drop:${name}`);
+    return { ok: 1 };
+  });
+  t.mock.method(AuthSession, 'createIndexes', async () => {
+    calls.push('create');
+  });
+
+  await ensureAuthSessionIndexes();
+
+  assert.deepEqual(calls, [
+    'drop:currentRefreshTokenHash_1',
+    'create',
+  ]);
 });
 
 test('isSuspiciousLogin uses independent active-session filters across sequential queries', async (t) => {

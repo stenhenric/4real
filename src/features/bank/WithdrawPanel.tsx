@@ -32,12 +32,12 @@ const WithdrawPanel = () => {
     event.preventDefault();
 
     if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
-      addToast('Please enter a valid amount', 'error');
+      addToast('Enter a valid amount.', 'error');
       return;
     }
 
     if (!toAddress) {
-      addToast('Please enter a valid TON address', 'error');
+      addToast('Enter a valid TON address.', 'error');
       return;
     }
 
@@ -45,7 +45,7 @@ const WithdrawPanel = () => {
 
     try {
       await createWithdrawal({ amountUsdt: Number(amount).toFixed(6), toAddress });
-      addToast('Withdrawal queued successfully. Track it in transaction history.', 'success');
+      addToast('Withdrawal queued.', 'success');
       setAmount('');
       setToAddress(connectedWalletAddress || '');
       await refreshUser();
@@ -113,13 +113,14 @@ const WithdrawPanel = () => {
                 Destination TON Address
               </label>
               {wallet && (
-                <button
+                <SketchyButton
                   className="text-[10px] font-bold uppercase bg-ink-blue text-white px-2 py-1 rounded hover:bg-blue-600 mb-1"
+                  fill="#2962ff"
                   onClick={() => setToAddress(connectedWalletAddress)}
                   type="button"
                 >
                   Auto-fill connected wallet
-                </button>
+                </SketchyButton>
               )}
             </div>
             <input
