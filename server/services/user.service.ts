@@ -275,8 +275,10 @@ export class UserService {
   }
 
   static async getLeaderboard(limit: number = 10): Promise<IUser[]> {
-    return User.find(trustFilter({ _id: { $ne: SYSTEM_COMMISSION_ACCOUNT_ID } }))
-      .find({ usernameNormalized: { $ne: null } })
+    return User.find(trustFilter({
+      _id: { $ne: SYSTEM_COMMISSION_ACCOUNT_ID },
+      usernameNormalized: { $ne: null },
+    }))
       .sort({ elo: -1 })
       .limit(limit)
       .select('-passwordHash -__v');

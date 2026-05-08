@@ -4,10 +4,11 @@ import mongoose from 'mongoose';
 
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { Match } from '../models/Match.ts';
-import { User } from '../models/User.ts';
+import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import { errorHandler } from './error.middleware.ts';
 import { logger } from '../utils/logger.ts';
 import { MatchService } from '../services/match.service.ts';
+import { UserService } from '../services/user.service.ts';
 
 function registerEnvCleanup(t: TestContext) {
   const previous = {
@@ -124,6 +125,50 @@ test('MatchService.expireStaleMatches trusts both stale-date filters', async (t)
   assert.equal(capturedFilters[1].status, 'active');
   assert.ok((capturedFilters[0].lastActivityAt as { $lt: unknown }).$lt instanceof Date);
   assert.ok((capturedFilters[1].lastActivityAt as { $lt: unknown }).$lt instanceof Date);
+});
+
+test('UserService.getLeaderboard trusts every operator filter under mongoose sanitizeFilter', async (t) => {
+  registerEnvCleanup(t);
+
+  const originalFind = User.find.bind(User);
+  const capturedFilters: Record<string, any>[] = [];
+  const assertFilterCastsAfterSanitizing = (filter: Record<string, any>) => {
+    mongoose.sanitizeFilter(filter);
+    originalFind(filter).cast(User);
+  };
+  const query = {
+    find(filter: Record<string, any>) {
+      capturedFilters.push(filter);
+      assertFilterCastsAfterSanitizing(filter);
+      return query;
+    },
+    sort() {
+      return query;
+    },
+    limit() {
+      return query;
+    },
+    select() {
+      return query;
+    },
+    then(resolve: (value: unknown[]) => unknown) {
+      return Promise.resolve(resolve([]));
+    },
+  };
+  const findMock = mock.method(User, 'find', ((filter: Record<string, any>) => {
+    capturedFilters.push(filter);
+    assertFilterCastsAfterSanitizing(filter);
+    return query;
+  }) as any);
+
+  t.after(() => findMock.mock.restore());
+
+  await UserService.getLeaderboard(10);
+
+  assert.equal(capturedFilters.length, 1);
+  assert.ok(hasTrustedSymbol(capturedFilters[0]));
+  assert.equal(capturedFilters[0]._id.$ne, SYSTEM_COMMISSION_ACCOUNT_ID);
+  assert.equal(capturedFilters[0].usernameNormalized.$ne, null);
 });
 
 test('errorHandler returns INVALID_IDENTIFIER only for identifier cast errors', () => {
