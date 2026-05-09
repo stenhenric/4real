@@ -22,7 +22,11 @@ import { AuditService } from '../services/audit.service.ts';
 import { CacheKeys, getOrPopulateJson, resetCacheServiceForTests } from '../services/cache.service.ts';
 import { generateDepositMemo } from '../services/deposit-service.ts';
 import { resolveHotWalletRuntime, setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
-import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
+import {
+  ProductEmailNotificationService,
+  resetProductEmailNotificationDependenciesForTests,
+  setProductEmailNotificationDependenciesForTests,
+} from '../services/product-email-notification.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
 import { LockUnavailableError } from '../services/distributed-lock.service.ts';
@@ -50,6 +54,10 @@ const HOT_WALLET_RAW = Address.parse(USDT_MASTER).toRawString();
 const ZERO_ADDRESS = Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c').toString({ bounceable: true });
 const HOT_JETTON_WALLET = ZERO_ADDRESS;
 const SENDER_JETTON_WALLET = HOT_WALLET_ADDRESS;
+const SAFE_WITHDRAWAL_STUCK_USER_MESSAGE =
+  'Withdrawal confirmation is taking longer than expected and is under review.';
+const SAFE_WITHDRAWAL_FAILED_USER_MESSAGE =
+  'Withdrawal processing failed after retries. Your held balance was refunded.';
 
 function registerBaseCleanup(t: TestContext) {
   const auditMock = mock.method(AuditService, 'record', async () => {});
@@ -61,6 +69,15 @@ function registerBaseCleanup(t: TestContext) {
   );
   const findOpenByTxHashesMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
   const upsertFailedIngestionMock = mock.method(FailedDepositIngestionRepository, 'upsertFailure', async () => {});
+  setProductEmailNotificationDependenciesForTests({
+    findUserById: async (id) => ({
+      id,
+      email: `${id}@example.test`,
+      emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+    }),
+    findVerifiedMerchantEmailRecipients: async () => [],
+    sendNotificationEmail: async () => {},
+  });
   setWithdrawalWorkerDependenciesForTests({
     withLock: async (_resource, _ttlMs, fn) => fn(),
   });
@@ -81,6 +98,7 @@ function registerBaseCleanup(t: TestContext) {
     try {
       upsertFailedIngestionMock.mock.restore();
     } catch {}
+    resetProductEmailNotificationDependenciesForTests();
     delete process.env.HOT_JETTON_WALLET;
     delete process.env.HOT_WALLET_MIN_USDT_BALANCE;
     delete process.env.DEPOSIT_INGESTION_MAX_RETRIES;
@@ -1201,7 +1219,7 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
     withdrawalId: 'wd-5',
     amountUsdt: '2.000000',
     toAddress: ZERO_ADDRESS,
-    lastError: 'send failed',
+    lastError: SAFE_WITHDRAWAL_FAILED_USER_MESSAGE,
     statusUrl: '/api/transactions/withdrawals/wd-5',
   });
   assert.equal(merchantAlertMock.mock.callCount(), 1);
@@ -1264,7 +1282,7 @@ test('runWithdrawalWorker does not refund seqno timeout paths', async (t) => {
     amountUsdt: '1.000000',
     toAddress: ZERO_ADDRESS,
     seqno: 19,
-    lastError: timeout.message,
+    lastError: SAFE_WITHDRAWAL_STUCK_USER_MESSAGE,
     statusUrl: '/api/transactions/withdrawals/wd-6',
   });
   assert.equal(merchantAlertMock.mock.callCount(), 1);
@@ -1332,8 +1350,13 @@ test('runWithdrawalWorker marks submitted withdrawals as stuck when markSent fai
   assert.equal(createTransactionMock.mock.callCount(), 0);
   assert.equal(transitionMock.mock.callCount(), 1);
   assert.equal((transitionMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_user');
+  assert.equal(
+    (transitionMock.mock.calls[0].arguments[0] as { lastError: string }).lastError,
+    SAFE_WITHDRAWAL_STUCK_USER_MESSAGE,
+  );
   assert.equal(merchantAlertMock.mock.callCount(), 1);
   assert.equal((merchantAlertMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_merchant');
+  assert.equal((merchantAlertMock.mock.calls[0].arguments[0] as { lastError: string }).lastError, 'write failed');
 });
 
 test('runWithdrawalWorker marks submitted withdrawals as stuck when audit persistence fails and never refunds them', async (t) => {
@@ -1393,8 +1416,13 @@ test('runWithdrawalWorker marks submitted withdrawals as stuck when audit persis
   assert.equal(createTransactionMock.mock.callCount(), 0);
   assert.equal(transitionMock.mock.callCount(), 1);
   assert.equal((transitionMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_user');
+  assert.equal(
+    (transitionMock.mock.calls[0].arguments[0] as { lastError: string }).lastError,
+    SAFE_WITHDRAWAL_STUCK_USER_MESSAGE,
+  );
   assert.equal(merchantAlertMock.mock.callCount(), 1);
   assert.equal((merchantAlertMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_merchant');
+  assert.equal((merchantAlertMock.mock.calls[0].arguments[0] as { lastError: string }).lastError, 'audit failed');
 });
 
 test('confirmSentWithdrawals marks matching outbound transfers as confirmed and is idempotent', async (t) => {
@@ -1512,7 +1540,7 @@ test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuc
     amountUsdt: '1.000000',
     toAddress: ZERO_ADDRESS,
     seqno: 18,
-    lastError: 'Expired waiting for confirmation on-chain',
+    lastError: SAFE_WITHDRAWAL_STUCK_USER_MESSAGE,
     statusUrl: '/api/transactions/withdrawals/wd-8',
   });
   assert.equal(merchantAlertMock.mock.callCount(), 1);
@@ -1630,7 +1658,7 @@ test('recoverStuckWithdrawals sends stuck user and merchant notifications after 
     withdrawalId: 'wd-recover-2',
     amountUsdt: '4.000000',
     toAddress: ZERO_ADDRESS,
-    lastError,
+    lastError: SAFE_WITHDRAWAL_STUCK_USER_MESSAGE,
     statusUrl: '/api/transactions/withdrawals/wd-recover-2',
     seqno: 44,
   });

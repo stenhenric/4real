@@ -43,6 +43,11 @@ const workerDependencies = {
   ...defaultWorkerDependencies,
 };
 
+const WITHDRAWAL_STUCK_USER_MESSAGE =
+  'Withdrawal confirmation is taking longer than expected and is under review.';
+const WITHDRAWAL_FAILED_USER_MESSAGE =
+  'Withdrawal processing failed after retries. Your held balance was refunded.';
+
 function formatUsdtRaw(raw: bigint): string {
   const negative = raw < 0n ? '-' : '';
   const absolute = raw < 0n ? -raw : raw;
@@ -175,7 +180,7 @@ export async function runWithdrawalWorker() {
             amountUsdt: doc.amountDisplay,
             toAddress: doc.toAddress,
             seqno: submittedWithdrawal.seqno,
-            lastError: errorMessage,
+            lastError: WITHDRAWAL_STUCK_USER_MESSAGE,
             statusUrl: withdrawalStatusUrl(doc.withdrawalId),
           });
           await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
@@ -207,7 +212,7 @@ export async function runWithdrawalWorker() {
           amountUsdt: doc.amountDisplay,
           toAddress: doc.toAddress,
           seqno: sendErr.seqno,
-          lastError: errorMessage,
+          lastError: WITHDRAWAL_STUCK_USER_MESSAGE,
           statusUrl: withdrawalStatusUrl(doc.withdrawalId),
         });
         await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
@@ -250,7 +255,7 @@ export async function runWithdrawalWorker() {
             withdrawalId: doc.withdrawalId,
             amountUsdt: doc.amountDisplay,
             toAddress: doc.toAddress,
-            lastError: errorMessage,
+            lastError: WITHDRAWAL_FAILED_USER_MESSAGE,
             statusUrl: withdrawalStatusUrl(doc.withdrawalId),
           });
           await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
@@ -382,7 +387,7 @@ export async function confirmSentWithdrawals() {
             withdrawalId: withdrawal.withdrawalId,
             amountUsdt: withdrawal.amountDisplay,
             toAddress: withdrawal.toAddress,
-            lastError,
+            lastError: WITHDRAWAL_STUCK_USER_MESSAGE,
             statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
             ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
           });
@@ -583,7 +588,7 @@ export async function recoverStuckWithdrawals() {
             withdrawalId: withdrawal.withdrawalId,
             amountUsdt: withdrawal.amountDisplay,
             toAddress: withdrawal.toAddress,
-            lastError,
+            lastError: WITHDRAWAL_STUCK_USER_MESSAGE,
             statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
             ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
           });
@@ -612,7 +617,7 @@ export async function recoverStuckWithdrawals() {
           withdrawalId: withdrawal.withdrawalId,
           amountUsdt: withdrawal.amountDisplay,
           toAddress: withdrawal.toAddress,
-          lastError,
+          lastError: WITHDRAWAL_STUCK_USER_MESSAGE,
           statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
           ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
         });
