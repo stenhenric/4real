@@ -35,6 +35,29 @@ test('buildOrderEmail formats order notifications and escapes HTML fields', () =
 
   assert.equal(userEmail.subject, 'Your SELL order was approved');
   assert.match(userEmail.text, /order-789/);
+
+  assert.equal(
+    buildOrderEmail({
+      scenario: 'order_created_user',
+      side: 'BUY',
+      orderId: 'order-456',
+      amount: '150 USDT',
+      transactionCode: 'TX-111',
+      username: 'bob',
+    }).subject,
+    'Your BUY order was submitted',
+  );
+  assert.equal(
+    buildOrderEmail({
+      scenario: 'order_rejected_user',
+      side: 'SELL',
+      orderId: 'order-987',
+      amount: '175 USDT',
+      transactionCode: 'TX-222',
+      username: 'carol',
+    }).subject,
+    'Your SELL order was rejected',
+  );
 });
 
 test('buildDepositEmail formats deposit notifications and escapes HTML fields', () => {
@@ -148,6 +171,26 @@ test('buildWithdrawalEmail formats withdrawal notifications and escapes HTML fie
       username: 'erin',
     }).subject,
     'Your withdrawal failed and was refunded',
+  );
+  assert.equal(
+    buildWithdrawalEmail({
+      scenario: 'withdrawal_stuck_user',
+      withdrawalId: 'withdrawal-321',
+      amount: '65 USDT',
+      destination: 'EQ-address-5',
+      username: 'frank',
+    }).subject,
+    'Your withdrawal needs review',
+  );
+  assert.equal(
+    buildWithdrawalEmail({
+      scenario: 'withdrawal_failed_merchant',
+      withdrawalId: 'withdrawal-111',
+      amount: '70 USDT',
+      destination: 'EQ-address-6',
+      username: 'grace',
+    }).subject,
+    'Withdrawal failed permanently',
   );
 });
 
