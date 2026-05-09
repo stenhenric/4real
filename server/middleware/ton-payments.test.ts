@@ -12,11 +12,14 @@ import {
   type FailedDepositIngestionDocument,
 } from '../repositories/failed-deposit-ingestion.repository.ts';
 import { PollerStateRepository } from '../repositories/poller-state.repository.ts';
+import { IdempotencyKeyRepository } from '../repositories/idempotency-key.repository.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UnmatchedDepositRepository } from '../repositories/unmatched-deposit.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { requestWithdrawalHandler } from '../controllers/transaction.controller.ts';
 import { AuditService } from '../services/audit.service.ts';
+import { CacheKeys, getOrPopulateJson, resetCacheServiceForTests } from '../services/cache.service.ts';
 import { generateDepositMemo } from '../services/deposit-service.ts';
 import { resolveHotWalletRuntime, setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
 import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
@@ -30,6 +33,7 @@ import { pollDeposits } from '../workers/deposit-poller.ts';
 import {
   confirmSentWithdrawals,
   initWorker,
+  recoverStuckWithdrawals,
   resetWithdrawalWorkerStateForTests,
   setWithdrawalWorkerDependenciesForTests,
   runWithdrawalWorker,
@@ -87,6 +91,7 @@ function registerBaseCleanup(t: TestContext) {
     setHotWalletRuntimeForTests(null);
     resetWithdrawalWorkerStateForTests();
     resetFailedDepositReplayWorkerForTests();
+    resetCacheServiceForTests();
   });
 
   return {
@@ -95,6 +100,24 @@ function registerBaseCleanup(t: TestContext) {
     findEarliestPendingMock,
     upsertFailedIngestionMock,
   };
+}
+
+function createResponseMock() {
+  const response = {
+    locals: { requestId: 'req-test' },
+    statusCode: 200,
+    body: null as unknown,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body: unknown) {
+      this.body = body;
+      return this;
+    },
+  };
+
+  return response;
 }
 
 function createSessionMock() {
@@ -924,6 +947,90 @@ test('requestWithdrawal queues a withdrawal atomically with balance deduction', 
   assert.equal((createQueuedMock.mock.calls[0].arguments[0] as { withdrawalId: string }).withdrawalId, 'wd-2');
 });
 
+test('requestWithdrawalHandler sends queued notification after dashboard cache invalidation and suppresses replay', async (t) => {
+  registerBaseCleanup(t);
+  resetCacheServiceForTests();
+
+  const merchantDashboardKey = CacheKeys.merchantDashboard();
+  let cacheLoaderCalls = 0;
+  await getOrPopulateJson({
+    key: merchantDashboardKey,
+    ttlSeconds: 60,
+    loader: async () => {
+      cacheLoaderCalls += 1;
+      return { version: cacheLoaderCalls };
+    },
+  });
+
+  const session = createSessionMock();
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
+  let replayExisting: unknown = null;
+  const claimMock = mock.method(IdempotencyKeyRepository, 'claimOrGetExisting', async () => replayExisting as any);
+  const completeMock = mock.method(IdempotencyKeyRepository, 'markCompletedIfProcessing', async () => true);
+  const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-handler' } as any));
+  const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
+  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+  const queuedEmailMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalQueued', async () => {
+    const cacheRead = await getOrPopulateJson({
+      key: merchantDashboardKey,
+      ttlSeconds: 60,
+      loader: async () => {
+        cacheLoaderCalls += 1;
+        return { version: cacheLoaderCalls };
+      },
+    });
+
+    assert.equal(cacheRead.cacheStatus, 'miss');
+    assert.deepEqual(cacheRead.value, { version: 2 });
+  });
+
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => claimMock.mock.restore());
+  t.after(() => completeMock.mock.restore());
+  t.after(() => deductMock.mock.restore());
+  t.after(() => createQueuedMock.mock.restore());
+  t.after(() => dailyLimitMock.mock.restore());
+  t.after(() => queuedEmailMock.mock.restore());
+
+  const firstResponse = createResponseMock();
+  await requestWithdrawalHandler({
+    user: { id: 'user-handler' },
+    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1' },
+    get: (name: string) => name.toLowerCase() === 'idempotency-key' ? 'idem-handler-1' : undefined,
+  } as any, firstResponse as any);
+
+  assert.equal(firstResponse.statusCode, 202);
+  assert.equal(queuedEmailMock.mock.callCount(), 1);
+  assert.equal(cacheLoaderCalls, 2);
+  assert.equal((queuedEmailMock.mock.calls[0].arguments[0] as { userId: string }).userId, 'user-handler');
+  const replayBody = firstResponse.body;
+
+  replayExisting = {
+    userId: 'user-handler',
+    routeKey: 'transactions:withdraw',
+    idempotencyKey: 'idem-handler-1',
+    requestHash: completeMock.mock.calls[0].arguments[0].requestHash,
+    status: 'completed',
+    responseStatusCode: 202,
+    responseBody: replayBody,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    completedAt: new Date(),
+  };
+
+  const replayResponse = createResponseMock();
+  await requestWithdrawalHandler({
+    user: { id: 'user-handler' },
+    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1' },
+    get: (name: string) => name.toLowerCase() === 'idempotency-key' ? 'idem-handler-1' : undefined,
+  } as any, replayResponse as any);
+
+  assert.equal(replayResponse.statusCode, 202);
+  assert.deepEqual(replayResponse.body, replayBody);
+  assert.equal(queuedEmailMock.mock.callCount(), 1);
+  assert.equal(createQueuedMock.mock.callCount(), 1);
+});
+
 test('runWithdrawalWorker claims only one queued withdrawal at a time', async (t) => {
   registerBaseCleanup(t);
   process.env.FEATURE_DISTRIBUTED_LOCK = 'true';
@@ -1416,6 +1523,125 @@ test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuc
     toAddress: ZERO_ADDRESS,
     seqno: 18,
     lastError: 'Expired waiting for confirmation on-chain',
+  });
+});
+
+test('recoverStuckWithdrawals sends confirmed user notification after recovered confirmation', async (t) => {
+  registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+  await initWorker();
+
+  const startedAt = new Date('2026-01-02T00:00:00.000Z');
+  const staleMock = mock.method(WithdrawalRepository, 'findStaleProcessing', async () => [{
+    _id: 'doc-recover-1',
+    withdrawalId: 'wd-recover-1',
+    userId: 'user-recover-1',
+    toAddress: ZERO_ADDRESS,
+    amountRaw: '3000000',
+    amountDisplay: '3.000000',
+    status: 'processing' as const,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    startedAt,
+    retries: 0,
+  }]);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => {});
+  const withdrawnMock = mock.method(UserBalanceRepository, 'recordWithdrawalConfirmed', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+
+  t.after(() => staleMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => processedCreateMock.mock.restore());
+  t.after(() => markConfirmedMock.mock.restore());
+  t.after(() => withdrawnMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  setWithdrawalWorkerDependenciesForTests({
+    findWithdrawalTransferOnChain: async () => ({
+      txHash: 'chain-recovered-1',
+      confirmedAt: new Date('2026-01-02T00:07:00.000Z'),
+    }),
+  });
+
+  await recoverStuckWithdrawals();
+
+  assert.equal(markConfirmedMock.mock.callCount(), 1);
+  assert.equal(withdrawnMock.mock.callCount(), 1);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_confirmed_user',
+    userId: 'user-recover-1',
+    withdrawalId: 'wd-recover-1',
+    amountUsdt: '3.000000',
+    toAddress: ZERO_ADDRESS,
+    txHash: 'chain-recovered-1',
+    statusUrl: '/api/transactions/withdrawals/wd-recover-1',
+  });
+});
+
+test('recoverStuckWithdrawals sends stuck user and merchant notifications after processing timeout', async (t) => {
+  registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+  await initWorker();
+
+  const startedAt = new Date('2026-01-02T00:00:00.000Z');
+  const staleMock = mock.method(WithdrawalRepository, 'findStaleProcessing', async () => [{
+    _id: 'doc-recover-2',
+    withdrawalId: 'wd-recover-2',
+    userId: 'user-recover-2',
+    toAddress: ZERO_ADDRESS,
+    amountRaw: '4000000',
+    amountDisplay: '4.000000',
+    status: 'processing' as const,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    startedAt,
+    seqno: 44,
+    retries: 0,
+  }]);
+  const markStuckMock = mock.method(WithdrawalRepository, 'markStuck', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
+
+  t.after(() => staleMock.mock.restore());
+  t.after(() => markStuckMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
+  setWithdrawalWorkerDependenciesForTests({
+    findWithdrawalTransferOnChain: async () => null,
+  });
+
+  await recoverStuckWithdrawals();
+
+  const lastError = 'Processing state expired before a definitive on-chain outcome was recorded';
+  assert.equal(markStuckMock.mock.callCount(), 1);
+  assert.equal(markStuckMock.mock.calls[0].arguments[1], lastError);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_stuck_user',
+    userId: 'user-recover-2',
+    withdrawalId: 'wd-recover-2',
+    amountUsdt: '4.000000',
+    toAddress: ZERO_ADDRESS,
+    lastError,
+    statusUrl: '/api/transactions/withdrawals/wd-recover-2',
+    seqno: 44,
+  });
+  assert.equal(merchantAlertMock.mock.callCount(), 1);
+  assert.deepEqual(merchantAlertMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_stuck_merchant',
+    withdrawalId: 'wd-recover-2',
+    amountUsdt: '4.000000',
+    toAddress: ZERO_ADDRESS,
+    lastError,
+    seqno: 44,
   });
 });
 
