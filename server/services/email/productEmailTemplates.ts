@@ -131,6 +131,10 @@ function row(label: string, value: string | number | null | undefined, href?: st
   }
 
   const stringValue = String(value);
+  if (href === undefined) {
+    return [{ label, value: stringValue }];
+  }
+
   return [{ label, value: stringValue, href }];
 }
 
