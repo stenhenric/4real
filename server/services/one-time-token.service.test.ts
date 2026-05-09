@@ -18,9 +18,15 @@ test('revokeActiveTokensForUser active-token operators survive mongoose sanitize
 
   const originalUpdateMany = OneTimeToken.updateMany.bind(OneTimeToken);
   let capturedFilter: Record<string, any> | undefined;
+  let capturedOptions: Record<string, any> | undefined;
 
-  t.mock.method(OneTimeToken, 'updateMany', async (filter: Record<string, any>, update: Record<string, any>) => {
+  t.mock.method(OneTimeToken, 'updateMany', async (
+    filter: Record<string, any>,
+    update: Record<string, any>,
+    options?: Record<string, any>,
+  ) => {
     capturedFilter = filter;
+    capturedOptions = options;
     mongoose.sanitizeFilter(filter);
     originalUpdateMany(filter, update).cast(OneTimeToken);
     return { acknowledged: true, matchedCount: 0, modifiedCount: 0, upsertedCount: 0, upsertedId: null } as any;
@@ -31,6 +37,8 @@ test('revokeActiveTokensForUser active-token operators survive mongoose sanitize
   assert(capturedFilter);
   assert.deepEqual(capturedFilter.type.$in, ['magic_link']);
   assert(capturedFilter.expiresAt.$gt instanceof Date);
+  assert(capturedOptions);
+  assert.equal(capturedOptions.sanitizeFilter, false);
 });
 
 test('consume active-token operators survive mongoose sanitizeFilter', async (t) => {
@@ -38,12 +46,14 @@ test('consume active-token operators survive mongoose sanitizeFilter', async (t)
 
   const originalFindOneAndUpdate = OneTimeToken.findOneAndUpdate.bind(OneTimeToken);
   let capturedFilter: Record<string, any> | undefined;
+  let capturedOptions: Record<string, any> | undefined;
 
   t.mock.method(
     OneTimeToken,
     'findOneAndUpdate',
     async (filter: Record<string, any>, update: Record<string, any>, options: Record<string, any>) => {
       capturedFilter = filter;
+      capturedOptions = options;
       mongoose.sanitizeFilter(filter);
       originalFindOneAndUpdate(filter, update, options).cast(OneTimeToken);
       return {
@@ -62,4 +72,6 @@ test('consume active-token operators survive mongoose sanitizeFilter', async (t)
   assert.equal(document.type, 'magic_link');
   assert(capturedFilter);
   assert(capturedFilter.expiresAt.$gt instanceof Date);
+  assert(capturedOptions);
+  assert.equal(capturedOptions.sanitizeFilter, false);
 });
