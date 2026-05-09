@@ -28,34 +28,55 @@ export type WithdrawalEmailScenario =
 
 export interface OrderEmailParams {
   scenario: OrderEmailScenario;
-  side: 'BUY' | 'SELL';
   orderId: string;
-  amount: string;
-  transactionCode: string;
-  username: string;
+  orderType: 'BUY' | 'SELL';
+  amountUsdt: string;
+  fiatCurrency?: 'KES';
+  fiatTotal?: string;
+  exchangeRate?: string;
+  username?: string | null;
+  transactionCode?: string | null;
+  actionUrl?: string;
 }
 
 export interface DepositEmailParams {
   scenario: DepositEmailScenario;
-  depositId: string;
-  amount: string;
-  memo: string;
-  username: string;
+  txHash: string;
+  amountUsdt: string;
+  memo?: string | null;
+  memoStatus?: 'missing' | 'inactive' | 'active';
+  username?: string | null;
+  senderAddress?: string | null;
+  note?: string | null;
+  reason?: string | null;
+  actionUrl?: string;
 }
 
 export interface WithdrawalEmailParams {
   scenario: WithdrawalEmailScenario;
   withdrawalId: string;
-  amount: string;
-  destination: string;
-  username: string;
+  amountUsdt: string;
+  toAddress: string;
+  statusUrl?: string;
+  seqno?: number;
+  txHash?: string;
+  lastError?: string | null;
+  actionUrl?: string;
 }
 
 export interface MerchantAlertEmailParams {
-  severity: 'info' | 'warning' | 'critical';
   title: string;
-  category: string;
-  message: string;
+  description: string;
+  severity: 'critical' | 'warning' | 'info';
+  category: 'orders' | 'liquidity' | 'operations' | 'deposits' | 'withdrawals';
+  metric?: string;
+  actionUrl?: string;
+}
+
+interface EmailRow {
+  label: string;
+  value: string;
+  href?: string;
 }
 
 function escapeHtml(value: string): string {
@@ -70,12 +91,12 @@ function escapeHtml(value: string): string {
 function renderProductEmail(params: {
   heading: string;
   summary: string;
-  rows: Array<[string, string]>;
+  rows: EmailRow[];
 }): string {
   const rows = params.rows
     .map(
-      ([label, value]) =>
-        `<tr><th style="text-align:left;padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#374151;">${escapeHtml(label)}</th><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${escapeHtml(value)}</td></tr>`,
+      (row) =>
+        `<tr><th style="text-align:left;padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#374151;">${escapeHtml(row.label)}</th><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${renderHtmlValue(row)}</td></tr>`,
     )
     .join('');
 
@@ -92,26 +113,51 @@ function renderProductEmail(params: {
   ].join('');
 }
 
-function buildText(params: { summary: string; rows: Array<[string, string]> }): string {
-  return [params.summary, '', ...params.rows.map(([label, value]) => `${label}: ${value}`)].join('\n');
+function renderHtmlValue(row: EmailRow): string {
+  if (row.href === undefined) {
+    return escapeHtml(row.value);
+  }
+
+  return `<a href="${escapeHtml(row.href)}">${escapeHtml(row.value)}</a>`;
+}
+
+function hasValue(value: string | number | null | undefined): value is string | number {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+function row(label: string, value: string | number | null | undefined, href?: string): EmailRow[] {
+  if (!hasValue(value)) {
+    return [];
+  }
+
+  const stringValue = String(value);
+  return [{ label, value: stringValue, href }];
+}
+
+function buildText(params: { summary: string; rows: EmailRow[] }): string {
+  return [params.summary, '', ...params.rows.map((item) => `${item.label}: ${item.value}`)].join('\n');
 }
 
 export function buildOrderEmail(params: OrderEmailParams): ProductEmailContent {
   const subjectByScenario: Record<OrderEmailScenario, string> = {
-    order_created_user: `Your ${params.side} order was submitted`,
-    order_created_merchant: `New ${params.side} order needs merchant review`,
-    order_approved_user: `Your ${params.side} order was approved`,
-    order_rejected_user: `Your ${params.side} order was rejected`,
+    order_created_user: `Your ${params.orderType} order was submitted`,
+    order_created_merchant: `New ${params.orderType} order needs merchant review`,
+    order_approved_user: `Your ${params.orderType} order was approved`,
+    order_rejected_user: `Your ${params.orderType} order was rejected`,
   };
   const subject = subjectByScenario[params.scenario];
-  const summary = `${params.side} order update for ${params.username}.`;
-  const rows: Array<[string, string]> = [
-    ['Scenario', params.scenario],
-    ['Order ID', params.orderId],
-    ['Side', params.side],
-    ['Amount', params.amount],
-    ['Transaction code', params.transactionCode],
-    ['Username', params.username],
+  const summary = `${params.orderType} order update.`;
+  const rows: EmailRow[] = [
+    ...row('Scenario', params.scenario),
+    ...row('Order ID', params.orderId),
+    ...row('Order type', params.orderType),
+    ...row('Amount USDT', params.amountUsdt),
+    ...row('Fiat currency', params.fiatCurrency),
+    ...row('Fiat total', params.fiatTotal),
+    ...row('Exchange rate', params.exchangeRate),
+    ...row('Transaction code', params.transactionCode),
+    ...row('Username', params.username),
+    ...row('Action', params.actionUrl, params.actionUrl),
   ];
 
   return {
@@ -130,13 +176,18 @@ export function buildDepositEmail(params: DepositEmailParams): ProductEmailConte
     deposit_rejected_merchant: 'Incoming deposit was rejected',
   };
   const subject = subjectByScenario[params.scenario];
-  const summary = `Deposit update for ${params.username}.`;
-  const rows: Array<[string, string]> = [
-    ['Scenario', params.scenario],
-    ['Deposit ID', params.depositId],
-    ['Amount', params.amount],
-    ['Memo', params.memo],
-    ['Username', params.username],
+  const summary = 'Deposit update.';
+  const rows: EmailRow[] = [
+    ...row('Scenario', params.scenario),
+    ...row('Tx hash', params.txHash),
+    ...row('Amount USDT', params.amountUsdt),
+    ...row('Memo', params.memo),
+    ...row('Memo status', params.memoStatus),
+    ...row('Username', params.username),
+    ...row('Sender address', params.senderAddress),
+    ...row('Note', params.note),
+    ...row('Reason', params.reason),
+    ...row('Action', params.actionUrl, params.actionUrl),
   ];
 
   return {
@@ -157,13 +208,17 @@ export function buildWithdrawalEmail(params: WithdrawalEmailParams): ProductEmai
     withdrawal_failed_merchant: 'Withdrawal failed permanently',
   };
   const subject = subjectByScenario[params.scenario];
-  const summary = `Withdrawal update for ${params.username}.`;
-  const rows: Array<[string, string]> = [
-    ['Scenario', params.scenario],
-    ['Withdrawal ID', params.withdrawalId],
-    ['Amount', params.amount],
-    ['Destination', params.destination],
-    ['Username', params.username],
+  const summary = 'Withdrawal update.';
+  const rows: EmailRow[] = [
+    ...row('Scenario', params.scenario),
+    ...row('Withdrawal ID', params.withdrawalId),
+    ...row('Amount USDT', params.amountUsdt),
+    ...row('To address', params.toAddress),
+    ...row('Status URL', params.statusUrl),
+    ...row('Seqno', params.seqno),
+    ...row('Tx hash', params.txHash),
+    ...row('Last error', params.lastError),
+    ...row('Action', params.actionUrl, params.actionUrl),
   ];
 
   return {
@@ -181,12 +236,14 @@ export function buildMerchantAlertEmail(params: MerchantAlertEmailParams): Produ
   };
   const severityLabel = severityLabelBySeverity[params.severity];
   const subject = `${severityLabel} merchant alert: ${params.title}`;
-  const summary = params.message;
-  const rows: Array<[string, string]> = [
-    ['Severity', severityLabel],
-    ['Category', params.category],
-    ['Title', params.title],
-    ['Message', params.message],
+  const summary = params.description;
+  const rows: EmailRow[] = [
+    ...row('Severity', severityLabel),
+    ...row('Category', params.category),
+    ...row('Title', params.title),
+    ...row('Description', params.description),
+    ...row('Metric', params.metric),
+    ...row('Action', params.actionUrl, params.actionUrl),
   ];
 
   return {
