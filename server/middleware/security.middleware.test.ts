@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { z } from 'zod';
 
+import { getSocketAllowRequest } from '../config/cors.ts';
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { csrfProtectionMiddleware } from './csrf.middleware.ts';
 import { validateBody } from './validate.middleware.ts';
@@ -67,6 +68,62 @@ test('csrfProtectionMiddleware allows state-changing requests from allowed origi
 
   assert.equal(nextCalled, true);
   assert.equal(res.statusCode, 200);
+
+  if (previousAllowedOrigins === undefined) {
+    delete process.env.ALLOWED_ORIGINS;
+  } else {
+    process.env.ALLOWED_ORIGINS = previousAllowedOrigins;
+  }
+  resetEnvCacheForTests();
+});
+
+test('getSocketAllowRequest rejects websocket upgrades from disallowed origins', () => {
+  const previousAllowedOrigins = process.env.ALLOWED_ORIGINS;
+  process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+  resetEnvCacheForTests();
+
+  const allowRequest = getSocketAllowRequest();
+  let allowed: boolean | undefined;
+  allowRequest(
+    {
+      headers: {
+        origin: 'https://evil.example',
+      },
+    } as any,
+    (_error, success) => {
+      allowed = success;
+    },
+  );
+
+  assert.equal(allowed, false);
+
+  if (previousAllowedOrigins === undefined) {
+    delete process.env.ALLOWED_ORIGINS;
+  } else {
+    process.env.ALLOWED_ORIGINS = previousAllowedOrigins;
+  }
+  resetEnvCacheForTests();
+});
+
+test('getSocketAllowRequest allows requests from configured origins', () => {
+  const previousAllowedOrigins = process.env.ALLOWED_ORIGINS;
+  process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+  resetEnvCacheForTests();
+
+  const allowRequest = getSocketAllowRequest();
+  let allowed: boolean | undefined;
+  allowRequest(
+    {
+      headers: {
+        origin: 'http://localhost:3000',
+      },
+    } as any,
+    (_error, success) => {
+      allowed = success;
+    },
+  );
+
+  assert.equal(allowed, true);
 
   if (previousAllowedOrigins === undefined) {
     delete process.env.ALLOWED_ORIGINS;

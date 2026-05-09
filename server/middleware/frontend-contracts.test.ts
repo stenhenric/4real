@@ -14,6 +14,7 @@ import {
   consumeMagicLink,
   consumeSuspiciousLogin,
   consumeVerificationEmail,
+  loginPassword,
 } from '../../src/services/auth.service.ts';
 import request, { ApiClientError } from '../../src/services/api/apiClient.ts';
 import { getMatch, joinMatch } from '../../src/services/matches.service.ts';
@@ -114,6 +115,12 @@ test('frontend buttons render through SketchyButton', () => {
   assert.deepEqual(rawButtons, []);
 });
 
+test('frontend styles do not require remote font providers at runtime', () => {
+  const stylesheet = readFileSync(join('src', 'index.css'), 'utf8');
+
+  assert.equal(/fonts\.(?:googleapis|gstatic)\.com/i.test(stylesheet), false);
+});
+
 test('ApiClientError preserves status, code, and details from backend responses', async (t) => {
   const fetchMock = mock.method(globalThis, 'fetch', async () => createJsonResponse({
     code: 'MATCH_NOT_FOUND',
@@ -209,6 +216,28 @@ test('frontend auth service consumes emailed auth tokens with POST requests', as
         input: '/api/auth/login/suspicious/consume',
         method: 'POST',
         body: JSON.stringify({ token: 'suspicious-token' }),
+      },
+    ],
+  );
+});
+
+test('frontend auth service sends password login identifiers', async (t) => {
+  const calls: Array<{ input: unknown; init?: RequestInit }> = [];
+  const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
+    calls.push({ input, init });
+    return createJsonResponse({ status: 'authenticated' });
+  });
+  t.after(() => fetchMock.mock.restore());
+
+  await loginPassword({ identifier: 'SketchMaster', password: 'paper-lobby-stakes-2026' });
+
+  assert.deepEqual(
+    calls.map((entry) => ({ input: entry.input, method: entry.init?.method, body: entry.init?.body })),
+    [
+      {
+        input: '/api/auth/login/password',
+        method: 'POST',
+        body: JSON.stringify({ identifier: 'SketchMaster', password: 'paper-lobby-stakes-2026' }),
       },
     ],
   );

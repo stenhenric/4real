@@ -1,9 +1,29 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { closeContext, createLoggedInPage, resetApp } from './helpers';
 
 test.beforeEach(async ({ request }) => {
   await resetApp(request);
 });
+
+async function playMoveAndWaitForSync({
+  actorPage,
+  observerPage,
+  board,
+  key,
+  moveNumber,
+}: {
+  actorPage: Page;
+  observerPage: Page;
+  board: Locator;
+  key: string;
+  moveNumber: number;
+}) {
+  const moveLabel = new RegExp(`move ${moveNumber}\\b`, 'i');
+  await board.focus();
+  await board.press(key);
+  await expect(actorPage.getByText(moveLabel)).toBeVisible();
+  await expect(observerPage.getByText(moveLabel)).toBeVisible();
+}
 
 test('lets two authenticated players create, join, and finish a realtime public match', async ({ browser }) => {
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
@@ -33,26 +53,14 @@ test('lets two authenticated players create, join, and finish a realtime public 
     const boardOne = playerOne.page.locator('canvas[aria-label^="Connect board"]');
     const boardTwo = playerTwo.page.locator('canvas[aria-label^="Connect board"]');
 
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 1 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 2 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 3 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 4 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 5 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 6 });
+
     await boardOne.focus();
-    await boardOne.press('1');
-    await expect(playerOne.page.getByText(/move 1/i)).toBeVisible();
-
-    await boardTwo.focus();
-    await boardTwo.press('7');
-    await expect(playerTwo.page.getByText(/move 2/i)).toBeVisible();
-
-    await boardOne.press('1');
-    await expect(playerOne.page.getByText(/move 3/i)).toBeVisible();
-
-    await boardTwo.press('7');
-    await expect(playerTwo.page.getByText(/move 4/i)).toBeVisible();
-
-    await boardOne.press('1');
-    await expect(playerOne.page.getByText(/move 5/i)).toBeVisible();
-
-    await boardTwo.press('7');
-    await expect(playerTwo.page.getByText(/move 6/i)).toBeVisible();
-
     await boardOne.press('1');
     await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
     await expect(playerTwo.page.getByText(/you were defeated/i)).toBeVisible();
@@ -100,26 +108,14 @@ test('settles a paid public match with merchant commission end to end', async ({
     const boardOne = playerOne.page.locator('canvas[aria-label^="Connect board"]');
     const boardTwo = playerTwo.page.locator('canvas[aria-label^="Connect board"]');
 
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 1 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 2 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 3 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 4 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 5 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 6 });
+
     await boardOne.focus();
-    await boardOne.press('1');
-    await expect(playerOne.page.getByText(/move 1/i)).toBeVisible();
-
-    await boardTwo.focus();
-    await boardTwo.press('7');
-    await expect(playerTwo.page.getByText(/move 2/i)).toBeVisible();
-
-    await boardOne.press('1');
-    await expect(playerOne.page.getByText(/move 3/i)).toBeVisible();
-
-    await boardTwo.press('7');
-    await expect(playerTwo.page.getByText(/move 4/i)).toBeVisible();
-
-    await boardOne.press('1');
-    await expect(playerOne.page.getByText(/move 5/i)).toBeVisible();
-
-    await boardTwo.press('7');
-    await expect(playerTwo.page.getByText(/move 6/i)).toBeVisible();
-
     await boardOne.press('1');
     await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
     await expect(playerTwo.page.getByText(/you were defeated/i)).toBeVisible();

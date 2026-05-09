@@ -25,6 +25,10 @@ export function getRedisClient(): Redis {
   return sharedRedisClient;
 }
 
+export function setRedisClientForTests(client: Redis | null): void {
+  sharedRedisClient = client;
+}
+
 export async function disconnectRedis(): Promise<void> {
   if (!sharedRedisClient) {
     return;

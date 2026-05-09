@@ -14,6 +14,16 @@ import {
 const passwordSchema = z.string().min(12, 'Password must be at least 12 characters long').max(128);
 const emailSchema = z.string().trim().email();
 const usernameSchema = z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9_-]+$/, 'Username must contain only letters, numbers, underscores, or hyphens');
+const loginIdentifierSchema = z.string().trim().min(1, 'Email or username is required').max(254).superRefine((value, ctx) => {
+  if (emailSchema.safeParse(value).success || usernameSchema.safeParse(value).success) {
+    return;
+  }
+
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'Enter a valid email or username',
+  });
+});
 const turnstileTokenSchema = z.string().trim().min(1).optional();
 
 function createFixedScaleSchema(params: {
@@ -106,11 +116,30 @@ export const registerRequestSchema = z.object({
   turnstileToken: turnstileTokenSchema,
 });
 
-export const loginPasswordRequestSchema = z.object({
-  email: emailSchema,
-  password: z.string().min(1).max(128),
-  turnstileToken: turnstileTokenSchema,
-});
+export const loginPasswordRequestSchema = z
+  .object({
+    identifier: loginIdentifierSchema.optional(),
+    email: emailSchema.optional(),
+    password: z.string().min(1).max(128),
+    turnstileToken: turnstileTokenSchema,
+  })
+  .transform((value, ctx) => {
+    const identifier = value.identifier ?? value.email;
+    if (!identifier) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Email or username is required',
+        path: ['identifier'],
+      });
+      return z.NEVER;
+    }
+
+    return {
+      identifier,
+      password: value.password,
+      turnstileToken: value.turnstileToken,
+    };
+  });
 
 export const magicLinkRequestSchema = z.object({
   email: emailSchema,

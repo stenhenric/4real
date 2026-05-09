@@ -16,6 +16,101 @@ import type {
   UpdateMerchantConfigRequest,
 } from '../validation/request-schemas.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
+import { badRequest } from '../utils/http-error.ts';
+
+type MerchantOrderTypeFilter = 'ALL' | 'BUY' | 'SELL';
+type MerchantOrderStatusFilter = 'ALL' | 'PENDING' | 'DONE' | 'REJECTED';
+
+function readRequiredScalarQueryValue(
+  req: AuthRequest,
+  key: string,
+  errorMessage: string,
+  errorCode: string,
+): string | undefined {
+  const value = req.query[key];
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw badRequest(errorMessage, errorCode);
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw badRequest(errorMessage, errorCode);
+  }
+
+  return normalized;
+}
+
+function parseMerchantOrderType(req: AuthRequest): MerchantOrderTypeFilter {
+  const value = readRequiredScalarQueryValue(
+    req,
+    'type',
+    'Invalid merchant order type filter',
+    'INVALID_MERCHANT_ORDER_TYPE',
+  );
+  if (!value) {
+    return 'ALL';
+  }
+
+  const normalized = value.toUpperCase();
+  if (normalized === 'ALL' || normalized === 'BUY' || normalized === 'SELL') {
+    return normalized;
+  }
+
+  throw badRequest('Invalid merchant order type filter', 'INVALID_MERCHANT_ORDER_TYPE');
+}
+
+function parseMerchantOrderStatus(req: AuthRequest): MerchantOrderStatusFilter {
+  const value = readRequiredScalarQueryValue(
+    req,
+    'status',
+    'Invalid merchant order status filter',
+    'INVALID_MERCHANT_ORDER_STATUS',
+  );
+  if (!value) {
+    return 'PENDING';
+  }
+
+  const normalized = value.toUpperCase();
+  if (normalized === 'ALL' || normalized === 'PENDING' || normalized === 'DONE' || normalized === 'REJECTED') {
+    return normalized;
+  }
+
+  throw badRequest('Invalid merchant order status filter', 'INVALID_MERCHANT_ORDER_STATUS');
+}
+
+function parsePositivePageNumber(
+  req: AuthRequest,
+  key: 'page' | 'pageSize',
+  {
+    defaultValue,
+    min,
+    max,
+    errorMessage,
+    errorCode,
+  }: {
+    defaultValue: number;
+    min: number;
+    max: number;
+    errorMessage: string;
+    errorCode: string;
+  },
+): number {
+  const value = readRequiredScalarQueryValue(req, key, errorMessage, errorCode);
+  if (!value) {
+    return defaultValue;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw badRequest(errorMessage, errorCode);
+  }
+
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
 
 function getBackgroundJobs(req: AuthRequest): BackgroundJobState | null {
   const backgroundJobs = req.app.locals.statusProvider?.getBackgroundJobs?.();
@@ -55,19 +150,22 @@ export class MerchantAdminController {
   }
 
   static async getOrders(req: AuthRequest, res: Response): Promise<void> {
-    const typeParam = typeof req.query.type === 'string' ? req.query.type.toUpperCase() : 'ALL';
-    const statusParam = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : 'PENDING';
-    const pageParam = typeof req.query.page === 'string' ? Number(req.query.page) : 1;
-    const pageSizeParam = typeof req.query.pageSize === 'string' ? Number(req.query.pageSize) : 25;
-
-    const type = typeParam === 'BUY' || typeParam === 'SELL' ? typeParam : 'ALL';
-    const status = statusParam === 'PENDING' || statusParam === 'DONE' || statusParam === 'REJECTED'
-      ? statusParam
-      : 'ALL';
-    const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
-    const pageSize = Number.isFinite(pageSizeParam)
-      ? Math.min(100, Math.max(10, Math.floor(pageSizeParam)))
-      : 25;
+    const type = parseMerchantOrderType(req);
+    const status = parseMerchantOrderStatus(req);
+    const page = parsePositivePageNumber(req, 'page', {
+      defaultValue: 1,
+      min: 1,
+      max: Number.MAX_SAFE_INTEGER,
+      errorMessage: 'Invalid merchant order page',
+      errorCode: 'INVALID_MERCHANT_ORDER_PAGE',
+    });
+    const pageSize = parsePositivePageNumber(req, 'pageSize', {
+      defaultValue: 25,
+      min: 10,
+      max: 100,
+      errorMessage: 'Invalid merchant order page size',
+      errorCode: 'INVALID_MERCHANT_ORDER_PAGE_SIZE',
+    });
 
     const orders = await MerchantDashboardService.getOrderDesk({
       page,

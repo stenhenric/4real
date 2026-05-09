@@ -198,13 +198,21 @@ export class GameRoomRegistry {
               : player
           )),
         } satisfies RoomState;
+        const detachedCurrentSocket = room.players.some((player) => (
+          player.userId === binding.userId
+          && player.socketId === socketId
+        ));
 
         await this.set(binding.roomId, nextRoom);
-        await getRedisClient()
+        const cleanup = getRedisClient()
           .multi()
-          .srem(this.getRoomMembersKey(binding.roomId), binding.userId)
-          .del(this.getSocketBindingKey(socketId))
-          .exec();
+          .del(this.getSocketBindingKey(socketId));
+
+        if (detachedCurrentSocket) {
+          cleanup.srem(this.getRoomMembersKey(binding.roomId), binding.userId);
+        }
+
+        await cleanup.exec();
       });
       return;
     }

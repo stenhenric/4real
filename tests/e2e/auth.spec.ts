@@ -59,7 +59,7 @@ test('boots the app, enforces auth, supports register verify login logout, and p
   await page.getByRole('button', { name: /log out/i }).click();
   await expect(page).toHaveURL(/\/auth\/login$/);
 
-  await page.getByLabel('Email').fill('audit-user@example.com');
+  await page.getByLabel('Email or username').fill('audit-user');
   await page.getByRole('button', { name: /continue with password/i }).click();
   const signInButton = page.getByRole('button', { name: /^sign in$/i });
   await expect(signInButton).toBeEnabled();

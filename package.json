@@ -9,7 +9,7 @@
     "build": "vite build && tsc --project tsconfig.server.json",
     "preview": "vite preview",
     "test": "npm run test:integration",
-    "test:unit": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/config/env.test.ts server/services/email/gmail-service.test.ts server/services/email/product-email-templates.test.ts server/services/auth-email.service.test.ts server/services/product-email-notification.service.test.ts server/services/auth-session.service.test.ts server/middleware/auth-security.test.ts server/middleware/frontend-contracts.test.ts server/middleware/logging-and-schemas.test.ts server/middleware/migration-services.test.ts server/middleware/security.middleware.test.ts server/middleware/static-files.test.ts",
+    "test:unit": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/config/env.test.ts server/repositories/processed-transaction.repository.test.ts server/services/email/gmail-service.test.ts server/services/email/product-email-templates.test.ts server/services/auth-email.service.test.ts server/services/google-oauth.service.test.ts server/services/product-email-notification.service.test.ts server/services/auth-session.service.test.ts server/middleware/auth-security.test.ts server/middleware/frontend-contracts.test.ts server/middleware/logging-and-schemas.test.ts server/middleware/merchant-dashboard.test.ts server/middleware/migration-services.test.ts server/middleware/realtime-match.service.test.ts server/middleware/security.middleware.test.ts server/middleware/static-files.test.ts",
     "test:integration": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/middleware/*.test.ts",
     "test:e2e": "npm run build && playwright test",
     "test:all": "npm run lint && npm run test:unit && npm run test:integration && npm run test:e2e",
@@ -43,8 +43,9 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
-    "express-rate-limit": "^8.4.0",
+    "express-rate-limit": "^8.5.1",
     "googleapis": "^171.4.0",
+    "google-auth-library": "^10.6.2",
     "helmet": "^8.1.0",
     "ioredis": "^5.10.1",
     "lucide-react": "^0.546.0",
@@ -62,6 +63,9 @@
     "uuid": "^14.0.0",
     "vite": "^6.4.2",
     "zod": "^4.3.6"
+  },
+  "overrides": {
+    "axios": "1.16.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

@@ -29,6 +29,10 @@ function getErrorMessage(value: string | null) {
   return null;
 }
 
+function isLikelyEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 type LoginStep = 'method_selection' | 'password_entry' | 'magic_link_verification';
 
 export default function LoginPage() {
@@ -41,7 +45,7 @@ export default function LoginPage() {
   const { success, error: showError, info } = useToast();
   
   const [step, setStep] = useState<LoginStep>('method_selection');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [magicLoading, setMagicLoading] = useState(false);
@@ -68,7 +72,18 @@ export default function LoginPage() {
     }
 
     try {
-      const response = await loginPassword({ email, password, ...(turnstileToken && { turnstileToken }) });
+      const loginIdentifier = identifier.trim();
+      if (!loginIdentifier) {
+        showError('Please enter your email or username.');
+        setPasswordLoading(false);
+        return;
+      }
+
+      const response = await loginPassword({
+        identifier: loginIdentifier,
+        password,
+        ...(turnstileToken && { turnstileToken }),
+      });
 
       if (response.user) {
         setAuthStateFromResponse(response);
@@ -89,7 +104,10 @@ export default function LoginPage() {
         return;
       }
 
-      navigate(sanitizeInternalPath(response.redirectTo) ?? buildVerifyEmailPath({ email: response.email ?? email }), {
+      const verificationEmail = response.email ?? (isLikelyEmail(loginIdentifier) ? loginIdentifier : null);
+      navigate(sanitizeInternalPath(response.redirectTo) ?? buildVerifyEmailPath(
+        verificationEmail ? { email: verificationEmail } : undefined,
+      ), {
         replace: true,
         state: { previewUrl: response.previewUrl ?? verificationState?.previewUrl },
       });
@@ -118,6 +136,15 @@ export default function LoginPage() {
     }
 
     try {
+      const email = identifier.trim();
+      if (!isLikelyEmail(email)) {
+        showError('Enter your email to receive a magic link.');
+        turnstileRef.current?.reset();
+        setTurnstileToken(undefined);
+        setMagicLoading(false);
+        return;
+      }
+
       const response = await requestMagicLink({ email, redirectTo, ...(turnstileToken && { turnstileToken }) });
       info(response.message ?? 'If it exists, a sign-in link is on the way.');
       navigate(sanitizeInternalPath(response.redirectTo) ?? buildMagicLinkPath({ email }), {
@@ -145,9 +172,21 @@ export default function LoginPage() {
     }
   };
 
+  const requireIdentifier = () => {
+    if (identifier.trim().length === 0) {
+      showError('Please enter your email or username.');
+      return false;
+    }
+    return true;
+  };
+
   const requireEmail = () => {
-    if (email.trim().length === 0) {
+    if (identifier.trim().length === 0) {
       showError('Please enter your email first.');
+      return false;
+    }
+    if (!isLikelyEmail(identifier)) {
+      showError('Enter your email to receive a magic link.');
       return false;
     }
     return true;
@@ -163,7 +202,7 @@ export default function LoginPage() {
     <AuthShell
       eyebrow="Account Access"
       title="Sign in without friction."
-      description="Use email and password, a magic link, or Google. Sensitive actions are step-up protected after you are inside."
+      description="Use email or username with your password, a magic link, or Google. Sensitive actions are step-up protected after you are inside."
       footer={(
         <p className="text-sm text-black/60 font-bold">
           New here?{' '}
@@ -181,24 +220,24 @@ export default function LoginPage() {
           <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
             <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
             
-            <AuthDivider label="Or continue with email" />
+            <AuthDivider label="Or continue with email or username" />
 
             <div className="space-y-4">
               <AuthInput
-                autoComplete="email"
-                label="Email"
-                name="email"
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="name@example.com"
+                autoComplete="username"
+                label="Email or username"
+                name="identifier"
+                onChange={(event) => setIdentifier(event.target.value)}
+                placeholder="name@example.com or SketchMaster"
                 required
-                type="email"
-                value={email}
+                type="text"
+                value={identifier}
               />
 
               <div className="pt-4 flex flex-col gap-3">
                 <SketchyButton 
                   className="w-full py-3" 
-                  onClick={() => requireEmail() && setStep('password_entry')}
+                  onClick={() => requireIdentifier() && setStep('password_entry')}
                   type="button"
                   activeColor="#fff9c4"
                 >
@@ -229,12 +268,12 @@ export default function LoginPage() {
             </SketchyButton>
             
             <AuthInput
-              autoComplete="email"
-              label="Email"
-              name="email"
+              autoComplete="username"
+              label="Email or username"
+              name="identifier"
               disabled
-              type="email"
-              value={email}
+              type="text"
+              value={identifier}
             />
             
             <div className="pt-2 relative">
@@ -283,7 +322,7 @@ export default function LoginPage() {
             </SketchyButton>
 
             <AuthNotice tone="info">
-              Verify you are human to send a magic link to {email}.
+              Verify you are human to send a magic link to {identifier.trim()}.
             </AuthNotice>
 
             <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />

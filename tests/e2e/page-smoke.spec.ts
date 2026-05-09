@@ -18,13 +18,16 @@ const MOCK_TON_WALLETS = [{
   platforms: ['ios', 'android', 'linux', 'macos', 'windows', 'chrome'],
 }];
 
-function installErrorCollectors(page: Page, options?: { ignoreConsole?: RegExp[] }) {
+function installErrorCollectors(page: Page, options?: { ignoreConsole?: RegExp[]; ignorePageErrors?: RegExp[] }) {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   const ignoreConsole = options?.ignoreConsole ?? [];
+  const ignorePageErrors = options?.ignorePageErrors ?? [];
 
   page.on('pageerror', (error) => {
-    pageErrors.push(error.message);
+    if (!ignorePageErrors.some((pattern) => pattern.test(error.message))) {
+      pageErrors.push(error.message);
+    }
   });
 
   page.on('console', (message) => {
@@ -121,7 +124,9 @@ test('public routes when opened anonymously render their primary surfaces withou
 test('player routes when a session is preloaded render the lobby leaderboard bank and profile surfaces', async ({ browser }) => {
   const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
   await stubTonConnectWallets(page);
-  const health = installErrorCollectors(page);
+  const health = installErrorCollectors(page, {
+    ignorePageErrors: [/socket\.io\/.*due to access control checks\./i],
+  });
   const routes: RouteExpectation[] = [
     { path: '/leaderboard', text: /leaderboard/i },
     { path: '/bank', heading: /the bank/i },

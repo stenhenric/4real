@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http';
 import type { CorsOptions } from 'cors';
 
 import { getEnv } from './env.ts';
@@ -24,5 +25,16 @@ export function getSocketCorsOptions() {
     origin: getEnv().allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
+  };
+}
+
+export function getSocketAllowRequest() {
+  return (
+    req: IncomingMessage,
+    callback: (error: string | null | undefined, success: boolean) => void,
+  ): void => {
+    const rawOrigin = req.headers.origin;
+    const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+    callback(null, isAllowedOrigin(origin));
   };
 }

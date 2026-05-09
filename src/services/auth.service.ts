@@ -2,7 +2,7 @@ import request from './api/apiClient.ts';
 import type { AuthResponseDTO } from '../types/api';
 
 interface PasswordLoginRequest {
-  email: string;
+  identifier: string;
   password: string;
   turnstileToken?: string;
 }

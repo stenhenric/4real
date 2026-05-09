@@ -1,10 +1,9 @@
-@import url("https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&display=swap");
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Cabin Sketch", "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
-  --font-display: "Cabin Sketch", "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
-  --font-mono: "Cabin Sketch", "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
+  --font-sans: "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
+  --font-display: "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
+  --font-mono: "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
   --color-paper: #F2EFE9;
   --color-ink-blue: #1A365D;
   --color-ink-red: #9B2C2C;

@@ -43,18 +43,37 @@ test('auth identity helpers normalize email and username inputs deterministicall
   assert.equal(cleanUsername(' SketchMaster '), 'SketchMaster');
 });
 
-test('loginPasswordRequestSchema accepts email login payloads and rejects username-only payloads', () => {
-  const valid = loginPasswordRequestSchema.safeParse({
+test('loginPasswordRequestSchema accepts email or username identifiers', () => {
+  const emailIdentifier = loginPasswordRequestSchema.safeParse({
+    identifier: 'player@example.com',
+    password: 'password123',
+  });
+  const usernameIdentifier = loginPasswordRequestSchema.safeParse({
+    identifier: 'SketchMaster',
+    password: 'password123',
+  });
+  const legacyEmail = loginPasswordRequestSchema.safeParse({
     email: 'player@example.com',
     password: 'password123',
   });
-  const invalid = loginPasswordRequestSchema.safeParse({
-    username: 'SketchMaster',
+  const invalidIdentifier = loginPasswordRequestSchema.safeParse({
+    identifier: 'not a valid username',
     password: 'password123',
   });
 
-  assert.equal(valid.success, true);
-  assert.equal(invalid.success, false);
+  assert.equal(emailIdentifier.success, true);
+  if (emailIdentifier.success) {
+    assert.equal(emailIdentifier.data.identifier, 'player@example.com');
+  }
+  assert.equal(usernameIdentifier.success, true);
+  if (usernameIdentifier.success) {
+    assert.equal(usernameIdentifier.data.identifier, 'SketchMaster');
+  }
+  assert.equal(legacyEmail.success, true);
+  if (legacyEmail.success) {
+    assert.equal(legacyEmail.data.identifier, 'player@example.com');
+  }
+  assert.equal(invalidIdentifier.success, false);
 });
 
 test('createOrderRequestSchema validates type and amount without trusting proof URLs', () => {

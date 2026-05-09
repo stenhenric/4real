@@ -2,7 +2,7 @@ import { MatchService } from './match.service.ts';
 import { createRoomStateFromMatch, checkWin, type RoomState } from './game-room.service.ts';
 import { GameRoomRegistry } from './game-room-registry.service.ts';
 import { UserService } from './user.service.ts';
-import { conflict, notFound, unauthorized } from '../utils/http-error.ts';
+import { notFound, unauthorized } from '../utils/http-error.ts';
 
 export interface JoinRoomResult {
   room: RoomState;
@@ -23,6 +23,10 @@ export interface GameOverResult {
 
 export type MakeMoveResult = MoveMadeResult | GameOverResult | null;
 
+function isSupportedRoomId(roomId: string): boolean {
+  return roomId.length > 0 && roomId.length <= 128 && /^[A-Za-z0-9_-]+$/.test(roomId);
+}
+
 export class RealtimeMatchService {
   private readonly roomRegistry: GameRoomRegistry;
 
@@ -39,14 +43,16 @@ export class RealtimeMatchService {
     userId: string;
     socketId: string;
   }): Promise<JoinRoomResult> {
-    return this.roomRegistry.runExclusive(roomId, async () => {
-      if (roomId.trim().length === 0) {
-        throw unauthorized('Unauthorized access', 'MATCH_ROOM_REQUIRED');
-      }
+    const normalizedRoomId = roomId.trim();
+    if (!isSupportedRoomId(normalizedRoomId)) {
+      throw unauthorized('Unauthorized access', 'MATCH_ROOM_REQUIRED');
+    }
+
+    return this.roomRegistry.runExclusive(normalizedRoomId, async () => {
 
       const [user, dbMatch] = await Promise.all([
         UserService.findById(userId),
-        MatchService.getMatchByRoomId(roomId),
+        MatchService.getMatchByRoomId(normalizedRoomId),
       ]);
 
       if (!user) {
@@ -57,25 +63,29 @@ export class RealtimeMatchService {
         throw notFound('Match not found', 'MATCH_NOT_FOUND');
       }
 
-      let room = await this.roomRegistry.get(roomId);
+      const participantIds = [
+        dbMatch.player1Id.toString(),
+        dbMatch.player2Id?.toString(),
+      ].filter((playerId): playerId is string => Boolean(playerId));
+      if (!participantIds.includes(userId)) {
+        throw notFound('Match not found', 'MATCH_NOT_FOUND');
+      }
+
+      let room = await this.roomRegistry.get(normalizedRoomId);
       if (!room) {
         room = await createRoomStateFromMatch(dbMatch);
-        room = await this.roomRegistry.set(roomId, room);
+        room = await this.roomRegistry.set(normalizedRoomId, room);
       }
       const activeRoom = room;
 
       let activatedRoom = false;
-      const expectedPlayerIds = [
-        dbMatch.player1Id.toString(),
-        dbMatch.player2Id?.toString(),
-      ].filter((playerId): playerId is string => Boolean(playerId));
       const roomMembershipDrift =
-        expectedPlayerIds.length !== activeRoom.players.length
-        || expectedPlayerIds.some((playerId) => !activeRoom.players.some((entry) => entry.userId === playerId));
+        participantIds.length !== activeRoom.players.length
+        || participantIds.some((playerId) => !activeRoom.players.some((entry) => entry.userId === playerId));
 
       if (dbMatch.status === 'completed') {
         const refreshedRoom = await createRoomStateFromMatch(dbMatch);
-        await this.roomRegistry.set(roomId, refreshedRoom);
+        await this.roomRegistry.set(normalizedRoomId, refreshedRoom);
         room = refreshedRoom;
       } else if (
         dbMatch.status !== activeRoom.status
@@ -89,22 +99,19 @@ export class RealtimeMatchService {
           ...entry,
           socketId: knownSocketIds.get(entry.userId) ?? null,
         }));
-        room = await this.roomRegistry.set(roomId, room);
+        room = await this.roomRegistry.set(normalizedRoomId, room);
       }
 
       const joinedRoom = room;
       let player = joinedRoom.players.find((entry) => entry.userId === userId);
 
       if (!player) {
-        throw conflict(
-          'Join the match through the API before opening the realtime room',
-          'MATCH_JOIN_REQUIRED',
-        );
+        throw notFound('Match not found', 'MATCH_NOT_FOUND');
       }
 
       player.socketId = socketId;
-      const persistedRoom = await this.roomRegistry.set(roomId, joinedRoom);
-      await this.roomRegistry.bindSocket(roomId, userId, socketId, persistedRoom.status);
+      const persistedRoom = await this.roomRegistry.set(normalizedRoomId, joinedRoom);
+      await this.roomRegistry.bindSocket(normalizedRoomId, userId, socketId, persistedRoom.status);
 
       return {
         room: persistedRoom,
@@ -122,20 +129,25 @@ export class RealtimeMatchService {
     userId: string;
     col: number;
   }): Promise<MakeMoveResult> {
-    return this.roomRegistry.runExclusive(roomId, async () => {
-      const dbMatch = await MatchService.getMatchByRoomId(roomId);
+    const normalizedRoomId = roomId.trim();
+    if (!isSupportedRoomId(normalizedRoomId)) {
+      throw unauthorized('Unauthorized access', 'MATCH_ROOM_REQUIRED');
+    }
+
+    return this.roomRegistry.runExclusive(normalizedRoomId, async () => {
+      const dbMatch = await MatchService.getMatchByRoomId(normalizedRoomId);
       if (!dbMatch || dbMatch.status === 'completed') {
         if (dbMatch) {
           const completedRoom = await createRoomStateFromMatch(dbMatch);
-          await this.roomRegistry.set(roomId, completedRoom);
+          await this.roomRegistry.set(normalizedRoomId, completedRoom);
         }
         return null;
       }
 
-      let room = await this.roomRegistry.get(roomId);
+      let room = await this.roomRegistry.get(normalizedRoomId);
       if (!room) {
         room = await createRoomStateFromMatch(dbMatch);
-        room = await this.roomRegistry.set(roomId, room);
+        room = await this.roomRegistry.set(normalizedRoomId, room);
       }
 
       const isParticipant = room.players.some((player) => player.userId === userId);
@@ -172,8 +184,8 @@ export class RealtimeMatchService {
         room.status = 'completed';
         room.currentTurn = null;
         room.winnerId = userId;
-        await MatchService.completeMatch(roomId, userId, room.moves);
-        const persistedRoom = await this.roomRegistry.set(roomId, room);
+        await MatchService.completeMatch(normalizedRoomId, userId, room.moves);
+        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, room);
 
         return {
           type: 'game-over',
@@ -187,8 +199,8 @@ export class RealtimeMatchService {
         room.status = 'completed';
         room.currentTurn = null;
         room.winnerId = 'draw';
-        await MatchService.completeMatch(roomId, 'draw', room.moves);
-        const persistedRoom = await this.roomRegistry.set(roomId, room);
+        await MatchService.completeMatch(normalizedRoomId, 'draw', room.moves);
+        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, room);
 
         return {
           type: 'game-over',
@@ -198,8 +210,8 @@ export class RealtimeMatchService {
       }
 
       room.currentTurn = room.players.find((player) => player.userId !== userId)?.userId ?? null;
-      await MatchService.persistMoveHistory(roomId, room.moves);
-      const persistedRoom = await this.roomRegistry.set(roomId, room);
+      await MatchService.persistMoveHistory(normalizedRoomId, room.moves);
+      const persistedRoom = await this.roomRegistry.set(normalizedRoomId, room);
 
       return {
         type: 'move-made',

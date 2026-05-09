@@ -104,6 +104,14 @@ function buildSuspiciousLoginRedirect(email?: string): string {
   return query ? `/auth/approve-login?${query}` : '/auth/approve-login';
 }
 
+async function findPasswordLoginUser(identifier: string): Promise<IUser | null> {
+  if (identifier.includes('@')) {
+    return UserService.findByEmail(normalizeEmail(identifier));
+  }
+
+  return UserService.findByUsername(cleanUsername(identifier));
+}
+
 function applySessionCookies(
   res: Response,
   issuedSession: {
@@ -221,8 +229,7 @@ export class AuthController {
     const body = req.body as LoginPasswordRequest;
     await verifyTurnstileToken(body.turnstileToken, req.ip);
 
-    const email = normalizeEmail(body.email);
-    const user = await UserService.findByEmail(email);
+    const user = await findPasswordLoginUser(body.identifier);
     if (!user || !user.passwordHash) {
       throw unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
     }

@@ -287,6 +287,10 @@ function findUserByEmail(email) {
   return state.users.find((user) => user.email.toLowerCase() === email.trim().toLowerCase()) ?? null;
 }
 
+function findUserByUsername(username) {
+  return state.users.find((user) => user.username.toLowerCase() === username.trim().toLowerCase()) ?? null;
+}
+
 function buildUserDto(user) {
   return {
     id: user.id,
@@ -927,9 +931,11 @@ function createApp() {
   });
 
   app.post('/api/auth/login/password', (req, res) => {
-    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const identifier = String(req.body?.identifier ?? req.body?.email ?? '').trim();
     const password = String(req.body?.password ?? '');
-    const user = findUserByEmail(email);
+    const user = identifier.includes('@')
+      ? findUserByEmail(identifier)
+      : findUserByUsername(identifier);
 
     if (!user || user.password !== password) {
       sendApiError(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');

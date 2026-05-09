@@ -4,7 +4,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 
 import { createApp } from './app.ts';
-import { getSocketCorsOptions } from './config/cors.ts';
+import { getSocketAllowRequest, getSocketCorsOptions } from './config/cors.ts';
 import { connectDB, disconnectDB } from './config/db.ts';
 import { getEnv } from './config/env.ts';
 import { setupIndexes } from './lib/setup-db.ts';
@@ -55,6 +55,7 @@ export async function startServer() {
 
   const io = new SocketIOServer(httpServer, {
     cors: getSocketCorsOptions(),
+    allowRequest: getSocketAllowRequest(),
     connectionStateRecovery: {
       maxDisconnectionDuration: 2 * 60 * 1000,
     },

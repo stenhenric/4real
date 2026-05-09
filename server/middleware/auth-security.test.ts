@@ -22,6 +22,7 @@ import { AuthSessionService } from '../services/auth-session.service.ts';
 import { GoogleOAuthService } from '../services/google-oauth.service.ts';
 import { assertValidPassword } from '../services/password-policy.service.ts';
 import { OneTimeTokenService } from '../services/one-time-token.service.ts';
+import { hashPassword } from '../services/password-hash.service.ts';
 import { createTotpSetup, verifyTotpCode } from '../services/totp.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { serviceUnavailable } from '../utils/http-error.ts';
@@ -266,6 +267,57 @@ test('resendVerificationEmail surfaces EMAIL_DELIVERY_FAILED for pending-verific
   assert.equal(userMock.mock.callCount(), 1);
   assert.equal(sendVerificationMock.mock.callCount(), 1);
   assert.equal(res.payload, undefined);
+});
+
+test('loginPassword accepts username identifiers without requiring an email lookup', async (t) => {
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = '';
+  resetEnvCacheForTests();
+
+  try {
+    const password = 'paper-lobby-stakes-2026';
+    const user = createMockUser({
+      username: 'SketchMaster',
+      email: 'sketch@example.com',
+      passwordHash: await hashPassword(password),
+    });
+    const emailLookupMock = t.mock.method(UserService, 'findByEmail', async () => {
+      throw new Error('email lookup should not be used for username login');
+    });
+    const usernameLookupMock = t.mock.method(UserService, 'findByUsername', async () => user);
+    const suspiciousLoginMock = t.mock.method(AuthSessionService, 'isSuspiciousLogin', async () => false);
+    const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+    const balanceMock = t.mock.method(UserService, 'getDisplayBalance', async () => '125.500000');
+
+    const req = {
+      body: {
+        identifier: 'SketchMaster',
+        password,
+        turnstileToken: 'token',
+      },
+      ip: '127.0.0.1',
+      cookies: {},
+      get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+    } as any;
+    const res = createResponseMock() as any;
+
+    await AuthController.loginPassword(req, res);
+
+    assert.equal(emailLookupMock.mock.callCount(), 0);
+    assert.equal(usernameLookupMock.mock.callCount(), 1);
+    assert.equal(usernameLookupMock.mock.calls[0]?.arguments[0], 'SketchMaster');
+    assert.equal(suspiciousLoginMock.mock.callCount(), 1);
+    assert.equal(sessionMock.mock.callCount(), 1);
+    assert.equal(balanceMock.mock.callCount(), 1);
+    assert.equal((res.payload as { status?: string }).status, 'authenticated');
+  } finally {
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
+    resetEnvCacheForTests();
+  }
 });
 
 function createResponseMock() {

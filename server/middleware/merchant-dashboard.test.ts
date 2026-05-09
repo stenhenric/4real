@@ -8,6 +8,8 @@ import { MerchantConfig as MerchantConfigModel } from '../models/MerchantConfig.
 import { Order } from '../models/Order.ts';
 import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { MerchantAdminController } from '../controllers/merchant-admin.controller.ts';
+import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { resetCacheServiceForTests } from '../services/cache.service.ts';
 import { MerchantDashboardService } from '../services/merchant-dashboard.service.ts';
 import { setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
@@ -45,6 +47,16 @@ function createLeanQuery<T>(value: T) {
     },
     async lean() {
       return value;
+    },
+  };
+}
+
+function createResponseMock() {
+  return {
+    payload: undefined as unknown,
+    json(payload: unknown) {
+      this.payload = payload;
+      return this;
     },
   };
 }
@@ -106,6 +118,96 @@ function registerEnvCleanup(t: TestContext) {
     setHotWalletRuntimeForTests(null);
   });
 }
+
+test('merchant order controller rejects invalid status filters instead of widening order access', async (t) => {
+  registerEnvCleanup(t);
+
+  const orderDeskMock = mock.method(MerchantDashboardService, 'getOrderDesk', async () => {
+    throw new Error('getOrderDesk should not be called for invalid filters');
+  });
+  t.after(() => orderDeskMock.mock.restore());
+
+  const req = {
+    query: {
+      status: 'invalid',
+      type: 'BUY',
+    },
+  } as unknown as AuthRequest;
+  const res = createResponseMock();
+
+  await assert.rejects(
+    MerchantAdminController.getOrders(req, res as any),
+    (error: unknown) => {
+      assert.equal((error as { statusCode?: number }).statusCode, 400);
+      assert.equal((error as { code?: string }).code, 'INVALID_MERCHANT_ORDER_STATUS');
+      return true;
+    },
+  );
+  assert.equal(orderDeskMock.mock.callCount(), 0);
+});
+
+test('merchant order controller rejects structured query values before service filters are built', async (t) => {
+  registerEnvCleanup(t);
+
+  const orderDeskMock = mock.method(MerchantDashboardService, 'getOrderDesk', async () => {
+    throw new Error('getOrderDesk should not be called for structured query values');
+  });
+  t.after(() => orderDeskMock.mock.restore());
+
+  const req = {
+    query: {
+      status: { $ne: 'REJECTED' },
+      type: 'BUY',
+    },
+  } as unknown as AuthRequest;
+  const res = createResponseMock();
+
+  await assert.rejects(
+    MerchantAdminController.getOrders(req, res as any),
+    (error: unknown) => {
+      assert.equal((error as { statusCode?: number }).statusCode, 400);
+      assert.equal((error as { code?: string }).code, 'INVALID_MERCHANT_ORDER_STATUS');
+      return true;
+    },
+  );
+  assert.equal(orderDeskMock.mock.callCount(), 0);
+});
+
+test('merchant order controller normalizes allow-listed filters and bounds page size', async (t) => {
+  registerEnvCleanup(t);
+
+  const orderDeskMock = mock.method(MerchantDashboardService, 'getOrderDesk', async (filters: unknown) => ({
+    filters,
+  }));
+  t.after(() => orderDeskMock.mock.restore());
+
+  const req = {
+    query: {
+      status: 'done',
+      type: 'sell',
+      page: '2',
+      pageSize: '1000',
+    },
+  } as unknown as AuthRequest;
+  const res = createResponseMock();
+
+  await MerchantAdminController.getOrders(req, res as any);
+
+  assert.deepEqual(orderDeskMock.mock.calls[0]?.arguments[0], {
+    page: 2,
+    pageSize: 100,
+    status: 'DONE',
+    type: 'SELL',
+  });
+  assert.deepEqual(res.payload, {
+    filters: {
+      page: 2,
+      pageSize: 100,
+      status: 'DONE',
+      type: 'SELL',
+    },
+  });
+});
 
 test('getOrderDesk applies pagination metadata and derives risk flags for admin review', async (t) => {
   registerEnvCleanup(t);
