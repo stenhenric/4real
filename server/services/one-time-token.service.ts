@@ -2,6 +2,7 @@ import type { OneTimeTokenType } from '../models/OneTimeToken.ts';
 import { OneTimeToken } from '../models/OneTimeToken.ts';
 import { createOpaqueToken, hashOpaqueToken } from './auth-crypto.service.ts';
 import { unauthorized } from '../utils/http-error.ts';
+import { trustFilter } from '../utils/trusted-filter.ts';
 
 export class OneTimeTokenService {
   static async create(params: {
@@ -25,12 +26,12 @@ export class OneTimeTokenService {
   static async consume(type: OneTimeTokenType, token: string) {
     const now = new Date();
     const document = await OneTimeToken.findOneAndUpdate(
-      {
+      trustFilter({
         type,
         tokenHash: hashOpaqueToken(token),
         consumedAt: null,
         expiresAt: { $gt: new Date() },
-      },
+      }),
       { $set: { consumedAt: now } },
       { new: true },
     );
@@ -44,12 +45,12 @@ export class OneTimeTokenService {
 
   static async revokeActiveTokensForUser(userId: string, types: OneTimeTokenType[]): Promise<void> {
     await OneTimeToken.updateMany(
-      {
+      trustFilter({
         userId,
         type: { $in: types },
         consumedAt: null,
         expiresAt: { $gt: new Date() },
-      },
+      }),
       { $set: { consumedAt: new Date() } },
     );
   }
