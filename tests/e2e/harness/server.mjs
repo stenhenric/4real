@@ -63,6 +63,58 @@ function calculateProjectedWinnerAmount(wager) {
   return formatUsdt(wager * 2 * (1 - commissionRate));
 }
 
+function toUsdtNumber(value) {
+  return Number(formatUsdt(value));
+}
+
+function calculateCommissionAmount(wager) {
+  return toUsdtNumber(wager * 2 * commissionRate);
+}
+
+function lockMatchWager(user, roomId, wager) {
+  const amount = toUsdtNumber(wager);
+  if (amount <= 0) {
+    return true;
+  }
+
+  if (user.balance < amount) {
+    return false;
+  }
+
+  user.balance = toUsdtNumber(user.balance - amount);
+  createTransaction(user.id, {
+    type: 'MATCH_WAGER',
+    amount: -amount,
+    status: 'COMPLETED',
+    referenceId: roomId,
+  });
+  return true;
+}
+
+function settleMatchWinner(match, winnerId) {
+  if (match.commissionSettled || match.wager <= 0) {
+    return;
+  }
+
+  const winner = findUserById(winnerId);
+  if (!winner) {
+    return;
+  }
+
+  const payout = Number(calculateProjectedWinnerAmount(match.wager));
+  const commissionAmount = calculateCommissionAmount(match.wager);
+  winner.balance = toUsdtNumber(winner.balance + payout);
+  state.systemCommissionUsdt = toUsdtNumber(state.systemCommissionUsdt + commissionAmount);
+  match.commissionSettled = true;
+
+  createTransaction(winner.id, {
+    type: 'MATCH_WIN',
+    amount: payout,
+    status: 'COMPLETED',
+    referenceId: match.roomId,
+  });
+}
+
 function createBaseUsers() {
   return [
     {
@@ -217,6 +269,7 @@ function createBaseState() {
     passwordResetTokens: new Map(),
     proofsById: new Map(),
     matches: createBaseMatches(),
+    systemCommissionUsdt: 11.5,
     nextMatchNumber: 2,
     nextOrderNumber: 1,
     nextProofNumber: 1,
@@ -471,7 +524,7 @@ function createMerchantDashboard() {
       stuckWithdrawalCount: 0,
       failedWithdrawalCount: 0,
       unresolvedDepositCount: unresolvedDeposits.length,
-      systemCommissionUsdt: formatUsdt(11.5),
+      systemCommissionUsdt: formatUsdt(state.systemCommissionUsdt),
       jobs: [
         {
           key: 'depositPoller',
@@ -596,6 +649,10 @@ function createMatchForUser(user, payload) {
     createdAt: isoNow(),
     lastActivityAt: isoNow(),
   };
+
+  if (!lockMatchWager(user, roomId, match.wager)) {
+    return null;
+  }
 
   state.nextMatchNumber += 1;
   state.matches.unshift(match);
@@ -1076,6 +1133,11 @@ function createApp() {
 
   app.post('/api/matches', requireAuth, (req, res) => {
     const match = createMatchForUser(req.user, req.body ?? {});
+    if (!match) {
+      sendApiError(res, 400, 'INSUFFICIENT_BALANCE', 'Insufficient balance to lock wager');
+      return;
+    }
+
     res.status(201).json(serializeMatch(match));
   });
 
@@ -1119,6 +1181,11 @@ function createApp() {
       return;
     }
 
+    if (!lockMatchWager(req.user, match.roomId, match.wager)) {
+      sendApiError(res, 400, 'INSUFFICIENT_BALANCE', 'Insufficient balance to join this match');
+      return;
+    }
+
     match.player2Id = req.user.id;
     match.p2Username = req.user.username;
     match.status = 'active';
@@ -1140,6 +1207,9 @@ function createApp() {
     match.winnerId = winnerId ?? 'draw';
     match.currentTurn = null;
     match.lastActivityAt = isoNow();
+    if (winnerId) {
+      settleMatchWinner(match, winnerId);
+    }
     emitPublicMatchesUpdated();
     res.json(serializeMatch(match));
   });
@@ -1499,6 +1569,7 @@ io.on('connection', (socket) => {
       match.status = 'completed';
       match.winnerId = socket.data.userId;
       match.currentTurn = null;
+      settleMatchWinner(match, socket.data.userId);
       emitPublicMatchesUpdated();
       io.to(match.roomId).emit('game-over', {
         room: buildRoomState(match),
