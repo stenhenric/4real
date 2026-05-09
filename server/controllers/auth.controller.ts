@@ -27,7 +27,7 @@ import { assertValidPassword } from '../services/password-policy.service.ts';
 import { hashPassword, needsPasswordRehash, verifyPassword } from '../services/password-hash.service.ts';
 import { verifyTurnstileToken } from '../services/auth-turnstile.service.ts';
 import { UserService } from '../services/user.service.ts';
-import { badRequest, conflict, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
+import { HttpError, badRequest, conflict, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 import type {
   CompleteProfileRequest,
@@ -68,6 +68,15 @@ function sanitizeRedirectPath(value?: string | null): string | undefined {
 
 function createAbsoluteUrl(path: string): string {
   return new URL(path, getPublicAppOrigin()).toString();
+}
+
+function getRecipientDomain(email: string | null | undefined): string {
+  const domain = email?.trim().toLowerCase().split('@')[1];
+  return domain && domain.length > 0 ? domain : 'unknown';
+}
+
+function isEmailDeliveryFailed(error: unknown): boolean {
+  return error instanceof HttpError && error.code === 'EMAIL_DELIVERY_FAILED';
 }
 
 function buildPostAuthRedirect(username?: string | null): string {
@@ -192,7 +201,19 @@ export class AuthController {
 
     if (existingUser) {
       if (!existingUser.emailVerifiedAt) {
-        await AuthEmailService.sendVerificationEmail(existingUser._id.toString(), existingUser.email);
+        try {
+          await AuthEmailService.sendVerificationEmail(existingUser._id.toString(), existingUser.email);
+        } catch (error) {
+          if (!isEmailDeliveryFailed(error)) {
+            throw error;
+          }
+          logger.warn('auth.email_delivery_failed', {
+            flow: 'register_existing_unverified',
+            userId: existingUser._id.toString(),
+            recipientDomain: getRecipientDomain(existingUser.email),
+            errorMessage: error instanceof Error ? error.message : String(error),
+          });
+        }
         res.status(202).json({
           status: 'pending_email_verification',
           message: 'Verify your email to continue.',
@@ -216,7 +237,19 @@ export class AuthController {
       passwordHash,
     });
 
-    await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
+    try {
+      await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
+    } catch (error) {
+      if (!isEmailDeliveryFailed(error)) {
+        throw error;
+      }
+      logger.warn('auth.email_delivery_failed', {
+        flow: 'register_new_user',
+        userId: user._id.toString(),
+        recipientDomain: getRecipientDomain(user.email),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
     res.status(202).json({
       status: 'pending_email_verification',
       message: 'Verify your email to continue.',
@@ -246,7 +279,19 @@ export class AuthController {
     }
 
     if (!user.emailVerifiedAt) {
-      await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
+      try {
+        await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
+      } catch (error) {
+        if (!isEmailDeliveryFailed(error)) {
+          throw error;
+        }
+        logger.warn('auth.email_delivery_failed', {
+          flow: 'login_unverified',
+          userId: user._id.toString(),
+          recipientDomain: getRecipientDomain(user.email),
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
       res.status(202).json({
         status: 'pending_email_verification',
         message: 'Verify your email to continue.',
@@ -277,13 +322,32 @@ export class AuthController {
         return;
       }
 
-      await AuthEmailService.sendSuspiciousLoginEmail(user._id.toString(), user.email);
-      await UserService.updateSecurityLogin({
-        userId: user._id.toString(),
-        ipAddress: metadata.ipAddress,
-        userAgent: metadata.userAgent,
-        suspicious: true,
-      });
+      try {
+        await AuthEmailService.sendSuspiciousLoginEmail(user._id.toString(), user.email);
+      } catch (error) {
+        if (!isEmailDeliveryFailed(error)) {
+          throw error;
+        }
+        logger.warn('auth.email_delivery_failed', {
+          flow: 'suspicious_login',
+          userId: user._id.toString(),
+          recipientDomain: getRecipientDomain(user.email),
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
+      try {
+        await UserService.updateSecurityLogin({
+          userId: user._id.toString(),
+          ipAddress: metadata.ipAddress,
+          userAgent: metadata.userAgent,
+          suspicious: true,
+        });
+      } catch (error) {
+        logger.error('auth.security_login_update_failed', {
+          userId: user._id.toString(),
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
       res.status(202).json({
         status: 'pending_email_verification',
         message: 'Check your email to approve this sign-in.',
@@ -328,7 +392,17 @@ export class AuthController {
       user._id.toString(),
       user.email,
       sanitizeRedirectPath(body.redirectTo),
-    );
+    ).catch((error) => {
+      if (!isEmailDeliveryFailed(error)) {
+        throw error;
+      }
+      logger.warn('auth.email_delivery_failed', {
+        flow: 'magic_link',
+        userId: user._id.toString(),
+        recipientDomain: getRecipientDomain(user.email),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    });
     res.status(202).json({
       status: 'magic_link_sent',
       message: 'If that email is registered, a sign-in link is on the way.',
@@ -453,7 +527,19 @@ export class AuthController {
       return;
     }
 
-    await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
+    try {
+      await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
+    } catch (error) {
+      if (!isEmailDeliveryFailed(error)) {
+        throw error;
+      }
+      logger.warn('auth.email_delivery_failed', {
+        flow: 'verification_resend',
+        userId: user._id.toString(),
+        recipientDomain: getRecipientDomain(user.email),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
     res.status(202).json({
       status: 'email_verification_sent',
       message: 'If the account exists, a verification email is on the way.',
@@ -496,7 +582,19 @@ export class AuthController {
       return;
     }
 
-    await AuthEmailService.sendPasswordResetEmail(user._id.toString(), user.email);
+    try {
+      await AuthEmailService.sendPasswordResetEmail(user._id.toString(), user.email);
+    } catch (error) {
+      if (!isEmailDeliveryFailed(error)) {
+        throw error;
+      }
+      logger.warn('auth.email_delivery_failed', {
+        flow: 'password_reset_request',
+        userId: user._id.toString(),
+        recipientDomain: getRecipientDomain(user.email),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
     res.status(202).json({
       status: 'password_reset_requested',
       message: 'If the account exists, a reset email is on the way.',

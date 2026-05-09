@@ -198,18 +198,31 @@ function mapReviewDocument(
 async function runAuditThenNotification(
   audit: () => Promise<void>,
   notify: () => Promise<void>,
+  context: Record<string, unknown>,
 ): Promise<void> {
-  let auditError: unknown;
   try {
     await audit();
   } catch (error) {
-    auditError = error;
+    logger.error('audit.post_commit_failed', {
+      ...context,
+      error: {
+        name: error instanceof Error ? error.name : 'Error',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    });
   }
 
-  await notify();
-
-  if (auditError) {
-    throw auditError;
+  try {
+    await notify();
+  } catch (error) {
+    logger.error('notification.post_commit_failed', {
+      ...context,
+      error: {
+        name: error instanceof Error ? error.name : 'Error',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
   }
 }
 
@@ -691,6 +704,10 @@ async function ingestIncomingTransferWithContext(
         memo: outcome.comment,
         senderAddress: outcome.senderOwnerAddress,
       }),
+      {
+        flow: 'deposit_credit',
+        txHash: outcome.txHash,
+      },
     );
   }
 
@@ -863,6 +880,10 @@ export async function reconcileMerchantDeposit(params: {
         memo: existing.comment,
         note: params.note?.trim() || null,
       }),
+      {
+        flow: 'deposit_dismissed',
+        txHash: existing.txHash,
+      },
     );
   } else {
     const targetUserId = params.userId ?? existing.candidateUserId ?? undefined;
@@ -944,6 +965,10 @@ export async function reconcileMerchantDeposit(params: {
         memo: existing.comment,
         note: params.note?.trim() || null,
       }),
+      {
+        flow: 'deposit_reconciled',
+        txHash: existing.txHash,
+      },
     );
   }
 

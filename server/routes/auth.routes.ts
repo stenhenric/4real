@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller.ts';
 import { asyncHandler } from '../utils/async-handler.ts';
 import { authenticateToken, requireMfaStepUp, requireMfaStepUpIfEnabled } from '../middleware/auth.middleware.ts';
-import { createAuthRateLimiter } from '../middleware/rate-limit.middleware.ts';
+import { createAuthEmailRateLimiter, createAuthRateLimiter } from '../middleware/rate-limit.middleware.ts';
 import { validateBody } from '../middleware/validate.middleware.ts';
 import {
   completeProfileRequestSchema,
@@ -32,14 +32,14 @@ router.use((_req, res, next) => {
 
 router.post('/register', createAuthRateLimiter(), validateBody(registerRequestSchema), asyncHandler(AuthController.register));
 router.post('/login/password', createAuthRateLimiter(), validateBody(loginPasswordRequestSchema), asyncHandler(AuthController.loginPassword));
-router.post('/login/magic-link/request', createAuthRateLimiter(), validateBody(magicLinkRequestSchema), asyncHandler(AuthController.requestMagicLink));
+router.post('/login/magic-link/request', createAuthEmailRateLimiter(), validateBody(magicLinkRequestSchema), asyncHandler(AuthController.requestMagicLink));
 router.post('/login/magic-link/consume', createAuthRateLimiter(), validateBody(consumeMagicLinkRequestSchema), asyncHandler(AuthController.consumeMagicLink));
 router.post('/login/suspicious/consume', createAuthRateLimiter(), validateBody(consumeSuspiciousLoginRequestSchema), asyncHandler(AuthController.consumeSuspiciousLogin));
 router.get('/oauth/google/start', asyncHandler(AuthController.startGoogleOAuth));
 router.get('/oauth/google/callback', asyncHandler(AuthController.handleGoogleCallback));
-router.post('/email/verify/resend', createAuthRateLimiter(), validateBody(emailVerificationResendRequestSchema), asyncHandler(AuthController.resendVerificationEmail));
+router.post('/email/verify/resend', createAuthEmailRateLimiter(), validateBody(emailVerificationResendRequestSchema), asyncHandler(AuthController.resendVerificationEmail));
 router.post('/email/verify/consume', createAuthRateLimiter(), validateBody(consumeVerificationEmailRequestSchema), asyncHandler(AuthController.consumeVerificationEmail));
-router.post('/password/forgot', createAuthRateLimiter(), validateBody(forgotPasswordRequestSchema), asyncHandler(AuthController.requestPasswordReset));
+router.post('/password/forgot', createAuthEmailRateLimiter(), validateBody(forgotPasswordRequestSchema), asyncHandler(AuthController.requestPasswordReset));
 router.post('/password/reset', createAuthRateLimiter(), validateBody(passwordResetRequestSchema), asyncHandler(AuthController.resetPassword));
 router.post('/mfa/challenge', createAuthRateLimiter(), validateBody(mfaChallengeRequestSchema), asyncHandler(AuthController.completeMfaChallenge));
 router.post('/refresh', createAuthRateLimiter(), asyncHandler(AuthController.refreshSession));
