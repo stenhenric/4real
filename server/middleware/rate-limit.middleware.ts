@@ -55,6 +55,24 @@ export function createAuthRateLimiter() {
   });
 }
 
+export function createAuthEmailRateLimiter() {
+  const env = getEnv();
+  const store = createRateLimitStore('rl:auth-email:');
+
+  return rateLimit({
+    ...(store ? { store } : {}),
+    windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+    max: env.AUTH_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    requestPropertyName: 'authEmailRateLimit',
+    legacyHeaders: false,
+    message: {
+      code: 'AUTH_EMAIL_RATE_LIMITED',
+      message: 'Too many requests, please try again later.',
+    },
+  });
+}
+
 export function createWithdrawalRateLimiter() {
   const env = getEnv();
   const store = createRateLimitStore('rl:withdrawal:');

@@ -190,7 +190,7 @@ test('register with an unverified existing email returns pending_email_verificat
   }
 });
 
-test('register surfaces EMAIL_DELIVERY_FAILED after creating a pending-verification user', async (t) => {
+test('register returns pending_email_verification even when email delivery fails', async (t) => {
   const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
   process.env.TURNSTILE_SECRET_KEY = '';
   resetEnvCacheForTests();
@@ -221,19 +221,15 @@ test('register surfaces EMAIL_DELIVERY_FAILED after creating a pending-verificat
     } as any;
     const res = createResponseMock() as any;
 
-    await assert.rejects(
-      () => AuthController.register(req, res),
-      (error: unknown) => typeof error === 'object'
-        && error !== null
-        && 'code' in error
-        && (error as { code?: string }).code === 'EMAIL_DELIVERY_FAILED',
-    );
+    await AuthController.register(req, res);
 
     assert.equal(findByEmailMock.mock.callCount(), 1);
     assert.equal(findByUsernameMock.mock.callCount(), 1);
     assert.equal(createUserMock.mock.callCount(), 1);
     assert.equal(sendVerificationMock.mock.callCount(), 1);
-    assert.equal(res.payload, undefined);
+    assert.equal(res.statusCode, 202);
+    assert.equal((res.payload as { status?: string }).status, 'pending_email_verification');
+    assert.equal((res.payload as { email?: string }).email, 'new@example.com');
   } finally {
     if (previousTurnstileSecret === undefined) {
       delete process.env.TURNSTILE_SECRET_KEY;
@@ -244,7 +240,7 @@ test('register surfaces EMAIL_DELIVERY_FAILED after creating a pending-verificat
   }
 });
 
-test('resendVerificationEmail surfaces EMAIL_DELIVERY_FAILED for pending-verification accounts', async (t) => {
+test('resendVerificationEmail returns email_verification_sent even when delivery fails', async (t) => {
   const user = createMockUser({ emailVerifiedAt: null });
   const userMock = t.mock.method(UserService, 'findByEmail', async () => user);
   const sendVerificationMock = t.mock.method(AuthEmailService, 'sendVerificationEmail', async () => {
@@ -256,17 +252,12 @@ test('resendVerificationEmail surfaces EMAIL_DELIVERY_FAILED for pending-verific
   } as any;
   const res = createResponseMock() as any;
 
-  await assert.rejects(
-    () => AuthController.resendVerificationEmail(req, res),
-    (error: unknown) => typeof error === 'object'
-      && error !== null
-      && 'code' in error
-      && (error as { code?: string }).code === 'EMAIL_DELIVERY_FAILED',
-  );
+  await AuthController.resendVerificationEmail(req, res);
 
   assert.equal(userMock.mock.callCount(), 1);
   assert.equal(sendVerificationMock.mock.callCount(), 1);
-  assert.equal(res.payload, undefined);
+  assert.equal(res.statusCode, 202);
+  assert.equal((res.payload as { status?: string }).status, 'email_verification_sent');
 });
 
 test('loginPassword accepts username identifiers without requiring an email lookup', async (t) => {
