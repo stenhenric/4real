@@ -195,6 +195,24 @@ function mapReviewDocument(
   };
 }
 
+async function runAuditThenNotification(
+  audit: () => Promise<void>,
+  notify: () => Promise<void>,
+): Promise<void> {
+  let auditError: unknown;
+  try {
+    await audit();
+  } catch (error) {
+    auditError = error;
+  }
+
+  await notify();
+
+  if (auditError) {
+    throw auditError;
+  }
+}
+
 function withReplayCandidateUsernames(
   transfers: DepositReplayTransferResult[],
   usernameMap: Map<string, string>,
@@ -646,33 +664,34 @@ async function ingestIncomingTransferWithContext(
   }
 
   if (mutationApplied && outcome.decision === 'credit') {
-    await AuditService.record({
-      eventType: 'deposit_credit',
-      actorUserId: creditedUserId ?? outcome.candidateUserId ?? null,
-      targetUserId: creditedUserId ?? outcome.candidateUserId ?? null,
-      resourceType: 'deposit',
-      resourceId: tx.transaction_hash,
-      metadata: {
-        accepted: true,
-        amountRaw: outcome.amountRaw,
+    const confirmedUserId = creditedUserId ?? outcome.candidateUserId ?? null;
+    await runAuditThenNotification(
+      () => AuditService.record({
+        eventType: 'deposit_credit',
+        actorUserId: creditedUserId ?? outcome.candidateUserId ?? null,
+        targetUserId: creditedUserId ?? outcome.candidateUserId ?? null,
+        resourceType: 'deposit',
+        resourceId: tx.transaction_hash,
+        metadata: {
+          accepted: true,
+          amountRaw: outcome.amountRaw,
+          amountUsdt: outcome.amountUsdt,
+          memo: outcome.comment,
+          senderJettonWallet: outcome.senderJettonWallet,
+          senderAddress: outcome.senderOwnerAddress,
+          txTime: tx.transaction_now,
+          destination: tx.destination ?? null,
+        },
+      }),
+      () => ProductEmailNotificationService.sendDeposit({
+        scenario: 'deposit_confirmed_user',
+        ...(confirmedUserId ? { userId: confirmedUserId } : {}),
+        txHash: outcome.txHash,
         amountUsdt: outcome.amountUsdt,
         memo: outcome.comment,
-        senderJettonWallet: outcome.senderJettonWallet,
         senderAddress: outcome.senderOwnerAddress,
-        txTime: tx.transaction_now,
-        destination: tx.destination ?? null,
-      },
-    });
-
-    const confirmedUserId = creditedUserId ?? outcome.candidateUserId ?? null;
-    await ProductEmailNotificationService.sendDeposit({
-      scenario: 'deposit_confirmed_user',
-      ...(confirmedUserId ? { userId: confirmedUserId } : {}),
-      txHash: outcome.txHash,
-      amountUsdt: outcome.amountUsdt,
-      memo: outcome.comment,
-      senderAddress: outcome.senderOwnerAddress,
-    });
+      }),
+    );
   }
 
   if (context) {
@@ -826,24 +845,25 @@ export async function reconcileMerchantDeposit(params: {
       await session.endSession();
     }
 
-    await AuditService.record({
-      eventType: 'deposit_dismissed',
-      actorUserId: params.actorUserId,
-      resourceType: 'deposit',
-      resourceId: params.txHash,
-      metadata: {
+    await runAuditThenNotification(
+      () => AuditService.record({
+        eventType: 'deposit_dismissed',
+        actorUserId: params.actorUserId,
+        resourceType: 'deposit',
+        resourceId: params.txHash,
+        metadata: {
+          memo: existing.comment,
+          note: params.note?.trim() || null,
+        },
+      }),
+      () => ProductEmailNotificationService.sendDeposit({
+        scenario: 'deposit_dismissed_merchant',
+        txHash: existing.txHash,
+        amountUsdt: toUsdtDisplay(existing.receivedRaw),
         memo: existing.comment,
         note: params.note?.trim() || null,
-      },
-    });
-
-    await ProductEmailNotificationService.sendDeposit({
-      scenario: 'deposit_dismissed_merchant',
-      txHash: existing.txHash,
-      amountUsdt: toUsdtDisplay(existing.receivedRaw),
-      memo: existing.comment,
-      note: params.note?.trim() || null,
-    });
+      }),
+    );
   } else {
     const targetUserId = params.userId ?? existing.candidateUserId ?? undefined;
     if (!targetUserId) {
@@ -903,27 +923,28 @@ export async function reconcileMerchantDeposit(params: {
       await session.endSession();
     }
 
-    await AuditService.record({
-      eventType: 'deposit_reconciled',
-      actorUserId: params.actorUserId,
-      targetUserId,
-      resourceType: 'deposit',
-      resourceId: params.txHash,
-      metadata: {
-        amountRaw: existing.receivedRaw,
+    await runAuditThenNotification(
+      () => AuditService.record({
+        eventType: 'deposit_reconciled',
+        actorUserId: params.actorUserId,
+        targetUserId,
+        resourceType: 'deposit',
+        resourceId: params.txHash,
+        metadata: {
+          amountRaw: existing.receivedRaw,
+          memo: existing.comment,
+          note: params.note?.trim() || null,
+        },
+      }),
+      () => ProductEmailNotificationService.sendDeposit({
+        scenario: 'deposit_reconciled_user',
+        userId: targetUserId,
+        txHash: existing.txHash,
+        amountUsdt: toUsdtDisplay(existing.receivedRaw),
         memo: existing.comment,
         note: params.note?.trim() || null,
-      },
-    });
-
-    await ProductEmailNotificationService.sendDeposit({
-      scenario: 'deposit_reconciled_user',
-      userId: targetUserId,
-      txHash: existing.txHash,
-      amountUsdt: toUsdtDisplay(existing.receivedRaw),
-      memo: existing.comment,
-      note: params.note?.trim() || null,
-    });
+      }),
+    );
   }
 
   await invalidateCacheKeys([CacheKeys.merchantDashboard()]);

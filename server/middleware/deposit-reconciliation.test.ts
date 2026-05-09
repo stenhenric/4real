@@ -383,6 +383,72 @@ test('reconcileMerchantDeposit credits an open unmatched deposit and marks it re
   assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.note, 'manual reconcile');
 });
 
+test('reconcileMerchantDeposit still notifies credited users when post-commit audit fails', async (t) => {
+  registerCleanup(t);
+
+  const auditError = new Error('audit unavailable');
+  const openDocument = {
+    txHash: 'reconcile-audit-failure-hash',
+    receivedRaw: '4100000',
+    comment: 'memo-reconcile-audit',
+    senderJettonWallet: SENDER_JETTON_WALLET,
+    senderOwnerAddress: SENDER_OWNER_ADDRESS,
+    txTime: 1_700_000_205,
+    recordedAt: new Date('2026-04-27T08:03:00.000Z'),
+    memoStatus: 'inactive' as const,
+    candidateUserId: '507f1f77bcf86cd799439011',
+    resolved: false,
+  };
+  const unmatchedFindMock = mock.method(UnmatchedDepositRepository, 'findByTxHash', async () => openDocument);
+  const userByIdMock = mock.method(userServiceModule.UserService, 'findById', async () => ({
+    _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+    username: 'credited-user',
+  }) as any);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const findDepositMock = mock.method(DepositRepository, 'findByTxHash', async () => null);
+  const createDepositMock = mock.method(DepositRepository, 'create', async () => {});
+  const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
+  const markUsedMock = mock.method(DepositMemoRepository, 'markUsed', async () => {});
+  const markResolvedMock = mock.method(UnmatchedDepositRepository, 'markResolved', async () => true);
+  const updateProcessedMock = mock.method(ProcessedTransactionRepository, 'updateType', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {
+    throw auditError;
+  });
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
+
+  t.after(() => unmatchedFindMock.mock.restore());
+  t.after(() => userByIdMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => findDepositMock.mock.restore());
+  t.after(() => createDepositMock.mock.restore());
+  t.after(() => creditMock.mock.restore());
+  t.after(() => markUsedMock.mock.restore());
+  t.after(() => markResolvedMock.mock.restore());
+  t.after(() => updateProcessedMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
+
+  await assert.rejects(
+    reconcileMerchantDeposit({
+      txHash: 'reconcile-audit-failure-hash',
+      action: 'credit',
+      actorUserId: '507f191e810c19729de860ea',
+      userId: '507f1f77bcf86cd799439011',
+      note: 'manual reconcile',
+    }),
+    auditError,
+  );
+
+  assert.equal(createDepositMock.mock.callCount(), 1);
+  assert.equal(creditMock.mock.callCount(), 1);
+  assert.equal(updateProcessedMock.mock.callCount(), 1);
+  assert.equal(auditMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.scenario, 'deposit_reconciled_user');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.userId, '507f1f77bcf86cd799439011');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.txHash, 'reconcile-audit-failure-hash');
+});
+
 test('reconcileMerchantDeposit dismisses an open unmatched deposit and notifies merchants', async (t) => {
   registerCleanup(t);
 
