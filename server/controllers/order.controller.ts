@@ -239,7 +239,10 @@ export class OrderController {
     }
 
     await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
-    if (order.status === 'DONE' || order.status === 'REJECTED') {
+    if (
+      order.statusTransitionApplied === true
+      && (order.status === 'DONE' || order.status === 'REJECTED')
+    ) {
       await ProductEmailNotificationService.sendOrderFinalized({
         userId: order.userId.toString(),
         orderId: order._id.toString(),

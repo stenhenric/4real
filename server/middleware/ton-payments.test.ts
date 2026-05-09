@@ -1554,6 +1554,52 @@ test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuc
   });
 });
 
+test('confirmSentWithdrawals does not repeat stuck notifications for already-stuck unconfirmed withdrawals', async (t) => {
+  registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+  await initWorker();
+
+  const pendingMock = mock.method(WithdrawalRepository, 'findPendingConfirmation', async () => [{
+    _id: 'doc-stuck-repeat',
+    withdrawalId: 'wd-stuck-repeat',
+    userId: 'user-stuck-repeat',
+    toAddress: ZERO_ADDRESS,
+    amountRaw: '1000000',
+    amountDisplay: '1.000000',
+    status: 'stuck' as const,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    sentAt: new Date('2026-01-01T00:00:00.000Z'),
+    seqno: 19,
+    retries: 0,
+  }]);
+  const markStuckMock = mock.method(WithdrawalRepository, 'markStuck', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
+  let confirmationChecks = 0;
+
+  t.after(() => pendingMock.mock.restore());
+  t.after(() => markStuckMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
+  setWithdrawalWorkerDependenciesForTests({
+    findWithdrawalTransferOnChain: async () => {
+      confirmationChecks += 1;
+      return null;
+    },
+  });
+
+  await confirmSentWithdrawals();
+
+  assert.equal(confirmationChecks, 1);
+  assert.equal(markStuckMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 0);
+  assert.equal(merchantAlertMock.mock.callCount(), 0);
+});
+
 test('recoverStuckWithdrawals sends confirmed user notification after recovered confirmation', async (t) => {
   registerBaseCleanup(t);
   setHotWalletRuntimeForTests({

@@ -8,6 +8,15 @@ import { AuditService } from './audit.service.ts';
 import { TransactionService } from './transaction.service.ts';
 import { UserService } from './user.service.ts';
 
+export type OrderStatusUpdateResult = IOrder & { statusTransitionApplied: boolean };
+
+function withStatusTransitionSignal(
+  order: IOrder,
+  statusTransitionApplied: boolean,
+): OrderStatusUpdateResult {
+  return Object.assign(order, { statusTransitionApplied });
+}
+
 export class OrderService {
   static async createOrder({
     userId,
@@ -125,9 +134,9 @@ export class OrderService {
     status: 'PENDING' | 'DONE' | 'REJECTED',
     actorUserId?: string | undefined,
     requestId?: string | undefined,
-  ): Promise<IOrder | null> {
+  ): Promise<OrderStatusUpdateResult | null> {
     const session = await mongoose.startSession();
-    let savedOrder: IOrder | null = null;
+    let savedOrder: OrderStatusUpdateResult | null = null;
 
     try {
       await session.withTransaction(async () => {
@@ -138,7 +147,7 @@ export class OrderService {
         }
 
         if (order.status === status) {
-          savedOrder = order;
+          savedOrder = withStatusTransitionSignal(order, false);
           return;
         }
 
@@ -155,7 +164,7 @@ export class OrderService {
         }
 
         order.status = status;
-        savedOrder = await order.save({ session });
+        savedOrder = withStatusTransitionSignal(await order.save({ session }), true);
 
         await TransactionService.updateTransactionStatusByReference(
           order._id.toString(),

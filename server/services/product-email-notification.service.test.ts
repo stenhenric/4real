@@ -159,6 +159,54 @@ test('sendWithdrawalQueued swallows delivery failures and logs only recipient do
   assert.equal(JSON.stringify(logs).includes('bob@example.com'), false);
 });
 
+test('sendWithdrawalQueued sanitizes delivery error details before logging', async () => {
+  const logs: LogEntry[] = [];
+
+  await withProductEmailEnv(async () => {
+    setProductEmailNotificationDependenciesForTests({
+      findUserById: async () => ({
+        id: 'user-sensitive',
+        email: 'sensitive.user@example.com',
+        username: 'sensitive',
+        emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+      }),
+      sendNotificationEmail: async () => {
+        throw Object.assign(
+          new Error('Provider rejected sensitive.user@example.com with mailbox payload'),
+          {
+            code: 'EAUTH',
+            response: {
+              recipient: 'sensitive.user@example.com',
+              providerPayload: 'raw smtp payload',
+            },
+          },
+        );
+      },
+      logger: createTestLogger(logs),
+    });
+
+    await ProductEmailNotificationService.sendWithdrawalQueued({
+      userId: 'user-sensitive',
+      withdrawalId: 'withdrawal-sensitive',
+      amountUsdt: '5.000000',
+      toAddress: 'EQDdestination',
+    });
+  });
+
+  const failureLog = logs.find((entry) => entry.message === 'product_email.delivery_failed');
+  assert.equal(failureLog?.context?.recipientDomain, 'example.com');
+  assert.deepEqual(failureLog?.context?.error, {
+    name: 'Error',
+    code: 'EAUTH',
+  });
+
+  const serializedLog = JSON.stringify(logs);
+  assert.equal(serializedLog.includes('example.com'), true);
+  assert.equal(serializedLog.includes('sensitive.user@example.com'), false);
+  assert.equal(serializedLog.includes('Provider rejected'), false);
+  assert.equal(serializedLog.includes('raw smtp payload'), false);
+});
+
 test('sendDeposit routes merchant scenarios to admins and user scenarios to verified user', async () => {
   const sent: Array<{ to: string; text: string }> = [];
 

@@ -368,7 +368,7 @@ export async function confirmSentWithdrawals() {
         } finally {
           await session.endSession();
         }
-      } else if (withdrawal.sentAt.getTime() < thirtyMinsAgo) {
+      } else if (withdrawal.status !== 'stuck' && withdrawal.sentAt.getTime() < thirtyMinsAgo) {
         try {
           const lastError = 'Expired waiting for confirmation on-chain';
           await WithdrawalRepository.markStuck(

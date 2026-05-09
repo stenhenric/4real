@@ -125,6 +125,7 @@ test('updateOrderStatus refunds rejected SELL orders and updates the ledger stat
   const updated = await OrderService.updateOrderStatus(orderId.toString(), 'REJECTED');
 
   assert.equal(updated?._id.toString(), orderId.toString());
+  assert.equal((updated as any)?.statusTransitionApplied, true);
   assert.equal(orderDocument.status, 'REJECTED');
   assert.equal(savedWithSession, true);
   assert.equal(updateBalanceMock.mock.callCount(), 1);
@@ -134,6 +135,39 @@ test('updateOrderStatus refunds rejected SELL orders and updates the ledger stat
   assert.equal(createTransactionMock.mock.callCount(), 1);
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { type: string }).type, 'SELL_P2P_REFUND');
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { amount: number }).amount, 7);
+});
+
+test('updateOrderStatus returns an unapplied signal when the requested status is unchanged', async (t) => {
+  registerSessionCleanup(t);
+
+  const orderId = new mongoose.Types.ObjectId();
+  const orderDocument = {
+    _id: orderId,
+    userId: new mongoose.Types.ObjectId(),
+    type: 'BUY',
+    amount: 5,
+    status: 'DONE',
+    async save() {
+      return this;
+    },
+  };
+  const findByIdMock = mock.method(Order, 'findById', async () => orderDocument as any);
+  const updateBalanceMock = mock.method(UserService, 'updateBalance', async () => null);
+  const updateTransactionMock = mock.method(TransactionService, 'updateTransactionStatusByReference', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
+
+  t.after(() => findByIdMock.mock.restore());
+  t.after(() => updateBalanceMock.mock.restore());
+  t.after(() => updateTransactionMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
+
+  const updated = await OrderService.updateOrderStatus(orderId.toString(), 'DONE');
+
+  assert.equal(updated?._id.toString(), orderId.toString());
+  assert.equal((updated as any)?.statusTransitionApplied, false);
+  assert.equal(updateBalanceMock.mock.callCount(), 0);
+  assert.equal(updateTransactionMock.mock.callCount(), 0);
+  assert.equal(auditMock.mock.callCount(), 0);
 });
 
 test('updateOrderStatus rejects transitions away from final states', async (t) => {
@@ -184,7 +218,10 @@ test('updateOrder sends user notification when order is approved', async (t) => 
     fiatTotal: '700.00',
     createdAt: new Date(),
   };
-  const updateOrderStatusMock = mock.method(OrderService, 'updateOrderStatus', async () => order as any);
+  const updateOrderStatusMock = mock.method(OrderService, 'updateOrderStatus', async () => ({
+    ...order,
+    statusTransitionApplied: true,
+  }) as any);
   const sendOrderFinalizedMock = mock.method(ProductEmailNotificationService, 'sendOrderFinalized', async () => {});
 
   t.after(() => updateOrderStatusMock.mock.restore());
@@ -215,6 +252,42 @@ test('updateOrder sends user notification when order is approved', async (t) => 
   assert.equal((res.jsonBody as { status: string }).status, 'DONE');
 });
 
+test('updateOrder does not send a duplicate final notification when final status is unchanged', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const orderId = new mongoose.Types.ObjectId();
+  const order = {
+    _id: orderId,
+    userId,
+    type: 'BUY',
+    amount: '5.000000',
+    status: 'DONE',
+    transactionCode: 'ABC123XYZ',
+    fiatCurrency: 'KES',
+    exchangeRate: '140.000000',
+    fiatTotal: '700.00',
+    createdAt: new Date(),
+    statusTransitionApplied: false,
+  };
+  const updateOrderStatusMock = mock.method(OrderService, 'updateOrderStatus', async () => order as any);
+  const sendOrderFinalizedMock = mock.method(ProductEmailNotificationService, 'sendOrderFinalized', async () => {});
+
+  t.after(() => updateOrderStatusMock.mock.restore());
+  t.after(() => sendOrderFinalizedMock.mock.restore());
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: true },
+    params: { id: orderId.toString() },
+    body: { status: 'DONE' },
+  };
+  const res = createResponseMock();
+
+  await OrderController.updateOrder(req as any, res as any);
+
+  assert.equal(updateOrderStatusMock.mock.callCount(), 1);
+  assert.equal(sendOrderFinalizedMock.mock.callCount(), 0);
+  assert.equal((res.jsonBody as { status: string }).status, 'DONE');
+});
+
 test('updateOrder sends user notification when order is rejected', async (t) => {
   const userId = new mongoose.Types.ObjectId();
   const orderId = new mongoose.Types.ObjectId();
@@ -230,7 +303,10 @@ test('updateOrder sends user notification when order is rejected', async (t) => 
     fiatTotal: '347.50',
     createdAt: new Date(),
   };
-  const updateOrderStatusMock = mock.method(OrderService, 'updateOrderStatus', async () => order as any);
+  const updateOrderStatusMock = mock.method(OrderService, 'updateOrderStatus', async () => ({
+    ...order,
+    statusTransitionApplied: true,
+  }) as any);
   const sendOrderFinalizedMock = mock.method(ProductEmailNotificationService, 'sendOrderFinalized', async () => {});
 
   t.after(() => updateOrderStatusMock.mock.restore());

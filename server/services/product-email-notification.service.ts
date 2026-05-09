@@ -70,6 +70,25 @@ function optionalUsername(username: string | null | undefined): { username?: str
   return username === undefined ? {} : { username };
 }
 
+function isSafeErrorCode(value: unknown): value is string | number | boolean {
+  return ['string', 'number', 'boolean'].includes(typeof value);
+}
+
+function sanitizeLoggedError(error: unknown): { name: string; code?: string | number | boolean } {
+  const safeError = {
+    name: error instanceof Error && error.name ? error.name : 'Error',
+  } as { name: string; code?: string | number | boolean };
+
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (isSafeErrorCode(code)) {
+      safeError.code = code;
+    }
+  }
+
+  return safeError;
+}
+
 function logError(message: string, context: Record<string, unknown>): void {
   dependencies.logger.error(message, context);
 }
@@ -90,7 +109,7 @@ async function deliver(params: {
     logError('product_email.delivery_failed', {
       scenario: params.scenario,
       recipientDomain: getRecipientDomain(params.recipient.email),
-      error,
+      error: sanitizeLoggedError(error),
     });
   }
 }
@@ -115,7 +134,7 @@ async function sendToVerifiedUser(params: {
     logError('product_email.user_lookup_failed', {
       scenario: params.scenario,
       userId: params.userId,
-      error,
+      error: sanitizeLoggedError(error),
     });
     return;
   }
@@ -157,7 +176,7 @@ async function sendToVerifiedUser(params: {
     logError('product_email.render_failed', {
       scenario: params.scenario,
       userId: getUserId(user) ?? params.userId,
-      error,
+      error: sanitizeLoggedError(error),
     });
   }
 }
@@ -172,7 +191,7 @@ async function sendToMerchantAdmins(params: {
   } catch (error) {
     logError('product_email.merchant_recipient_lookup_failed', {
       scenario: params.scenario,
-      error,
+      error: sanitizeLoggedError(error),
     });
     return;
   }
@@ -192,7 +211,7 @@ async function sendToMerchantAdmins(params: {
       logError('product_email.render_failed', {
         scenario: params.scenario,
         recipientDomain: getRecipientDomain(recipient.email),
-        error,
+        error: sanitizeLoggedError(error),
       });
     }
   }
