@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
 import type { ClientSession } from 'mongoose';
 
-import { getEnv } from '../config/env.ts';
+import { getEnv, getPublicAppOrigin } from '../config/env.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeOrder } from '../serializers/api.ts';
@@ -12,6 +12,7 @@ import { getMerchantConfig } from '../services/merchant-config.service.ts';
 import { OrderService } from '../services/order.service.ts';
 import { enqueueOrderProofRelay, settleOrderProofRelay } from '../services/order-proof-relay.service.ts';
 import { UserService } from '../services/user.service.ts';
+import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
 import {
   KES_SCALE,
@@ -29,6 +30,10 @@ import {
   createOrderRequestSchema,
   type UpdateOrderStatusRequest,
 } from '../validation/request-schemas.ts';
+
+function createMerchantActionUrl(): string {
+  return new URL('/merchant/orders', getPublicAppOrigin()).toString();
+}
 
 export class OrderController {
   static async getOrders(req: AuthRequest, res: Response): Promise<void> {
@@ -197,6 +202,18 @@ export class OrderController {
 
     if (!result.replayed) {
       await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
+      await ProductEmailNotificationService.sendOrderCreated({
+        userId: user._id.toString(),
+        orderId: responseBody._id,
+        orderType: responseBody.type,
+        amountUsdt: responseBody.amount,
+        username: user.username ?? user.email.split('@')[0] ?? 'player',
+        actionUrl: createMerchantActionUrl(),
+        ...(responseBody.fiatCurrency ? { fiatCurrency: responseBody.fiatCurrency } : {}),
+        ...(responseBody.fiatTotal ? { fiatTotal: responseBody.fiatTotal } : {}),
+        ...(responseBody.exchangeRate ? { exchangeRate: responseBody.exchangeRate } : {}),
+        ...(responseBody.transactionCode ? { transactionCode: responseBody.transactionCode } : {}),
+      });
     }
     res.status(result.statusCode).json(responseBody);
   }
@@ -222,6 +239,19 @@ export class OrderController {
     }
 
     await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
+    if (order.status === 'DONE' || order.status === 'REJECTED') {
+      await ProductEmailNotificationService.sendOrderFinalized({
+        userId: order.userId.toString(),
+        orderId: order._id.toString(),
+        orderType: order.type,
+        amountUsdt: order.amount,
+        status: order.status,
+        ...(order.fiatCurrency ? { fiatCurrency: order.fiatCurrency } : {}),
+        ...(order.fiatTotal ? { fiatTotal: order.fiatTotal } : {}),
+        ...(order.exchangeRate ? { exchangeRate: order.exchangeRate } : {}),
+        ...(order.transactionCode ? { transactionCode: order.transactionCode } : {}),
+      });
+    }
     res.json(serializeOrder(order));
   }
 }

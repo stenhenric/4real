@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test, { mock, type TestContext } from 'node:test';
 import mongoose from 'mongoose';
 
+import { OrderController } from '../controllers/order.controller.ts';
 import { Order } from '../models/Order.ts';
 import { AuditService } from '../services/audit.service.ts';
 import { OrderService } from '../services/order.service.ts';
+import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { UserService } from '../services/user.service.ts';
 
@@ -20,6 +22,19 @@ function createSessionMock() {
 function registerSessionCleanup(t: TestContext) {
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
   t.after(() => startSessionMock.mock.restore());
+}
+
+function createResponseMock() {
+  return {
+    locals: {
+      requestId: 'req-1',
+    },
+    jsonBody: undefined as unknown,
+    json(body: unknown) {
+      this.jsonBody = body;
+      return this;
+    },
+  };
 }
 
 test('createOrder reserves SELL balances and creates the pending ledger entry in one transaction', async (t) => {
@@ -152,4 +167,95 @@ test('updateOrderStatus rejects transitions away from final states', async (t) =
 
   assert.equal(updateBalanceMock.mock.callCount(), 0);
   assert.equal(updateTransactionMock.mock.callCount(), 0);
+});
+
+test('updateOrder sends user notification when order is approved', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const orderId = new mongoose.Types.ObjectId();
+  const order = {
+    _id: orderId,
+    userId,
+    type: 'BUY',
+    amount: '5.000000',
+    status: 'DONE',
+    transactionCode: 'ABC123XYZ',
+    fiatCurrency: 'KES',
+    exchangeRate: '140.000000',
+    fiatTotal: '700.00',
+    createdAt: new Date(),
+  };
+  const updateOrderStatusMock = mock.method(OrderService, 'updateOrderStatus', async () => order as any);
+  const sendOrderFinalizedMock = mock.method(ProductEmailNotificationService, 'sendOrderFinalized', async () => {});
+
+  t.after(() => updateOrderStatusMock.mock.restore());
+  t.after(() => sendOrderFinalizedMock.mock.restore());
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: true },
+    params: { id: orderId.toString() },
+    body: { status: 'DONE' },
+  };
+  const res = createResponseMock();
+
+  await OrderController.updateOrder(req as any, res as any);
+
+  assert.equal(updateOrderStatusMock.mock.callCount(), 1);
+  assert.equal(sendOrderFinalizedMock.mock.callCount(), 1);
+  assert.deepEqual(sendOrderFinalizedMock.mock.calls[0].arguments[0], {
+    userId: userId.toString(),
+    orderId: orderId.toString(),
+    orderType: 'BUY',
+    amountUsdt: '5.000000',
+    status: 'DONE',
+    fiatCurrency: 'KES',
+    fiatTotal: '700.00',
+    exchangeRate: '140.000000',
+    transactionCode: 'ABC123XYZ',
+  });
+  assert.equal((res.jsonBody as { status: string }).status, 'DONE');
+});
+
+test('updateOrder sends user notification when order is rejected', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const orderId = new mongoose.Types.ObjectId();
+  const order = {
+    _id: orderId,
+    userId,
+    type: 'SELL',
+    amount: '2.500000',
+    status: 'REJECTED',
+    transactionCode: 'REJ123XYZ',
+    fiatCurrency: 'KES',
+    exchangeRate: '139.000000',
+    fiatTotal: '347.50',
+    createdAt: new Date(),
+  };
+  const updateOrderStatusMock = mock.method(OrderService, 'updateOrderStatus', async () => order as any);
+  const sendOrderFinalizedMock = mock.method(ProductEmailNotificationService, 'sendOrderFinalized', async () => {});
+
+  t.after(() => updateOrderStatusMock.mock.restore());
+  t.after(() => sendOrderFinalizedMock.mock.restore());
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: true },
+    params: { id: orderId.toString() },
+    body: { status: 'REJECTED' },
+  };
+  const res = createResponseMock();
+
+  await OrderController.updateOrder(req as any, res as any);
+
+  assert.equal(sendOrderFinalizedMock.mock.callCount(), 1);
+  assert.deepEqual(sendOrderFinalizedMock.mock.calls[0].arguments[0], {
+    userId: userId.toString(),
+    orderId: orderId.toString(),
+    orderType: 'SELL',
+    amountUsdt: '2.500000',
+    status: 'REJECTED',
+    fiatCurrency: 'KES',
+    fiatTotal: '347.50',
+    exchangeRate: '139.000000',
+    transactionCode: 'REJ123XYZ',
+  });
+  assert.equal((res.jsonBody as { status: string }).status, 'REJECTED');
 });
