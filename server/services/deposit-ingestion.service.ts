@@ -20,6 +20,7 @@ import { CacheKeys, invalidateCacheKeys } from './cache.service.ts';
 import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
 import { getHotWalletRuntime } from './hot-wallet-runtime.service.ts';
 import { recordDepositIngestionDecision, registerMetricsCollector, setUnmatchedDepositsOpen } from './metrics.service.ts';
+import { ProductEmailNotificationService } from './product-email-notification.service.ts';
 import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
 import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
@@ -522,6 +523,7 @@ async function ingestIncomingTransferWithContext(
     }
 
     const rejectionSession = await mongoose.startSession();
+    let rejected = false;
     try {
       await rejectionSession.withTransaction(async () => {
         await ProcessedTransactionRepository.create({
@@ -542,6 +544,7 @@ async function ingestIncomingTransferWithContext(
           },
           session: rejectionSession,
         });
+        rejected = true;
       });
     } catch (error) {
       if (!isDuplicateKeyError(error)) {
@@ -554,11 +557,23 @@ async function ingestIncomingTransferWithContext(
     if (context) {
       context.processedHashes.add(tx.transaction_hash);
     }
+    if (rejected) {
+      await ProductEmailNotificationService.sendDeposit({
+        scenario: 'deposit_rejected_merchant',
+        txHash: resolvedPreview.txHash,
+        amountUsdt: resolvedPreview.amountUsdt,
+        memo: resolvedPreview.comment,
+        reason: resolvedPreview.reason,
+        senderAddress: resolvedPreview.senderOwnerAddress,
+      });
+    }
     return finalizeIngestionResult(resolvedPreview);
   }
 
   const session = await mongoose.startSession();
   let outcome = resolvedPreview;
+  let mutationApplied = false;
+  let creditedUserId: string | null = null;
   try {
     await session.withTransaction(async () => {
       if (resolvedPreview.decision === 'unmatched') {
@@ -573,6 +588,7 @@ async function ingestIncomingTransferWithContext(
           candidateUserId: resolvedPreview.candidateUserId ?? null,
           session,
         });
+        mutationApplied = true;
         return;
       }
 
@@ -594,6 +610,7 @@ async function ingestIncomingTransferWithContext(
           candidateUserId: resolvedPreview.candidateUserId ?? null,
           session,
         });
+        mutationApplied = true;
         return;
       }
 
@@ -617,6 +634,8 @@ async function ingestIncomingTransferWithContext(
       }, session);
 
       await UserBalanceRepository.creditDeposit(claimedMemo.userId, resolvedPreview.amountRaw, session);
+      creditedUserId = claimedMemo.userId;
+      mutationApplied = true;
     });
   } catch (error) {
     if (!isDuplicateKeyError(error)) {
@@ -626,11 +645,11 @@ async function ingestIncomingTransferWithContext(
     await session.endSession();
   }
 
-  if (outcome.decision === 'credit') {
+  if (mutationApplied && outcome.decision === 'credit') {
     await AuditService.record({
       eventType: 'deposit_credit',
-      actorUserId: outcome.candidateUserId ?? null,
-      targetUserId: outcome.candidateUserId ?? null,
+      actorUserId: creditedUserId ?? outcome.candidateUserId ?? null,
+      targetUserId: creditedUserId ?? outcome.candidateUserId ?? null,
       resourceType: 'deposit',
       resourceId: tx.transaction_hash,
       metadata: {
@@ -644,6 +663,16 @@ async function ingestIncomingTransferWithContext(
         destination: tx.destination ?? null,
       },
     });
+
+    const confirmedUserId = creditedUserId ?? outcome.candidateUserId ?? null;
+    await ProductEmailNotificationService.sendDeposit({
+      scenario: 'deposit_confirmed_user',
+      ...(confirmedUserId ? { userId: confirmedUserId } : {}),
+      txHash: outcome.txHash,
+      amountUsdt: outcome.amountUsdt,
+      memo: outcome.comment,
+      senderAddress: outcome.senderOwnerAddress,
+    });
   }
 
   if (context) {
@@ -656,8 +685,19 @@ async function ingestIncomingTransferWithContext(
     }
   }
 
-  if (outcome.decision === 'credit' || outcome.decision === 'unmatched') {
+  if (mutationApplied && (outcome.decision === 'credit' || outcome.decision === 'unmatched')) {
     await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
+  }
+
+  if (mutationApplied && outcome.decision === 'unmatched') {
+    await ProductEmailNotificationService.sendDeposit({
+      scenario: 'deposit_unmatched_merchant',
+      txHash: outcome.txHash,
+      amountUsdt: outcome.amountUsdt,
+      memo: outcome.comment,
+      memoStatus: outcome.memoStatus,
+      senderAddress: outcome.senderOwnerAddress,
+    });
   }
 
   return finalizeIngestionResult(outcome);
@@ -796,6 +836,14 @@ export async function reconcileMerchantDeposit(params: {
         note: params.note?.trim() || null,
       },
     });
+
+    await ProductEmailNotificationService.sendDeposit({
+      scenario: 'deposit_dismissed_merchant',
+      txHash: existing.txHash,
+      amountUsdt: toUsdtDisplay(existing.receivedRaw),
+      memo: existing.comment,
+      note: params.note?.trim() || null,
+    });
   } else {
     const targetUserId = params.userId ?? existing.candidateUserId ?? undefined;
     if (!targetUserId) {
@@ -866,6 +914,15 @@ export async function reconcileMerchantDeposit(params: {
         memo: existing.comment,
         note: params.note?.trim() || null,
       },
+    });
+
+    await ProductEmailNotificationService.sendDeposit({
+      scenario: 'deposit_reconciled_user',
+      userId: targetUserId,
+      txHash: existing.txHash,
+      amountUsdt: toUsdtDisplay(existing.receivedRaw),
+      memo: existing.comment,
+      note: params.note?.trim() || null,
     });
   }
 

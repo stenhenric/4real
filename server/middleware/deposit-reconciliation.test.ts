@@ -17,6 +17,7 @@ import {
   replayDepositWindow,
 } from '../services/deposit-ingestion.service.ts';
 import { setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
+import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
 import * as userServiceModule from '../services/user.service.ts';
 
 const HOT_WALLET_ADDRESS = Address.parse(USDT_MASTER).toString({ bounceable: true });
@@ -235,6 +236,7 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
   const createUnmatchedMock = mock.method(UnmatchedDepositRepository, 'create', async () => {});
   const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
   const auditMock = mock.method(AuditService, 'record', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
   const userFindMock = mock.method(User, 'find', (() => createLeanQuery([
     {
       _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
@@ -255,6 +257,7 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
   t.after(() => createUnmatchedMock.mock.restore());
   t.after(() => creditMock.mock.restore());
   t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
   t.after(() => userFindMock.mock.restore());
 
   const result = await replayDepositWindow({
@@ -274,6 +277,19 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
   assert.equal(createDepositMock.mock.callCount(), 1);
   assert.equal(createUnmatchedMock.mock.callCount(), 1);
   assert.equal(creditMock.mock.callCount(), 1);
+  assert.deepEqual(
+    sendDepositMock.mock.calls.map((call) => call.arguments[0]?.scenario),
+    ['deposit_confirmed_user', 'deposit_unmatched_merchant'],
+  );
+  assert.deepEqual(sendDepositMock.mock.calls.map((call) => call.arguments[0]?.txHash), ['credit-first', 'credit-second']);
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.userId, '507f1f77bcf86cd799439011');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.amountUsdt, '2.500000');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.memo, 'memo-shared');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.senderAddress, SENDER_OWNER_ADDRESS);
+  assert.equal(sendDepositMock.mock.calls[1].arguments[0]?.amountUsdt, '3.000000');
+  assert.equal(sendDepositMock.mock.calls[1].arguments[0]?.memo, 'memo-shared');
+  assert.equal(sendDepositMock.mock.calls[1].arguments[0]?.memoStatus, 'inactive');
+  assert.equal(sendDepositMock.mock.calls[1].arguments[0]?.senderAddress, SENDER_OWNER_ADDRESS);
 });
 
 test('reconcileMerchantDeposit credits an open unmatched deposit and marks it reconciled', async (t) => {
@@ -327,6 +343,7 @@ test('reconcileMerchantDeposit credits an open unmatched deposit and marks it re
   const markResolvedMock = mock.method(UnmatchedDepositRepository, 'markResolved', async () => true);
   const updateProcessedMock = mock.method(ProcessedTransactionRepository, 'updateType', async () => {});
   const auditMock = mock.method(AuditService, 'record', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
 
   t.after(() => unmatchedFindMock.mock.restore());
   t.after(() => userByIdMock.mock.restore());
@@ -339,6 +356,7 @@ test('reconcileMerchantDeposit credits an open unmatched deposit and marks it re
   t.after(() => markResolvedMock.mock.restore());
   t.after(() => updateProcessedMock.mock.restore());
   t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
 
   const result = await reconcileMerchantDeposit({
     txHash: 'reconcile-hash',
@@ -356,6 +374,130 @@ test('reconcileMerchantDeposit credits an open unmatched deposit and marks it re
   assert.equal(updateProcessedMock.mock.calls[0].arguments[1], 'deposit_reconciled_credit');
   assert.equal(result.resolutionStatus, 'credited');
   assert.equal(result.resolvedUserId, '507f1f77bcf86cd799439011');
+  assert.equal(sendDepositMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.scenario, 'deposit_reconciled_user');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.userId, '507f1f77bcf86cd799439011');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.txHash, 'reconcile-hash');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.amountUsdt, '4.100000');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.memo, 'memo-reconcile');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.note, 'manual reconcile');
+});
+
+test('reconcileMerchantDeposit dismisses an open unmatched deposit and notifies merchants', async (t) => {
+  registerCleanup(t);
+
+  const openDocument = {
+    txHash: 'dismiss-hash',
+    receivedRaw: '5100000',
+    comment: 'memo-dismiss',
+    senderJettonWallet: SENDER_JETTON_WALLET,
+    senderOwnerAddress: SENDER_OWNER_ADDRESS,
+    txTime: 1_700_000_210,
+    recordedAt: new Date('2026-04-27T08:06:00.000Z'),
+    memoStatus: 'missing' as const,
+    resolved: false,
+  };
+  const resolvedDocument = {
+    ...openDocument,
+    resolved: true,
+    resolvedAt: new Date('2026-04-27T08:07:00.000Z'),
+    resolvedBy: '507f191e810c19729de860ea',
+    resolutionAction: 'dismissed' as const,
+    resolutionNote: 'not ours',
+  };
+  let findCount = 0;
+  const unmatchedFindMock = mock.method(UnmatchedDepositRepository, 'findByTxHash', async () => {
+    findCount += 1;
+    return findCount === 1 ? openDocument : resolvedDocument;
+  });
+  const userFindMock = mock.method(User, 'find', (() => createLeanQuery([
+    {
+      _id: new mongoose.Types.ObjectId('507f191e810c19729de860ea'),
+      username: 'merchant-admin',
+    },
+  ])) as any);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const markResolvedMock = mock.method(UnmatchedDepositRepository, 'markResolved', async () => true);
+  const updateProcessedMock = mock.method(ProcessedTransactionRepository, 'updateType', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
+
+  t.after(() => unmatchedFindMock.mock.restore());
+  t.after(() => userFindMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => markResolvedMock.mock.restore());
+  t.after(() => updateProcessedMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
+
+  const result = await reconcileMerchantDeposit({
+    txHash: 'dismiss-hash',
+    action: 'dismiss',
+    actorUserId: '507f191e810c19729de860ea',
+    note: 'not ours',
+  });
+
+  assert.equal(updateProcessedMock.mock.callCount(), 1);
+  assert.equal(updateProcessedMock.mock.calls[0].arguments[1], 'deposit_reconciled_dismiss');
+  assert.equal(auditMock.mock.callCount(), 1);
+  assert.equal(result.resolutionStatus, 'dismissed');
+  assert.equal(sendDepositMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.scenario, 'deposit_dismissed_merchant');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.txHash, 'dismiss-hash');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.amountUsdt, '5.100000');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.memo, 'memo-dismiss');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.note, 'not ours');
+});
+
+test('replayDepositWindow apply rejects aborted transactions and notifies merchants', async (t) => {
+  registerCleanup(t);
+
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'aborted-hash',
+      transaction_now: 1_700_000_112,
+      jetton_master: USDT_MASTER,
+      amount: '7000000',
+      source: SENDER_OWNER_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+      decoded_forward_payload: { comment: 'memo-aborted' },
+      transaction_aborted: true,
+    },
+  ]) as Response);
+  const findSeenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const findUnmatchedBatchMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => []);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const createProcessedMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => findSeenHashesMock.mock.restore());
+  t.after(() => findUnmatchedBatchMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => createProcessedMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
+
+  const result = await replayDepositWindow({
+    sinceUnixTime: 1_700_000_000,
+    untilUnixTime: 1_700_000_200,
+    dryRun: false,
+  });
+
+  assert.deepEqual(result.transfers.map((transfer) => transfer.decision), ['rejected']);
+  assert.equal(result.transfers[0].reason, 'transaction_aborted');
+  assert.equal(createProcessedMock.mock.callCount(), 1);
+  assert.equal(auditMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.scenario, 'deposit_rejected_merchant');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.txHash, 'aborted-hash');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.amountUsdt, '7.000000');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.memo, 'memo-aborted');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.reason, 'transaction_aborted');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.senderAddress, SENDER_OWNER_ADDRESS);
 });
 
 test('reconcileMerchantDeposit does not credit when another operator resolves the deposit first', async (t) => {
@@ -398,6 +540,7 @@ test('reconcileMerchantDeposit does not credit when another operator resolves th
   const markUsedMock = mock.method(DepositMemoRepository, 'markUsed', async () => {});
   const updateProcessedMock = mock.method(ProcessedTransactionRepository, 'updateType', async () => {});
   const auditMock = mock.method(AuditService, 'record', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
 
   t.after(() => unmatchedFindMock.mock.restore());
   t.after(() => userByIdMock.mock.restore());
@@ -409,6 +552,7 @@ test('reconcileMerchantDeposit does not credit when another operator resolves th
   t.after(() => markUsedMock.mock.restore());
   t.after(() => updateProcessedMock.mock.restore());
   t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
 
   await assert.rejects(
     reconcileMerchantDeposit({
@@ -433,4 +577,5 @@ test('reconcileMerchantDeposit does not credit when another operator resolves th
   assert.equal(markUsedMock.mock.callCount(), 0);
   assert.equal(updateProcessedMock.mock.callCount(), 0);
   assert.equal(auditMock.mock.callCount(), 0);
+  assert.equal(sendDepositMock.mock.callCount(), 0);
 });
