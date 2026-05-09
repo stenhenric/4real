@@ -4,7 +4,7 @@ import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { getEnv } from '../config/env.ts';
 import { getRedisClient } from '../services/redis.service.ts';
 
-function createRateLimitStore() {
+function createRateLimitStore(prefix: string) {
   const env = getEnv();
   if (!env.REDIS_URL) {
     return undefined;
@@ -12,6 +12,7 @@ function createRateLimitStore() {
 
   const redis = getRedisClient();
   return new RedisStore({
+    prefix,
     sendCommand: (command: string, ...args: string[]) =>
       redis.call(command, ...args) as Promise<RedisReply>,
   });
@@ -19,7 +20,7 @@ function createRateLimitStore() {
 
 export function createGeneralRateLimiter() {
   const env = getEnv();
-  const store = createRateLimitStore();
+  const store = createRateLimitStore('rl:general:');
 
   return rateLimit({
     ...(store ? { store } : {}),
@@ -37,7 +38,7 @@ export function createGeneralRateLimiter() {
 
 export function createAuthRateLimiter() {
   const env = getEnv();
-  const store = createRateLimitStore();
+  const store = createRateLimitStore('rl:auth:');
 
   return rateLimit({
     ...(store ? { store } : {}),
@@ -56,7 +57,7 @@ export function createAuthRateLimiter() {
 
 export function createWithdrawalRateLimiter() {
   const env = getEnv();
-  const store = createRateLimitStore();
+  const store = createRateLimitStore('rl:withdrawal:');
 
   return rateLimit({
     ...(store ? { store } : {}),
