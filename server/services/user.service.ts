@@ -19,6 +19,12 @@ export interface CreateUserInput {
   isAdmin?: boolean;
 }
 
+export interface VerifiedMerchantEmailRecipient {
+  id: string;
+  email: string;
+  username?: string | null;
+}
+
 export class UserService {
   static async getDisplayBalance(userId: string, session?: mongoose.ClientSession): Promise<string> {
     const balanceDoc = await UserBalanceRepository.findByUserId(userId, session);
@@ -122,6 +128,22 @@ export class UserService {
   static async findById(id: string, session?: mongoose.ClientSession): Promise<IUser | null> {
     const query = User.findById(id).select('-passwordHash -__v');
     return session ? query.session(session) : query;
+  }
+
+  static async findVerifiedMerchantEmailRecipients(): Promise<VerifiedMerchantEmailRecipient[]> {
+    const users = await User.find({
+      _id: { $ne: new mongoose.Types.ObjectId(SYSTEM_COMMISSION_ACCOUNT_ID) },
+      isAdmin: true,
+      emailVerifiedAt: { $ne: null },
+    })
+      .select('_id email username')
+      .lean();
+
+    return users.map((user) => ({
+      id: user._id.toString(),
+      email: user.email,
+      username: user.username ?? null,
+    }));
   }
 
   static async findAuthUserById(id: string): Promise<IUser | null> {
