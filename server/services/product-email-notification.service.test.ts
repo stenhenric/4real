@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { resetEnvCacheForTests } from '../config/env.ts';
-import { SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
+import { SYSTEM_COMMISSION_ACCOUNT_ID, User } from '../models/User.ts';
 import {
   ProductEmailNotificationService,
   resetProductEmailNotificationDependenciesForTests,
   setProductEmailNotificationDependenciesForTests,
 } from './product-email-notification.service.ts';
+import { UserService } from './user.service.ts';
 
 type LogEntry = {
   level: string;
@@ -59,6 +60,34 @@ function withProductEmailEnv(run: () => Promise<void> | void) {
     resetEnvCacheForTests();
   });
 }
+
+test('findVerifiedMerchantEmailRecipients requires verified admins with a present emailVerifiedAt value', async (t) => {
+  let capturedFilter: Record<string, any> | undefined;
+
+  const findMock = t.mock.method(User, 'find', ((filter: Record<string, any>) => {
+    capturedFilter = filter;
+
+    return {
+      select: (projection: string) => {
+        assert.equal(projection, '_id email username');
+
+        return {
+          lean: async () => [
+            { _id: 'admin-1', email: 'ops@example.com', username: 'ops' },
+          ],
+        };
+      },
+    };
+  }) as any);
+
+  const recipients = await UserService.findVerifiedMerchantEmailRecipients();
+
+  assert.equal(findMock.mock.callCount(), 1);
+  assert.deepEqual(capturedFilter?.emailVerifiedAt, { $exists: true, $ne: null });
+  assert.equal(capturedFilter?.isAdmin, true);
+  assert.equal(capturedFilter?._id?.$ne?.toString(), SYSTEM_COMMISSION_ACCOUNT_ID);
+  assert.deepEqual(recipients, [{ id: 'admin-1', email: 'ops@example.com', username: 'ops' }]);
+});
 
 test('sendOrderCreated skips unverified user but sends merchant notification to verified admins excluding system account', async () => {
   const sent: Array<{ to: string; subject: string; text: string; html?: string }> = [];

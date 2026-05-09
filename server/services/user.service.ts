@@ -134,7 +134,7 @@ export class UserService {
     const users = await User.find({
       _id: { $ne: new mongoose.Types.ObjectId(SYSTEM_COMMISSION_ACCOUNT_ID) },
       isAdmin: true,
-      emailVerifiedAt: { $ne: null },
+      emailVerifiedAt: { $exists: true, $ne: null },
     })
       .select('_id email username')
       .lean();
