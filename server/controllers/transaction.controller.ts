@@ -11,6 +11,7 @@ import { prepareTonConnectDeposit } from '../services/deposit-tonconnect.service
 import { AuditService } from '../services/audit.service.ts';
 import { CacheKeys, invalidateCacheKeys } from '../services/cache.service.ts';
 import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
+import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
@@ -114,6 +115,13 @@ export const requestWithdrawalHandler = async (req: AuthRequest, res: Response):
 
   if (!result.replayed) {
     await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
+    await ProductEmailNotificationService.sendWithdrawalQueued({
+      userId,
+      withdrawalId: result.body.withdrawalId,
+      amountUsdt,
+      toAddress,
+      statusUrl: result.body.statusUrl,
+    });
   }
   res.status(result.statusCode).json(result.body);
 };

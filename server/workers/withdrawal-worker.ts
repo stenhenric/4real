@@ -13,6 +13,7 @@ import {
   setWalletTonBalance,
   setWalletUsdtBalance,
 } from '../services/metrics.service.ts';
+import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { LockUnavailableError, withLock } from '../services/distributed-lock.service.ts';
 import {
@@ -52,6 +53,10 @@ function formatUsdtRaw(raw: bigint): string {
 
 function isDuplicateKeyError(error: unknown): error is { code: number } {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 11000);
+}
+
+function withdrawalStatusUrl(withdrawalId: string): string {
+  return `/api/transactions/withdrawals/${encodeURIComponent(withdrawalId)}`;
 }
 
 async function refundFailedWithdrawal({
@@ -139,6 +144,15 @@ export async function runWithdrawalWorker() {
           withdrawalId: doc.withdrawalId,
           seqno: submittedWithdrawal.seqno,
         });
+        await ProductEmailNotificationService.sendWithdrawalTransition({
+          scenario: 'withdrawal_sent_user',
+          userId: doc.userId,
+          withdrawalId: doc.withdrawalId,
+          amountUsdt: doc.amountDisplay,
+          toAddress: doc.toAddress,
+          seqno: submittedWithdrawal.seqno,
+          statusUrl: withdrawalStatusUrl(doc.withdrawalId),
+        });
       } catch (postSendError: unknown) {
         const errorMessage = postSendError instanceof Error ? postSendError.message : String(postSendError);
         logger.error('withdrawal.post_send_persist_failed', {
@@ -154,6 +168,24 @@ export async function runWithdrawalWorker() {
             submittedWithdrawal.seqno,
             submittedWithdrawal.sentAt,
           );
+          await ProductEmailNotificationService.sendWithdrawalTransition({
+            scenario: 'withdrawal_stuck_user',
+            userId: doc.userId,
+            withdrawalId: doc.withdrawalId,
+            amountUsdt: doc.amountDisplay,
+            toAddress: doc.toAddress,
+            seqno: submittedWithdrawal.seqno,
+            lastError: errorMessage,
+            statusUrl: withdrawalStatusUrl(doc.withdrawalId),
+          });
+          await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
+            scenario: 'withdrawal_stuck_merchant',
+            withdrawalId: doc.withdrawalId,
+            amountUsdt: doc.amountDisplay,
+            toAddress: doc.toAddress,
+            seqno: submittedWithdrawal.seqno,
+            lastError: errorMessage,
+          });
         } catch (markStuckError) {
           logger.error('withdrawal.post_send_stuck_mark_failed', {
             withdrawalId: doc.withdrawalId,
@@ -168,6 +200,24 @@ export async function runWithdrawalWorker() {
 
       if (sendErr instanceof SeqnoTimeoutError) {
         await WithdrawalRepository.markStuck(doc._id, errorMessage, sendErr.seqno, sendErr.sentAt);
+        await ProductEmailNotificationService.sendWithdrawalTransition({
+          scenario: 'withdrawal_stuck_user',
+          userId: doc.userId,
+          withdrawalId: doc.withdrawalId,
+          amountUsdt: doc.amountDisplay,
+          toAddress: doc.toAddress,
+          seqno: sendErr.seqno,
+          lastError: errorMessage,
+          statusUrl: withdrawalStatusUrl(doc.withdrawalId),
+        });
+        await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
+          scenario: 'withdrawal_stuck_merchant',
+          withdrawalId: doc.withdrawalId,
+          amountUsdt: doc.amountDisplay,
+          toAddress: doc.toAddress,
+          seqno: sendErr.seqno,
+          lastError: errorMessage,
+        });
       } else {
         const retries = (doc.retries ?? 0) + 1;
         const newStatus = retries >= 3 ? 'failed' : 'queued';
@@ -194,6 +244,22 @@ export async function runWithdrawalWorker() {
 
         if (newStatus === 'failed') {
           logger.warn('withdrawal.refunded', { withdrawalId: doc.withdrawalId });
+          await ProductEmailNotificationService.sendWithdrawalTransition({
+            scenario: 'withdrawal_failed_user',
+            userId: doc.userId,
+            withdrawalId: doc.withdrawalId,
+            amountUsdt: doc.amountDisplay,
+            toAddress: doc.toAddress,
+            lastError: errorMessage,
+            statusUrl: withdrawalStatusUrl(doc.withdrawalId),
+          });
+          await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
+            scenario: 'withdrawal_failed_merchant',
+            withdrawalId: doc.withdrawalId,
+            amountUsdt: doc.amountDisplay,
+            toAddress: doc.toAddress,
+            lastError: errorMessage,
+          });
         }
       }
     }
@@ -281,6 +347,15 @@ export async function confirmSentWithdrawals() {
             confirmedAt: confirmed.confirmedAt.toISOString(),
           });
           recordWithdrawalConfirmation('confirmed');
+          await ProductEmailNotificationService.sendWithdrawalTransition({
+            scenario: 'withdrawal_confirmed_user',
+            userId: withdrawal.userId,
+            withdrawalId: withdrawal.withdrawalId,
+            amountUsdt: withdrawal.amountDisplay,
+            toAddress: withdrawal.toAddress,
+            txHash: confirmed.txHash,
+            statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
+          });
         } catch (error) {
           if (!isDuplicateKeyError(error)) {
             throw error;
@@ -290,9 +365,10 @@ export async function confirmSentWithdrawals() {
         }
       } else if (withdrawal.sentAt.getTime() < thirtyMinsAgo) {
         try {
+          const lastError = 'Expired waiting for confirmation on-chain';
           await WithdrawalRepository.markStuck(
             withdrawal._id,
-            'Expired waiting for confirmation on-chain',
+            lastError,
             withdrawal.seqno,
             withdrawal.sentAt,
           );
@@ -300,6 +376,24 @@ export async function confirmSentWithdrawals() {
             withdrawalId: withdrawal.withdrawalId,
           });
           recordWithdrawalConfirmation('stuck');
+          await ProductEmailNotificationService.sendWithdrawalTransition({
+            scenario: 'withdrawal_stuck_user',
+            userId: withdrawal.userId,
+            withdrawalId: withdrawal.withdrawalId,
+            amountUsdt: withdrawal.amountDisplay,
+            toAddress: withdrawal.toAddress,
+            lastError,
+            statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
+            ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
+          });
+          await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
+            scenario: 'withdrawal_stuck_merchant',
+            withdrawalId: withdrawal.withdrawalId,
+            amountUsdt: withdrawal.amountDisplay,
+            toAddress: withdrawal.toAddress,
+            lastError,
+            ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
+          });
         } catch (err) {
           logger.error('withdrawal.expire_error', { withdrawalId: withdrawal.withdrawalId, err });
         }
@@ -457,6 +551,15 @@ export async function recoverStuckWithdrawals() {
               },
             });
             recordWithdrawalConfirmation('recovered_confirmed');
+            await ProductEmailNotificationService.sendWithdrawalTransition({
+              scenario: 'withdrawal_confirmed_user',
+              userId: withdrawal.userId,
+              withdrawalId: withdrawal.withdrawalId,
+              amountUsdt: withdrawal.amountDisplay,
+              toAddress: withdrawal.toAddress,
+              txHash: confirmed.txHash,
+              statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
+            });
           } catch (error) {
             if (!isDuplicateKeyError(error)) {
                logger.error('withdrawal.stuck_recover_error', { withdrawalId: withdrawal.withdrawalId, error });
@@ -465,24 +568,62 @@ export async function recoverStuckWithdrawals() {
             await session.endSession();
           }
         } else {
+          const lastError = 'Processing state expired before a definitive on-chain outcome was recorded';
           await WithdrawalRepository.markStuck(
             withdrawal._id,
-            'Processing state expired before a definitive on-chain outcome was recorded',
+            lastError,
             withdrawal.seqno,
             withdrawal.startedAt,
           );
           logger.warn('withdrawal.processing_stuck', { withdrawalId: withdrawal.withdrawalId });
           recordWithdrawalConfirmation('processing_stuck');
+          await ProductEmailNotificationService.sendWithdrawalTransition({
+            scenario: 'withdrawal_stuck_user',
+            userId: withdrawal.userId,
+            withdrawalId: withdrawal.withdrawalId,
+            amountUsdt: withdrawal.amountDisplay,
+            toAddress: withdrawal.toAddress,
+            lastError,
+            statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
+            ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
+          });
+          await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
+            scenario: 'withdrawal_stuck_merchant',
+            withdrawalId: withdrawal.withdrawalId,
+            amountUsdt: withdrawal.amountDisplay,
+            toAddress: withdrawal.toAddress,
+            lastError,
+            ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
+          });
         }
       } catch (err) {
         logger.error('withdrawal.stuck_check_error', { withdrawalId: withdrawal.withdrawalId, err });
+        const lastError = 'On-chain reconciliation check failed for a stale processing withdrawal';
         await WithdrawalRepository.markStuck(
           withdrawal._id,
-          'On-chain reconciliation check failed for a stale processing withdrawal',
+          lastError,
           withdrawal.seqno,
           withdrawal.startedAt,
         );
         recordWithdrawalConfirmation('processing_reconcile_failed');
+        await ProductEmailNotificationService.sendWithdrawalTransition({
+          scenario: 'withdrawal_stuck_user',
+          userId: withdrawal.userId,
+          withdrawalId: withdrawal.withdrawalId,
+          amountUsdt: withdrawal.amountDisplay,
+          toAddress: withdrawal.toAddress,
+          lastError,
+          statusUrl: withdrawalStatusUrl(withdrawal.withdrawalId),
+          ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
+        });
+        await ProductEmailNotificationService.sendWithdrawalMerchantAlert({
+          scenario: 'withdrawal_stuck_merchant',
+          withdrawalId: withdrawal.withdrawalId,
+          amountUsdt: withdrawal.amountDisplay,
+          toAddress: withdrawal.toAddress,
+          lastError,
+          ...(withdrawal.seqno !== undefined ? { seqno: withdrawal.seqno } : {}),
+        });
       }
     }
   }

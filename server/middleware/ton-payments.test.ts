@@ -19,6 +19,7 @@ import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { AuditService } from '../services/audit.service.ts';
 import { generateDepositMemo } from '../services/deposit-service.ts';
 import { resolveHotWalletRuntime, setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
+import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
 import { LockUnavailableError } from '../services/distributed-lock.service.ts';
@@ -989,9 +990,11 @@ test('runWithdrawalWorker marks sent withdrawals with seqno', async (t) => {
     retries: 0,
   }));
   const markSentMock = mock.method(WithdrawalRepository, 'markSent', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
 
   t.after(() => claimMock.mock.restore());
   t.after(() => markSentMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     sendUsdtWithdrawal: async () => ({
       seqno: 77,
@@ -1007,6 +1010,16 @@ test('runWithdrawalWorker marks sent withdrawals with seqno', async (t) => {
     (markSentMock.mock.calls[0].arguments[2] as Date).toISOString(),
     '2026-01-01T00:00:00.000Z',
   );
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_sent_user',
+    userId: 'user-6',
+    withdrawalId: 'wd-3',
+    amountUsdt: '1.000000',
+    toAddress: ZERO_ADDRESS,
+    seqno: 77,
+    statusUrl: '/api/transactions/withdrawals/wd-3',
+  });
 });
 
 test('runWithdrawalWorker retries without refund before terminal failure and refunds only when terminal', async (t) => {
@@ -1047,12 +1060,16 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   const retryStateMock = mock.method(WithdrawalRepository, 'markRetryState', async () => {});
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-refund' } as any));
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
 
   t.after(() => claimMock.mock.restore());
   t.after(() => startSessionMock.mock.restore());
   t.after(() => retryStateMock.mock.restore());
   t.after(() => refundMock.mock.restore());
   t.after(() => createTransactionMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     sendUsdtWithdrawal: async () => {
       throw new Error('send failed');
@@ -1070,6 +1087,24 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   assert.equal(createTransactionMock.mock.callCount(), 1);
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { type: string }).type, 'WITHDRAW_REFUND');
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { amount: string }).amount, '2.000000');
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_failed_user',
+    userId: 'user-8',
+    withdrawalId: 'wd-5',
+    amountUsdt: '2.000000',
+    toAddress: ZERO_ADDRESS,
+    lastError: 'send failed',
+    statusUrl: '/api/transactions/withdrawals/wd-5',
+  });
+  assert.equal(merchantAlertMock.mock.callCount(), 1);
+  assert.deepEqual(merchantAlertMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_failed_merchant',
+    withdrawalId: 'wd-5',
+    amountUsdt: '2.000000',
+    toAddress: ZERO_ADDRESS,
+    lastError: 'send failed',
+  });
 });
 
 test('runWithdrawalWorker does not refund seqno timeout paths', async (t) => {
@@ -1095,10 +1130,14 @@ test('runWithdrawalWorker does not refund seqno timeout paths', async (t) => {
   const timeout = new withdrawalEngineModule.SeqnoTimeoutError(19, 90_000, new Date('2026-01-01T00:00:00.000Z'));
   const markStuckMock = mock.method(WithdrawalRepository, 'markStuck', async () => {});
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
 
   t.after(() => claimMock.mock.restore());
   t.after(() => markStuckMock.mock.restore());
   t.after(() => refundMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     sendUsdtWithdrawal: async () => {
       throw timeout;
@@ -1110,6 +1149,26 @@ test('runWithdrawalWorker does not refund seqno timeout paths', async (t) => {
   assert.equal(markStuckMock.mock.callCount(), 1);
   assert.equal(markStuckMock.mock.calls[0].arguments[2], 19);
   assert.equal(refundMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_stuck_user',
+    userId: 'user-9',
+    withdrawalId: 'wd-6',
+    amountUsdt: '1.000000',
+    toAddress: ZERO_ADDRESS,
+    seqno: 19,
+    lastError: timeout.message,
+    statusUrl: '/api/transactions/withdrawals/wd-6',
+  });
+  assert.equal(merchantAlertMock.mock.callCount(), 1);
+  assert.deepEqual(merchantAlertMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_stuck_merchant',
+    withdrawalId: 'wd-6',
+    amountUsdt: '1.000000',
+    toAddress: ZERO_ADDRESS,
+    seqno: 19,
+    lastError: timeout.message,
+  });
 });
 
 test('runWithdrawalWorker marks submitted withdrawals as stuck when markSent fails and never refunds them', async (t) => {
@@ -1139,12 +1198,16 @@ test('runWithdrawalWorker marks submitted withdrawals as stuck when markSent fai
   const markStuckMock = mock.method(WithdrawalRepository, 'markStuck', async () => {});
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-post-send' } as any));
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
 
   t.after(() => claimMock.mock.restore());
   t.after(() => markSentMock.mock.restore());
   t.after(() => markStuckMock.mock.restore());
   t.after(() => refundMock.mock.restore());
   t.after(() => createTransactionMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     sendUsdtWithdrawal: async () => ({
       seqno: 91,
@@ -1160,6 +1223,10 @@ test('runWithdrawalWorker marks submitted withdrawals as stuck when markSent fai
   assert.equal((markStuckMock.mock.calls[0].arguments[3] as Date).toISOString(), sentAt.toISOString());
   assert.equal(refundMock.mock.callCount(), 0);
   assert.equal(createTransactionMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.equal((transitionMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_user');
+  assert.equal(merchantAlertMock.mock.callCount(), 1);
+  assert.equal((merchantAlertMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_merchant');
 });
 
 test('runWithdrawalWorker marks submitted withdrawals as stuck when audit persistence fails and never refunds them', async (t) => {
@@ -1193,12 +1260,16 @@ test('runWithdrawalWorker marks submitted withdrawals as stuck when audit persis
   const markStuckMock = mock.method(WithdrawalRepository, 'markStuck', async () => {});
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-audit-post-send' } as any));
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
 
   t.after(() => claimMock.mock.restore());
   t.after(() => markSentMock.mock.restore());
   t.after(() => markStuckMock.mock.restore());
   t.after(() => refundMock.mock.restore());
   t.after(() => createTransactionMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     sendUsdtWithdrawal: async () => ({
       seqno: 92,
@@ -1213,6 +1284,10 @@ test('runWithdrawalWorker marks submitted withdrawals as stuck when audit persis
   assert.equal(markStuckMock.mock.calls[0].arguments[2], 92);
   assert.equal(refundMock.mock.callCount(), 0);
   assert.equal(createTransactionMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.equal((transitionMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_user');
+  assert.equal(merchantAlertMock.mock.callCount(), 1);
+  assert.equal((merchantAlertMock.mock.calls[0].arguments[0] as { scenario: string }).scenario, 'withdrawal_stuck_merchant');
 });
 
 test('confirmSentWithdrawals marks matching outbound transfers as confirmed and is idempotent', async (t) => {
@@ -1247,12 +1322,14 @@ test('confirmSentWithdrawals marks matching outbound transfers as confirmed and 
   });
   const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => {});
   const withdrawnMock = mock.method(UserBalanceRepository, 'recordWithdrawalConfirmed', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
 
   t.after(() => pendingMock.mock.restore());
   t.after(() => startSessionMock.mock.restore());
   t.after(() => processedCreateMock.mock.restore());
   t.after(() => markConfirmedMock.mock.restore());
   t.after(() => withdrawnMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     findWithdrawalTransferOnChain: async () => ({
       txHash: 'chain-hash-1',
@@ -1267,6 +1344,16 @@ test('confirmSentWithdrawals marks matching outbound transfers as confirmed and 
   assert.equal(withdrawnMock.mock.callCount(), 1);
   assert.equal(processedCreateMock.mock.callCount(), 2);
   assert.equal(pendingDoc.toAddress, ZERO_ADDRESS);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_confirmed_user',
+    userId: 'user-10',
+    withdrawalId: 'wd-7',
+    amountUsdt: '1.000000',
+    toAddress: ZERO_ADDRESS,
+    txHash: 'chain-hash-1',
+    statusUrl: '/api/transactions/withdrawals/wd-7',
+  });
 });
 
 test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuck state instead of refunding them', async (t) => {
@@ -1293,10 +1380,14 @@ test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuc
   }]);
   const markStuckMock = mock.method(WithdrawalRepository, 'markStuck', async () => {});
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
 
   t.after(() => pendingMock.mock.restore());
   t.after(() => markStuckMock.mock.restore());
   t.after(() => refundMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
   setWithdrawalWorkerDependenciesForTests({
     findWithdrawalTransferOnChain: async () => null,
   });
@@ -1306,6 +1397,26 @@ test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuc
   assert.equal(markStuckMock.mock.callCount(), 1);
   assert.equal(markStuckMock.mock.calls[0].arguments[2], 18);
   assert.equal(refundMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_stuck_user',
+    userId: 'user-11',
+    withdrawalId: 'wd-8',
+    amountUsdt: '1.000000',
+    toAddress: ZERO_ADDRESS,
+    seqno: 18,
+    lastError: 'Expired waiting for confirmation on-chain',
+    statusUrl: '/api/transactions/withdrawals/wd-8',
+  });
+  assert.equal(merchantAlertMock.mock.callCount(), 1);
+  assert.deepEqual(merchantAlertMock.mock.calls[0].arguments[0], {
+    scenario: 'withdrawal_stuck_merchant',
+    withdrawalId: 'wd-8',
+    amountUsdt: '1.000000',
+    toAddress: ZERO_ADDRESS,
+    seqno: 18,
+    lastError: 'Expired waiting for confirmation on-chain',
+  });
 });
 
 test('resolveHotWalletRuntime fails on hot jetton wallet mismatch', async (t) => {
