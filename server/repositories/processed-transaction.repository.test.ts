@@ -64,3 +64,32 @@ test('ensureIndexes drops the legacy processedAt TTL index if present', async (t
 
   assert.deepEqual(droppedIndexes, ['processedAt_1']);
 });
+
+test('ensureIndexes creates indexes when the collection namespace does not exist yet', async (t) => {
+  let capturedIndexes: CapturedIndex[] = [];
+  const collectionMock = {
+    async indexes() {
+      const error = new Error('ns does not exist') as Error & { code?: number };
+      error.code = 26;
+      throw error;
+    },
+    async createIndexes(indexes: CapturedIndex[]) {
+      capturedIndexes = indexes;
+    },
+    async dropIndex(_name: string) {
+      throw new Error('dropIndex should not be called');
+    },
+  };
+  const repository = ProcessedTransactionRepository as unknown as {
+    collection: () => typeof collectionMock;
+  };
+  const collectionMethodMock = mock.method(repository, 'collection', () => collectionMock);
+  t.after(() => collectionMethodMock.mock.restore());
+
+  await ProcessedTransactionRepository.ensureIndexes();
+
+  assert.deepEqual(capturedIndexes, [
+    { key: { txHash: 1 }, unique: true },
+    { key: { processedAt: 1 } },
+  ]);
+});

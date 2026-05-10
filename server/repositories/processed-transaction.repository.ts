@@ -40,6 +40,27 @@ function isIndexNotFoundError(error: unknown): boolean {
   );
 }
 
+function isNamespaceNotFoundError(error: unknown): boolean {
+  return Boolean(
+    error
+      && typeof error === 'object'
+      && 'code' in error
+      && error.code === 26,
+  );
+}
+
+async function readExistingIndexes(collection: ReturnType<typeof ProcessedTransactionRepository['collection']>): Promise<ExistingMongoIndex[]> {
+  try {
+    return await collection.indexes() as ExistingMongoIndex[];
+  } catch (error) {
+    if (isNamespaceNotFoundError(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 export class ProcessedTransactionRepository {
   private static collection() {
     return getMongoCollection<ProcessedTransactionDocument>('processed_txs');
@@ -81,7 +102,7 @@ export class ProcessedTransactionRepository {
 
   static async ensureIndexes(): Promise<void> {
     const collection = this.collection();
-    const existingIndexes = await collection.indexes() as ExistingMongoIndex[];
+    const existingIndexes = await readExistingIndexes(collection);
     for (const index of existingIndexes) {
       if (isLegacyProcessedAtTtlIndex(index)) {
         try {
