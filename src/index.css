@@ -1,14 +1,37 @@
 @import "tailwindcss";
 
+/* Cabin Sketch from Google Fonts, self-hosted to avoid runtime font-provider failures. */
+@font-face {
+  font-family: "Cabin Sketch";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/cabin-sketch-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Cabin Sketch";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/cabin-sketch-700.woff2") format("woff2");
+}
+
 @theme {
-  --font-sans: "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
-  --font-display: "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
-  --font-mono: "Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive;
+  --font-sans: "Cabin Sketch", system-ui, sans-serif;
+  --font-display: "Cabin Sketch", system-ui, sans-serif;
+  --font-mono: "Cabin Sketch", system-ui, sans-serif;
   --color-paper: #F2EFE9;
   --color-ink-blue: #1A365D;
   --color-ink-red: #9B2C2C;
   --color-ink-black: #1A1A1A;
   --color-marker-yellow: rgba(255, 255, 0, 0.4);
+}
+
+html,
+body,
+#root {
+  font-family: "Cabin Sketch", system-ui, sans-serif;
 }
 
 body {
@@ -43,6 +66,10 @@ body {
 }
 
 /* Handwritten inputs */
+input, textarea, button, select {
+  font: inherit;
+}
+
 input, textarea {
   @apply outline-none bg-transparent;
 }

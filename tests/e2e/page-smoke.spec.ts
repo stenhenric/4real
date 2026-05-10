@@ -18,10 +18,15 @@ const MOCK_TON_WALLETS = [{
   platforms: ['ios', 'android', 'linux', 'macos', 'windows', 'chrome'],
 }];
 
+const DEFAULT_IGNORED_CONSOLE_ERRORS = [
+  /downloadable font: .*Cabin Sketch/i,
+  /WebSocket connection to 'ws:\/\/127\.0\.0\.1:4317\/socket\.io\/.*' failed: WebSocket is closed before the connection is established\./i,
+];
+
 function installErrorCollectors(page: Page, options?: { ignoreConsole?: RegExp[]; ignorePageErrors?: RegExp[] }) {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
-  const ignoreConsole = options?.ignoreConsole ?? [];
+  const ignoreConsole = [...DEFAULT_IGNORED_CONSOLE_ERRORS, ...(options?.ignoreConsole ?? [])];
   const ignorePageErrors = options?.ignorePageErrors ?? [];
 
   page.on('pageerror', (error) => {

@@ -107,7 +107,7 @@ export class WithdrawalRepository {
 
   static async markConfirmed(id: WithdrawalDocumentId, txHash: string, confirmedAt: Date, session?: mongoose.ClientSession): Promise<void> {
     await this.collection().updateOne(
-      { _id: id, status: { $in: ['sent', 'stuck'] } },
+      { _id: id, status: { $in: ['processing', 'sent', 'stuck'] } },
       {
         $set: {
           status: 'confirmed',
@@ -190,6 +190,7 @@ export class WithdrawalRepository {
       { key: { status: 1, createdAt: 1 } },
       { key: { status: 1, sentAt: 1 } },
       { key: { userId: 1, createdAt: -1 } },
+      { key: { createdAt: -1 } },
       { key: { txHash: 1 }, sparse: true },
     ]);
   }

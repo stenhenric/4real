@@ -1,5 +1,6 @@
 import { ensureAuthSessionIndexes } from '../models/AuthSession.ts';
 import { Match } from '../models/Match.ts';
+import { OneTimeToken } from '../models/OneTimeToken.ts';
 import { Order } from '../models/Order.ts';
 import { Transaction } from '../models/Transaction.ts';
 import { User } from '../models/User.ts';
@@ -35,6 +36,7 @@ export async function setupIndexes() {
     FailedDepositIngestionRepository.ensureIndexes(),
     ensureAuthSessionIndexes(),
     User.createIndexes(),
+    OneTimeToken.createIndexes(),
     Match.createIndexes(),
     Order.createIndexes(),
     Transaction.createIndexes(),

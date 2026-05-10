@@ -37,6 +37,34 @@ function createResponseMock() {
   };
 }
 
+test('getOrders always scopes results to the requesting user', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  let capturedFilter: Record<string, unknown> | undefined;
+  const findMock = mock.method(Order, 'find', (filter: Record<string, unknown>) => {
+    capturedFilter = filter;
+    return {
+      sort() {
+        return this;
+      },
+      populate() {
+        return this;
+      },
+      select() {
+        return Promise.resolve([]);
+      },
+    } as any;
+  });
+
+  t.after(() => findMock.mock.restore());
+
+  const orders = await OrderService.getOrders(userId.toString());
+
+  assert.deepEqual(orders, []);
+  assert(capturedFilter);
+  assert.equal((capturedFilter.userId as mongoose.Types.ObjectId).toString(), userId.toString());
+  assert.equal(Object.keys(capturedFilter).length, 1);
+});
+
 test('createOrder reserves SELL balances and creates the pending ledger entry in one transaction', async (t) => {
   registerSessionCleanup(t);
 

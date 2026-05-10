@@ -1491,6 +1491,34 @@ test('confirmSentWithdrawals marks matching outbound transfers as confirmed and 
   });
 });
 
+test('markConfirmed can reconcile stale processing withdrawals found on-chain', async (t) => {
+  const repository = WithdrawalRepository as unknown as {
+    collection: () => {
+      updateOne: (...args: unknown[]) => Promise<void>;
+    };
+  };
+  const updateCalls: unknown[][] = [];
+  const collectionMock = mock.method(repository, 'collection', () => ({
+    async updateOne(...args: unknown[]) {
+      updateCalls.push(args);
+    },
+  }));
+
+  t.after(() => collectionMock.mock.restore());
+
+  const confirmedAt = new Date('2026-01-02T00:07:00.000Z');
+  await WithdrawalRepository.markConfirmed('doc-recover-1', 'chain-recovered-1', confirmedAt);
+
+  assert.equal(updateCalls.length, 1);
+  const filter = updateCalls[0]?.[0] as { _id?: string; status?: { $in?: string[] } };
+  const update = updateCalls[0]?.[1] as { $set?: { status?: string; txHash?: string; confirmedAt?: Date } };
+  assert.equal(filter._id, 'doc-recover-1');
+  assert.deepEqual(filter.status?.$in, ['processing', 'sent', 'stuck']);
+  assert.equal(update.$set?.status, 'confirmed');
+  assert.equal(update.$set?.txHash, 'chain-recovered-1');
+  assert.equal(update.$set?.confirmedAt, confirmedAt);
+});
+
 test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuck state instead of refunding them', async (t) => {
   registerBaseCleanup(t);
   setHotWalletRuntimeForTests({

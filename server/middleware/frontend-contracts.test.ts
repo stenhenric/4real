@@ -115,9 +115,16 @@ test('frontend buttons render through SketchyButton', () => {
   assert.deepEqual(rawButtons, []);
 });
 
-test('frontend styles do not require remote font providers at runtime', () => {
+test('frontend styles load and apply Cabin Sketch globally', () => {
   const stylesheet = readFileSync(join('src', 'index.css'), 'utf8');
 
+  assert.match(stylesheet, /font-family:\s*["']Cabin Sketch["'];[^}]*font-weight:\s*400;[^}]*url\(["']\/fonts\/cabin-sketch-400\.woff2["']\)[^}]*format\(["']woff2["']\)/s);
+  assert.match(stylesheet, /font-family:\s*["']Cabin Sketch["'];[^}]*font-weight:\s*700;[^}]*url\(["']\/fonts\/cabin-sketch-700\.woff2["']\)[^}]*format\(["']woff2["']\)/s);
+  assert.match(
+    stylesheet,
+    /html,\s*body,\s*#root\s*{[^}]*font-family:\s*["']Cabin Sketch["'],\s*system-ui,\s*sans-serif;/s,
+  );
+  assert.match(stylesheet, /--font-sans:\s*["']Cabin Sketch["'],\s*system-ui,\s*sans-serif;/);
   assert.equal(/fonts\.(?:googleapis|gstatic)\.com/i.test(stylesheet), false);
 });
 

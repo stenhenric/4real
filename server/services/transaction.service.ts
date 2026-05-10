@@ -7,6 +7,9 @@ import { DepositRepository } from '../repositories/deposit.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import type { TransactionDTO, TransactionFeedDTO } from '../types/api.ts';
 
+const MAX_UNIFIED_TRANSACTION_FETCH_LIMIT = 10_000;
+const MAX_TRANSACTION_OFFSET = 10_000;
+
 interface CreateTransactionInput {
   userId: string | mongoose.Types.ObjectId;
   type: LedgerTransactionType;
@@ -40,12 +43,27 @@ export class TransactionService {
   }
 
   static async getAllTransactions(limit: number = 100, offset: number = 0): Promise<ITransaction[]> {
-    return Transaction.find().sort({ createdAt: -1 }).skip(offset).limit(limit);
+    const requestedLimit = Math.floor(limit);
+    const requestedOffset = Math.floor(offset);
+    const normalizedLimit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(1, requestedLimit), 500)
+      : 100;
+    const normalizedOffset = Number.isFinite(requestedOffset)
+      ? Math.min(Math.max(0, requestedOffset), MAX_TRANSACTION_OFFSET)
+      : 0;
+    return Transaction.find().sort({ createdAt: -1 }).skip(normalizedOffset).limit(normalizedLimit);
   }
 
   static async getUnifiedTransactionsByUser(userId: string, page = 1, pageSize = 25): Promise<TransactionFeedDTO> {
-    const normalizedPage = Math.max(1, Math.floor(page));
-    const normalizedPageSize = Math.min(Math.max(1, Math.floor(pageSize)), 100);
+    const requestedPage = Math.floor(page);
+    const requestedPageSize = Math.floor(pageSize);
+    const normalizedPageSize = Number.isFinite(requestedPageSize)
+      ? Math.min(Math.max(1, requestedPageSize), 100)
+      : 25;
+    const maxPage = Math.max(1, Math.floor(MAX_UNIFIED_TRANSACTION_FETCH_LIMIT / normalizedPageSize));
+    const normalizedPage = Number.isFinite(requestedPage)
+      ? Math.min(Math.max(1, requestedPage), maxPage)
+      : 1;
     const fetchLimit = normalizedPage * normalizedPageSize;
     const [transactions, deposits, withdrawals] = await Promise.all([
       this.getTransactionsByUser(userId, fetchLimit),

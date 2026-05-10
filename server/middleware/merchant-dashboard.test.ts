@@ -209,6 +209,32 @@ test('merchant order controller normalizes allow-listed filters and bounds page 
   });
 });
 
+test('merchant order controller bounds deep pagination', async (t) => {
+  registerEnvCleanup(t);
+
+  const orderDeskMock = mock.method(MerchantDashboardService, 'getOrderDesk', async (filters: unknown) => ({
+    filters,
+  }));
+  t.after(() => orderDeskMock.mock.restore());
+
+  const req = {
+    query: {
+      page: '999999',
+      pageSize: '100',
+    },
+  } as unknown as AuthRequest;
+  const res = createResponseMock();
+
+  await MerchantAdminController.getOrders(req, res as any);
+
+  assert.deepEqual(orderDeskMock.mock.calls[0]?.arguments[0], {
+    page: 500,
+    pageSize: 100,
+    status: 'PENDING',
+    type: 'ALL',
+  });
+});
+
 test('getOrderDesk applies pagination metadata and derives risk flags for admin review', async (t) => {
   registerEnvCleanup(t);
 

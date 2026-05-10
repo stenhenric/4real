@@ -26,13 +26,14 @@ const OneTimeTokenSchema = new Schema<IOneTimeToken>({
     index: true,
   },
   tokenHash: { type: String, required: true, unique: true, index: true },
-  expiresAt: { type: Date, required: true, index: true },
+  expiresAt: { type: Date, required: true },
   consumedAt: { type: Date, default: null, index: true },
   metadata: { type: Schema.Types.Mixed, default: null },
 }, {
   timestamps: true,
 });
 
+OneTimeTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 OneTimeTokenSchema.index({ userId: 1, type: 1, consumedAt: 1, expiresAt: 1 });
 
 export const OneTimeToken = mongoose.model<IOneTimeToken>('OneTimeToken', OneTimeTokenSchema);

@@ -124,8 +124,8 @@ export class OrderService {
     return savedOrder;
   }
 
-  static async getOrders(userId: string, isAdmin: boolean): Promise<IOrder[]> {
-    const filter = isAdmin ? {} : { userId: new mongoose.Types.ObjectId(userId) };
+  static async getOrders(userId: string): Promise<IOrder[]> {
+    const filter = { userId: new mongoose.Types.ObjectId(userId) };
     return Order.find(filter).sort({ createdAt: -1 }).populate('userId', 'username').select('-__v');
   }
 

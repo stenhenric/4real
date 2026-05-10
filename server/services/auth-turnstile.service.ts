@@ -5,6 +5,9 @@ export async function verifyTurnstileToken(token?: string, remoteIp?: string): P
   const env = getEnv();
 
   if (!env.TURNSTILE_SECRET_KEY) {
+    if (env.NODE_ENV === 'production') {
+      throw serviceUnavailable('Bot verification is not configured', 'TURNSTILE_NOT_CONFIGURED');
+    }
     return;
   }
 

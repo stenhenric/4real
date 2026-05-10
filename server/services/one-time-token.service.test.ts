@@ -13,6 +13,14 @@ function withSanitizeFilterEnabled(t: TestContext): void {
   });
 }
 
+test('one-time token schema declares a TTL index on expiresAt', () => {
+  const ttlIndex = OneTimeToken.schema.indexes().find(([keys, options]) => (
+    keys.expiresAt === 1 && options?.expireAfterSeconds === 0
+  ));
+
+  assert(ttlIndex);
+});
+
 test('revokeActiveTokensForUser active-token operators survive mongoose sanitizeFilter', async (t) => {
   withSanitizeFilterEnabled(t);
 

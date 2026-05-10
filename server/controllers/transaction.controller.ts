@@ -21,9 +21,12 @@ import type {
   WithdrawRequest,
 } from '../validation/request-schemas.ts';
 
+const MAX_TRANSACTION_PAGE = 100;
+const MAX_TRANSACTION_OFFSET = 10_000;
+
 export const getUserTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
   assertAuthenticated(req);
-  const page = Math.max(Number(req.query.page) || 1, 1);
+  const page = Math.min(Math.max(Number(req.query.page) || 1, 1), MAX_TRANSACTION_PAGE);
   const pageSize = Math.min(Math.max(Number(req.query.pageSize) || 25, 1), 100);
   const transactions = await TransactionService.getUnifiedTransactionsByUser(req.user.id, page, pageSize);
   res.json(transactions);
@@ -31,7 +34,7 @@ export const getUserTransactions = async (req: AuthRequest, res: Response): Prom
 
 export const getAllTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
-  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const offset = Math.min(Math.max(Number(req.query.offset) || 0, 0), MAX_TRANSACTION_OFFSET);
   const transactions = await TransactionService.getAllTransactions(limit, offset);
   res.json(transactions.map((transaction) => serializeLedgerTransaction(transaction)));
 };

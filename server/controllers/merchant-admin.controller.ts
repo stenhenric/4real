@@ -21,6 +21,8 @@ import { badRequest } from '../utils/http-error.ts';
 type MerchantOrderTypeFilter = 'ALL' | 'BUY' | 'SELL';
 type MerchantOrderStatusFilter = 'ALL' | 'PENDING' | 'DONE' | 'REJECTED';
 
+const MAX_MERCHANT_ORDER_PAGE = 500;
+
 function readRequiredScalarQueryValue(
   req: AuthRequest,
   key: string,
@@ -155,7 +157,7 @@ export class MerchantAdminController {
     const page = parsePositivePageNumber(req, 'page', {
       defaultValue: 1,
       min: 1,
-      max: Number.MAX_SAFE_INTEGER,
+      max: MAX_MERCHANT_ORDER_PAGE,
       errorMessage: 'Invalid merchant order page',
       errorCode: 'INVALID_MERCHANT_ORDER_PAGE',
     });

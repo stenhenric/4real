@@ -23,14 +23,18 @@ declare global {
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 const SCRIPT_ID = 'cf-turnstile-script';
+let scriptLoadPromise: Promise<void> | null = null;
 
 function ensureScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.turnstile) {
-      resolve();
-      return;
-    }
+  if (window.turnstile) {
+    return Promise.resolve();
+  }
 
+  if (scriptLoadPromise) {
+    return scriptLoadPromise;
+  }
+
+  scriptLoadPromise = new Promise((resolve, reject) => {
     let script = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
 
     if (!script) {
@@ -42,25 +46,50 @@ function ensureScript(): Promise<void> {
       document.head.appendChild(script);
     }
 
+    const activeScript = script;
+    let settled = false;
+    let poll: number;
+    let timeout: number;
+    function cleanup() {
+      window.clearInterval(poll);
+      window.clearTimeout(timeout);
+      activeScript.removeEventListener('error', onError);
+    }
+    function succeed() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    }
+    function fail(error: Error) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      scriptLoadPromise = null;
+      reject(error);
+    }
+    function onError() {
+      fail(new Error('Failed to load Turnstile script'));
+    }
+
     // Script already in DOM but turnstile not ready yet — poll for it
-    const poll = setInterval(() => {
+    poll = window.setInterval(() => {
       if (window.turnstile) {
-        clearInterval(poll);
-        resolve();
+        succeed();
       }
     }, 50);
 
-    script.addEventListener('error', () => {
-      clearInterval(poll);
-      reject(new Error('Failed to load Turnstile script'));
-    }, { once: true });
+    activeScript.addEventListener('error', onError, { once: true });
 
     // Hard timeout safety valve
-    setTimeout(() => {
-      clearInterval(poll);
-      if (!window.turnstile) reject(new Error('Turnstile script timed out'));
+    timeout = window.setTimeout(() => {
+      if (!window.turnstile) {
+        fail(new Error('Turnstile script timed out'));
+      }
     }, 10_000);
   });
+
+  return scriptLoadPromise;
 }
 
 export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
@@ -112,12 +141,13 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
       if (!siteKey) return;
 
       let cancelled = false;
+      let renderTimer: number | undefined;
 
       ensureScript()
         .then(() => {
           if (!cancelled) {
             // Delay rendering slightly to ensure DOM is fully painted and mounted
-            setTimeout(() => {
+            renderTimer = window.setTimeout(() => {
               if (!cancelled) renderWidget();
             }, 100);
           }
@@ -129,6 +159,9 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
 
       return () => {
         cancelled = true;
+        if (renderTimer !== undefined) {
+          window.clearTimeout(renderTimer);
+        }
         if (widgetIdRef.current && window.turnstile) {
           try {
             window.turnstile.remove(widgetIdRef.current);

@@ -38,7 +38,7 @@ function createMerchantActionUrl(): string {
 export class OrderController {
   static async getOrders(req: AuthRequest, res: Response): Promise<void> {
     assertAuthenticated(req);
-    const orders = await OrderService.getOrders(req.user.id, req.user.isAdmin);
+    const orders = await OrderService.getOrders(req.user.id);
     res.json(orders.map((order) => serializeOrder(order)));
   }
 

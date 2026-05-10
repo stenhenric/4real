@@ -23,6 +23,7 @@ import { GoogleOAuthService } from '../services/google-oauth.service.ts';
 import { assertValidPassword } from '../services/password-policy.service.ts';
 import { OneTimeTokenService } from '../services/one-time-token.service.ts';
 import { hashPassword } from '../services/password-hash.service.ts';
+import { verifyTurnstileToken } from '../services/auth-turnstile.service.ts';
 import { createTotpSetup, verifyTotpCode } from '../services/totp.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { serviceUnavailable } from '../utils/http-error.ts';
@@ -132,6 +133,40 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
       delete process.env.NODE_ENV;
     } else {
       process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    resetEnvCacheForTests();
+  }
+});
+
+test('verifyTurnstileToken fails closed in production when the secret is missing', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+
+  try {
+    process.env.NODE_ENV = 'production';
+    process.env.TURNSTILE_SECRET_KEY = '';
+    resetEnvCacheForTests();
+
+    await assert.rejects(
+      () => verifyTurnstileToken('token', '127.0.0.1'),
+      (error: unknown) => typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: string; statusCode?: number }).code === 'TURNSTILE_NOT_CONFIGURED'
+        && (error as { statusCode?: number }).statusCode === 503,
+    );
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
     }
 
     resetEnvCacheForTests();
