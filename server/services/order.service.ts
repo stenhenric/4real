@@ -17,31 +17,6 @@ function withStatusTransitionSignal(
   return Object.assign(order, { statusTransitionApplied });
 }
 
-function maskPhone(phone: string | undefined): string | undefined {
-  if (!phone) return undefined;
-  // Keep country code and last 3 digits, mask the middle
-  if (phone.length > 6) {
-    const prefix = phone.startsWith('254') ? phone.substring(0, 3) : phone.substring(0, 2);
-    const suffix = phone.substring(phone.length - 3);
-    const maskLength = phone.length - prefix.length - suffix.length;
-    return `${prefix}${'*'.repeat(maskLength)}${suffix}`;
-  }
-  return '*'.repeat(phone.length);
-}
-
-function maskName(name: string | undefined): string | undefined {
-  if (!name) return undefined;
-  // Keep first letter and last letter, mask the rest
-  if (name.length > 2) {
-    const parts = name.trim().split(/\s+/);
-    return parts.map(part => {
-      if (part.length <= 2) return part;
-      return `${part[0]}${'*'.repeat(part.length - 2)}${part[part.length - 1]}`;
-    }).join(' ');
-  }
-  return name.substring(0, 1) + '*';
-}
-
 export class OrderService {
   static async createOrder({
     userId,
@@ -77,6 +52,10 @@ export class OrderService {
       const userIdString = userId.toString();
 
       if (type === 'SELL') {
+        if (!mpesaNumber || !mpesaName) {
+          throw badRequest('M-Pesa details are required for SELL orders', 'MPESA_DETAILS_REQUIRED');
+        }
+
         const updatedUser = await UserService.deductBalanceSafely(userIdString, amount, activeSession);
         if (!updatedUser) {
           throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
@@ -127,8 +106,8 @@ export class OrderService {
           fiatCurrency: savedOrder.fiatCurrency,
           exchangeRate: savedOrder.exchangeRate,
           fiatTotal: savedOrder.fiatTotal,
-          mpesaNumber: maskPhone(savedOrder.mpesaNumber),
-          mpesaName: maskName(savedOrder.mpesaName),
+          mpesaNumber: savedOrder.mpesaNumber,
+          mpesaName: savedOrder.mpesaName,
           proofProvider: savedOrder.proof?.provider,
           proofUrl: savedOrder.proof?.url,
           proofRelayQueued: proofRelayQueued === true,

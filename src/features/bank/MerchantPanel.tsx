@@ -105,11 +105,6 @@ const MerchantPanel = () => {
     ? roundMoney(amountValue * activeRateValue)
     : null;
   const fiatCurrency = merchantConfig?.fiatCurrency ?? 'KES';
-  const isValidMpesaNumber = useMemo(() => {
-    const trimmed = mpesaNumber.trim();
-    return /^(07\d{8}|254\d{9})$/.test(trimmed);
-  }, [mpesaNumber]);
-
   const buyReadyForSubmit = Boolean(
     hasValidAmount
     && rateConfigured
@@ -121,7 +116,7 @@ const MerchantPanel = () => {
   const sellReadyForSubmit = Boolean(
     hasValidAmount
     && rateConfigured
-    && isValidMpesaNumber
+    && mpesaNumber.trim().length > 0
     && mpesaName.trim().length > 0
     && paymentConfirmed
   );
@@ -178,8 +173,11 @@ const MerchantPanel = () => {
         if (!paymentConfirmed) {
           throw new Error('Please review and confirm your details before submitting.');
         }
-        if (!isValidMpesaNumber || !mpesaName.trim()) {
-          throw new Error('Please provide valid M-Pesa details.');
+        if (!mpesaNumber.trim() || !mpesaName.trim()) {
+          throw new Error('Please provide your M-Pesa details.');
+        }
+        if (!/^(07\d{8}|254\d{9})$/.test(mpesaNumber.trim())) {
+          throw new Error('Please enter a valid M-Pesa number (07XXXXXXXXX or 254XXXXXXXXX).');
         }
 
         const order = await createOrder({
@@ -481,7 +479,7 @@ const MerchantPanel = () => {
 
                         <SketchyButton
                           className="w-full py-3 text-lg uppercase tracking-tighter mt-4"
-                          disabled={!hasValidAmount || !rateConfigured || !isValidMpesaNumber || !mpesaName.trim()}
+                          disabled={!hasValidAmount || !rateConfigured || !mpesaNumber.trim() || !mpesaName.trim()}
                           onClick={() => setPaymentConfirmed(true)}
                           type="button"
                         >
