@@ -265,6 +265,11 @@ export default function SecuritySettingsPage() {
       return;
     }
 
+    if (trimmedCode && trimmedRecoveryCode) {
+      setMfaErrorMessage('Please provide either an authenticator code or a recovery code, not both.');
+      return;
+    }
+
     setDisableBusy(true);
     setMfaErrorMessage(null);
 
