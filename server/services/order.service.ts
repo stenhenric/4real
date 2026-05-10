@@ -25,6 +25,8 @@ export class OrderService {
     proof,
     proofRelayQueued,
     transactionCode,
+    mpesaNumber,
+    mpesaName,
     fiatCurrency,
     exchangeRate,
     fiatTotal,
@@ -37,6 +39,8 @@ export class OrderService {
     proof?: TelegramOrderProof | undefined;
     proofRelayQueued?: boolean | undefined;
     transactionCode?: string | undefined;
+    mpesaNumber?: string | undefined;
+    mpesaName?: string | undefined;
     fiatCurrency: 'KES';
     exchangeRate: string;
     fiatTotal: string;
@@ -64,6 +68,8 @@ export class OrderService {
         status: 'PENDING',
         ...(proof ? { proof } : {}),
         ...(transactionCode ? { transactionCode } : {}),
+        ...(mpesaNumber ? { mpesaNumber } : {}),
+        ...(mpesaName ? { mpesaName } : {}),
       }], { session: activeSession });
       savedOrder = createdOrders[0] ?? null;
 
@@ -96,6 +102,8 @@ export class OrderService {
           fiatCurrency: savedOrder.fiatCurrency,
           exchangeRate: savedOrder.exchangeRate,
           fiatTotal: savedOrder.fiatTotal,
+          mpesaNumber: savedOrder.mpesaNumber,
+          mpesaName: savedOrder.mpesaName,
           proofProvider: savedOrder.proof?.provider,
           proofUrl: savedOrder.proof?.url,
           proofRelayQueued: proofRelayQueued === true,

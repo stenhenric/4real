@@ -12,6 +12,8 @@ type CreateOrderPayload =
   | {
       type: 'SELL';
       amount: string;
+      mpesaNumber: string;
+      mpesaName: string;
     };
 
 type OrderStatus = OrderDTO['status'];
@@ -31,6 +33,9 @@ export function createOrder(payload: CreateOrderPayload) {
   if (payload.type === 'BUY') {
     form.set('transactionCode', payload.transactionCode);
     form.set('proofImage', payload.proofImage);
+  } else if (payload.type === 'SELL') {
+    form.set('mpesaNumber', payload.mpesaNumber);
+    form.set('mpesaName', payload.mpesaName);
   }
 
   return request<OrderDTO>('/orders', {

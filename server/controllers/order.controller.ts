@@ -63,8 +63,16 @@ export class OrderController {
       throw badRequest('Minimum BUY amount is 1 USDT', 'BUY_ORDER_MINIMUM_NOT_MET');
     }
 
-    if (parsedBody.type === 'SELL' && amountRaw < parseUsdtAmount('2')) {
-      throw badRequest('Minimum SELL amount is 2 USDT', 'SELL_ORDER_MINIMUM_NOT_MET');
+    if (parsedBody.type === 'SELL') {
+      if (amountRaw < parseUsdtAmount('2')) {
+        throw badRequest('Minimum SELL amount is 2 USDT', 'SELL_ORDER_MINIMUM_NOT_MET');
+      }
+      if (!parsedBody.mpesaNumber) {
+        throw badRequest('M-Pesa phone number is required for SELL orders', 'MPESA_NUMBER_REQUIRED');
+      }
+      if (!parsedBody.mpesaName) {
+        throw badRequest('M-Pesa registered name is required for SELL orders', 'MPESA_NAME_REQUIRED');
+      }
     }
 
     if (parsedBody.type === 'BUY') {
@@ -144,6 +152,8 @@ export class OrderController {
         fiatTotal,
         proofDigest,
         proofMimeType: proofImage?.contentType,
+        mpesaNumber: parsedBody.mpesaNumber,
+        mpesaName: parsedBody.mpesaName,
       },
       execute: async ({ requestHash, session }: { requestHash: string; session: ClientSession }) => {
         const order = await OrderService.createOrder({
@@ -152,6 +162,8 @@ export class OrderController {
           amount: parsedBody.amount,
           proofRelayQueued: Boolean(proofRelay),
           ...(parsedBody.transactionCode ? { transactionCode: parsedBody.transactionCode } : {}),
+          ...(parsedBody.mpesaNumber ? { mpesaNumber: parsedBody.mpesaNumber } : {}),
+          ...(parsedBody.mpesaName ? { mpesaName: parsedBody.mpesaName } : {}),
           fiatCurrency: merchantConfig.fiatCurrency,
           exchangeRate,
           fiatTotal,
@@ -213,6 +225,8 @@ export class OrderController {
         ...(responseBody.fiatTotal ? { fiatTotal: responseBody.fiatTotal } : {}),
         ...(responseBody.exchangeRate ? { exchangeRate: responseBody.exchangeRate } : {}),
         ...(responseBody.transactionCode ? { transactionCode: responseBody.transactionCode } : {}),
+        ...(responseBody.mpesaNumber ? { mpesaNumber: responseBody.mpesaNumber } : {}),
+        ...(responseBody.mpesaName ? { mpesaName: responseBody.mpesaName } : {}),
       });
     }
     res.status(result.statusCode).json(responseBody);

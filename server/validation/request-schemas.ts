@@ -214,6 +214,8 @@ export const createOrderRequestSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
   amount: positiveUsdtSchema,
   transactionCode: z.string().trim().min(1).optional(),
+  mpesaNumber: z.string().trim().regex(/^(07\d{8}|254\d{9})$/, 'Invalid M-Pesa phone number format').optional(),
+  mpesaName: z.string().trim().min(1, 'M-Pesa registered name is required').optional(),
 });
 
 export const updateOrderStatusRequestSchema = z.object({

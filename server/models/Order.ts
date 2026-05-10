@@ -17,6 +17,8 @@ export interface IOrder extends Document {
   fiatCurrency?: 'KES';
   exchangeRate?: string;
   fiatTotal?: string;
+  mpesaNumber?: string;
+  mpesaName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +32,8 @@ const OrderSchema: Schema = new Schema({
   fiatCurrency: { type: String, enum: ['KES'], trim: true },
   exchangeRate: { type: String, match: /^\d+\.\d{6}$/ },
   fiatTotal: { type: String, match: /^\d+\.\d{2}$/ },
+  mpesaNumber: { type: String, trim: true },
+  mpesaName: { type: String, trim: true },
   proof: {
     type: {
       provider: { type: String, enum: ['telegram'] },
