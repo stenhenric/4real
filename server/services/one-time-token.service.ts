@@ -33,7 +33,7 @@ export class OneTimeTokenService {
         expiresAt: { $gt: new Date() },
       }),
       { $set: { consumedAt: now } },
-      { new: true, sanitizeFilter: false },
+      { returnDocument: 'after', sanitizeFilter: false },
     );
 
     if (!document) {

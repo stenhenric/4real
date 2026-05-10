@@ -82,4 +82,6 @@ test('consume active-token operators survive mongoose sanitizeFilter', async (t)
   assert(capturedFilter.expiresAt.$gt instanceof Date);
   assert(capturedOptions);
   assert.equal(capturedOptions.sanitizeFilter, false);
+  assert.equal(capturedOptions.returnDocument, 'after');
+  assert.equal('new' in capturedOptions, false);
 });
