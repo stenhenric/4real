@@ -1,3 +1,5 @@
+let idempotencyCounter = 0;
+
 export function createIdempotencyKey(): string {
   if (typeof crypto !== 'undefined') {
     if (typeof crypto.randomUUID === 'function') {
