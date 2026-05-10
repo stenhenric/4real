@@ -9,6 +9,7 @@ import { SketchyContainer } from '../../components/SketchyContainer';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { createWithdrawal } from '../../services/transactions.service';
 import { formatMoneyValue } from '../../utils/exact-money.ts';
+import { getApiErrorMessage } from '../../utils/errors';
 
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
 const WITHDRAW_ADDRESS_ID = 'withdraw-address';
@@ -54,7 +55,7 @@ const WithdrawPanel = () => {
         return;
       }
 
-      addToast(error instanceof Error ? error.message : 'Withdrawal failed', 'error');
+      addToast(getApiErrorMessage(error, 'We could not complete the withdrawal. Please try again.'), 'error');
     } finally {
       setLoading(false);
     }

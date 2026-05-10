@@ -10,6 +10,7 @@ import { createGameSocket } from '../sockets/gameSocket';
 import { PUBLIC_MATCHES_UPDATED_EVENT } from '../../shared/socket-events';
 import { isAbortError } from '../utils/isAbortError';
 import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
+import { getApiErrorMessage } from '../utils/errors';
 import type { LeaderboardUserDTO, MatchDTO } from '../types/api';
 
 type DashboardTab = 'lobby' | 'leaderboard' | 'archives' | 'stats';
@@ -125,12 +126,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
       }
       navigate(match.inviteUrl ?? `/game/${match.roomId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Match creation failed. Please try again.';
-      if (message.toLowerCase().includes('insufficient balance')) {
-        showError('Insufficient balance to lock wager.');
-      } else {
-        showError(message);
-      }
+      showError(getApiErrorMessage(error, 'We could not create your match right now. Please try again.'));
     }
   };
 
@@ -486,7 +482,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 <span className="font-bold text-3xl italic text-green-700">{userData?.stats.wins ?? 0}</span>
               </div>
               <div className="aspect-square rough-border mt-8 flex flex-col items-center justify-center p-6 bg-paper relative overflow-hidden">
-                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle,black_1px,transparent_1px)] bg-[size:10px_10px]"></div>
+                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle,black_1px,transparent_1px)] bg-size-[10px_10px]"></div>
                 <div className="text-4xl mb-4 opacity-20">🎭</div>
                 <p className="italic opacity-30 text-center font-bold uppercase text-[10px] tracking-[0.2em] relative z-10 leading-relaxed">
                   Profile Avatar Rendering System OFFLINE

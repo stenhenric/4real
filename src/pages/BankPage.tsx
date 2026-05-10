@@ -10,6 +10,24 @@ import { isAbortError } from '../utils/isAbortError';
 import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
 import type { TransactionDTO } from '../types/api';
 
+const TRANSACTION_LABELS: Record<string, string> = {
+  DEPOSIT_CONFIRMED: 'Deposit',
+  DEPOSIT_PENDING: 'Deposit Pending',
+  WITHDRAWAL_QUEUED: 'Withdrawal',
+  WITHDRAWAL_COMPLETED: 'Withdrawal Completed',
+  WITHDRAWAL_FAILED: 'Withdrawal Failed',
+  MATCH_WINNINGS: 'Match Winnings',
+  MATCH_ENTRY_FEE: 'Match Entry',
+  MATCH_REFUND: 'Match Refund',
+  MATCH_COMMISSION_CREDIT: 'Platform Fee',
+  ORDER_BUY_CREDIT: 'Buy (Fiat)',
+  ORDER_SELL_DEBIT: 'Sell (Fiat)',
+};
+
+function formatTransactionType(type: string): string {
+  return TRANSACTION_LABELS[type] ?? type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 type BankView = 'portal' | 'merchant' | 'deposit' | 'withdraw';
 
 const DepositPanel = lazy(() => import('../features/bank/DepositPanel'));
@@ -63,7 +81,7 @@ const BankPage = () => {
           onClick={() => setActiveView('portal')}
           type="button"
         >
-          &larr; Back to Bank Portal
+          {'←'} Back to Bank Portal
         </SketchyButton>
         <Suspense fallback={<RouteLoading message="Loading bank portal..." />}>
           <ActivePanel />
@@ -155,7 +173,7 @@ const BankPage = () => {
                   </div>
                   <div>
                     <p className="font-bold text-xl uppercase tracking-tight">
-                      {transaction.type.replace(/_/g, ' ')}
+                      {formatTransactionType(transaction.type)}
                     </p>
                     <p className="text-xs font-mono opacity-50 font-bold">
                       {new Date(transaction.createdAt).toLocaleString()}

@@ -6,6 +6,7 @@ import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { requestPasswordReset } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 
 export default function ForgotPasswordPage() {
   const { info, error: showError } = useToast();
@@ -35,7 +36,7 @@ export default function ForgotPasswordPage() {
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to start password reset.');
+      showError(getApiErrorMessage(error, 'We could not send a reset link right now. Please try again.'));
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
     } finally {

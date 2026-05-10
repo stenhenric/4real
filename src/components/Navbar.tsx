@@ -4,7 +4,6 @@ import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { LogOut, Home, Landmark, ShieldCheck, User } from 'lucide-react';
 import { formatMoneyValue } from '../utils/exact-money.ts';
-import { SketchyButton } from './SketchyButton';
 
 const Navbar = () => {
   const { userData, user, logout } = useAuth();
@@ -24,7 +23,7 @@ const Navbar = () => {
   return (
     <>
       {/* ── Top navbar ── */}
-      <nav className="border-b-2 border-[#1a1a1a] bg-[#F2EFE9] sticky top-0 z-50">
+      <nav className="border-b-2 border-[#1a1a1a] bg-paper sticky top-0 z-50">
         <div className="container mx-auto px-3 md:px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3 md:gap-6">
             <Link to="/play" className="relative group">
@@ -81,22 +80,21 @@ const Navbar = () => {
               <User size={24} />
             </Link>
             
-            <SketchyButton
-              activeColor="#fee2e2"
+            <button
               aria-label="Log out"
-              className="hidden p-2 transition-colors hover:text-red-600 md:block"
+              className="hidden p-2 rounded-full transition-colors hover:bg-red-50 hover:text-red-600 md:block"
               onClick={handleLogout}
               type="button"
             >
               <LogOut size={24} />
-            </SketchyButton>
+            </button>
           </div>
         </div>
       </nav>
 
       {/* ── Mobile bottom navigation (visible only on small screens) ── */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t-2 border-[#1a1a1a] bg-[#F2EFE9]"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t-2 border-[#1a1a1a] bg-paper"
         aria-label="Mobile navigation"
       >
         <div className="flex items-center justify-around py-2">
@@ -128,17 +126,14 @@ const Navbar = () => {
             <User size={22} />
             Profile
           </NavLink>
-          <SketchyButton
-            activeColor="#fee2e2"
-            onClick={handleLogout}
-            className="px-4 py-1 text-xs font-bold text-black/50 transition-colors hover:text-red-600"
+          <button
             type="button"
+            onClick={handleLogout}
+            className="flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 text-black/50 hover:text-black/80"
           >
-            <span className="flex flex-col items-center gap-0.5">
-              <LogOut size={22} />
-              Logout
-            </span>
-          </SketchyButton>
+            <LogOut size={22} />
+            Logout
+          </button>
         </div>
       </nav>
     </>

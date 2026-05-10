@@ -19,6 +19,7 @@ import type {
 } from '../../types/api';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
+import { getApiErrorMessage } from '../../utils/errors';
 
 type DepositStatusFilter = 'open' | 'resolved';
 
@@ -70,7 +71,7 @@ export default function DepositsPage() {
       }
 
       setLoading(false);
-      showError(error instanceof Error ? error.message : 'Failed to load deposit reviews.');
+      showError(getApiErrorMessage(error, 'Could not load deposit reviews.'));
     }
   }, [showError, statusFilter]);
 
@@ -128,7 +129,7 @@ export default function DepositsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Failed to resolve deposit review.');
+      showError(getApiErrorMessage(error, 'Could not resolve that deposit review.'));
     } finally {
       setRowAction(null);
     }
@@ -160,7 +161,7 @@ export default function DepositsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Failed to replay deposit window.');
+      showError(getApiErrorMessage(error, 'Could not execute the deposit replay.'));
     } finally {
       setReplayBusy(null);
     }

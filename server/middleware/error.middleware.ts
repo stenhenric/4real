@@ -32,14 +32,14 @@ function getDuplicateKeyHttpError(error: { keyPattern?: Record<string, unknown>;
   const field = Object.keys(error.keyPattern ?? error.keyValue ?? {})[0];
 
   if (field === 'email') {
-    return conflict('Email already exists', 'EMAIL_ALREADY_EXISTS', { field });
+    return conflict('That email is already in use.', 'EMAIL_ALREADY_EXISTS', { field });
   }
 
   if (field === 'username') {
-    return conflict('Username already exists', 'USERNAME_ALREADY_EXISTS', { field });
+    return conflict('That username is already taken.', 'USERNAME_ALREADY_EXISTS', { field });
   }
 
-  return conflict('Resource already exists', 'RESOURCE_ALREADY_EXISTS', field ? { field } : undefined);
+  return conflict('That resource already exists.', 'RESOURCE_ALREADY_EXISTS', field ? { field } : undefined);
 }
 
 function toApiErrorPayload(

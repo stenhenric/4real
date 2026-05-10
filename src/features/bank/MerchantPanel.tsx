@@ -15,6 +15,7 @@ import {
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
 import { formatMoneyValue, moneyToNumber } from '../../utils/exact-money.ts';
+import { getApiErrorMessage } from '../../utils/errors';
 import type { MerchantConfigDTO, OrderDTO } from '../../types/api';
 
 type MerchantTab = 'buy' | 'sell';
@@ -194,7 +195,7 @@ const MerchantPanel = () => {
       resetTradeForm();
       await refreshUser();
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Transaction failed');
+      showError(getApiErrorMessage(error, 'We could not process that transaction. Please try again.'));
     } finally {
       setLoading(false);
     }

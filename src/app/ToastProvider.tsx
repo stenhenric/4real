@@ -98,7 +98,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         aria-atomic="true"
         aria-label="Notifications"
         aria-live="polite"
-        className="fixed bottom-4 left-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none sm:left-auto sm:w-full sm:max-w-sm"
+        className="fixed bottom-20 md:bottom-4 left-4 right-4 z-100 flex flex-col gap-2 pointer-events-none sm:left-auto sm:w-full sm:max-w-sm"
         role="region"
       >
         {toasts.map((toast) => (
@@ -115,11 +115,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             style={{ transform: `rotate(${toast.rotation}deg)` }}
           >
             <div className="min-w-0 flex-1">
-              <p className="font-bold font-sans text-sm leading-snug break-words">{toast.message}</p>
+              <p className="font-bold font-sans text-sm leading-snug wrap-break-word">{toast.message}</p>
             </div>
             <SketchyButton
               aria-label="Close"
-              className="flex-shrink-0 p-1 opacity-50 transition-opacity hover:opacity-100"
+              className="shrink-0 p-1 opacity-50 transition-opacity hover:opacity-100"
               onClick={() => removeToast(toast.id)}
               type="button"
             >

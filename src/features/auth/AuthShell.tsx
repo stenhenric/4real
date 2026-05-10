@@ -21,8 +21,8 @@ export function AuthShell({
   maxWidthClass = 'max-w-lg',
 }: AuthShellProps) {
   return (
-    <div className={cn('mx-auto', maxWidthClass)}>
-      <div className="rough-border bg-white p-8 relative shadow-xl">
+    <div className={cn('mx-auto w-full', maxWidthClass)}>
+      <div className="rough-border bg-white p-5 sm:p-8 relative shadow-xl">
         {/* Tape decoration matching app pattern */}
         <div className="tape w-20 h-6 -top-2 left-1/2 -ml-10 rotate-1" />
 

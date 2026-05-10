@@ -11,6 +11,7 @@ import { updateMerchantAdminConfig } from '../../services/merchant-config.servic
 import type { MerchantConfigDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
 import { moneyToNumber } from '../../utils/exact-money.ts';
+import { getApiErrorMessage } from '../../utils/errors';
 
 interface MerchantConfigFormState {
   mpesaNumber: string;
@@ -110,7 +111,7 @@ export default function LiquidityPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Failed to update merchant config.');
+      showError(getApiErrorMessage(error, 'Could not save merchant config.'));
     } finally {
       setSaving(false);
     }
@@ -267,7 +268,7 @@ export default function LiquidityPage() {
             </div>
 
             <form className="mt-4 space-y-4" onSubmit={handleSave}>
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 px-4 py-4">
                 <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-mpesa-number">
                   M-Pesa number
                 </label>
@@ -280,7 +281,7 @@ export default function LiquidityPage() {
                 />
               </div>
 
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 px-4 py-4">
                 <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-wallet-address">
                   Wallet address
                 </label>
@@ -294,7 +295,7 @@ export default function LiquidityPage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+                <div className="rough-border bg-black/5 px-4 py-4">
                   <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-buy-rate">
                     Buy rate ({dashboard.liquidity.merchantConfig.fiatCurrency}/USDT)
                   </label>
@@ -309,7 +310,7 @@ export default function LiquidityPage() {
                     value={formState?.buyRateKesPerUsdt ?? ''}
                   />
                 </div>
-                <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+                <div className="rough-border bg-black/5 px-4 py-4">
                   <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-sell-rate">
                     Sell rate ({dashboard.liquidity.merchantConfig.fiatCurrency}/USDT)
                   </label>
@@ -326,12 +327,12 @@ export default function LiquidityPage() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 px-4 py-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Fiat currency</p>
                 <p className="mt-2 text-sm font-mono">{dashboard.liquidity.merchantConfig.fiatCurrency}</p>
               </div>
 
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 px-4 py-4">
                 <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-instructions">
                   Instructions
                 </label>

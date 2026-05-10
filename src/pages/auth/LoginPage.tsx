@@ -245,8 +245,7 @@ export default function LoginPage() {
                 </SketchyButton>
 
                 <SketchyButton
-                  className="w-full rounded-[20px] border-2 border-black/10 bg-white px-4 py-3 text-sm font-bold text-black/60 transition-colors hover:bg-black/5 hover:text-black focus:outline-none focus:border-ink-blue"
-                  fill="#ffffff"
+                  className="w-full py-3 text-sm font-bold text-black/60 opacity-70 hover:opacity-100 transition-opacity"
                   onClick={() => requireEmail() && setStep('magic_link_verification')}
                   type="button"
                 >
@@ -259,13 +258,13 @@ export default function LoginPage() {
 
         {step === 'password_entry' && (
           <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handlePasswordLogin}>
-            <SketchyButton
-              type="button" 
+            <button
+              type="button"
               onClick={resetStep}
               className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
             >
               ← Back to options
-            </SketchyButton>
+            </button>
             
             <AuthInput
               autoComplete="username"
@@ -313,13 +312,13 @@ export default function LoginPage() {
 
         {step === 'magic_link_verification' && (
           <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handleMagicLinkSubmit}>
-            <SketchyButton
-              type="button" 
+            <button
+              type="button"
               onClick={resetStep}
               className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
             >
               ← Back to options
-            </SketchyButton>
+            </button>
 
             <AuthNotice tone="info">
               Verify you are human to send a magic link to {identifier.trim()}.

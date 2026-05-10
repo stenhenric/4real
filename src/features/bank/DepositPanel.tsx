@@ -7,6 +7,7 @@ import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { useToast } from '../../app/ToastProvider';
 import { createDepositMemo, prepareTonConnectDeposit } from '../../services/transactions.service';
 import type { DepositMemoDTO } from '../../types/api';
+import { getApiErrorMessage } from '../../utils/errors';
 
 const DEPOSIT_ADDRESS_ID = 'deposit-address';
 const DEPOSIT_MEMO_ID = 'deposit-memo';
@@ -55,7 +56,7 @@ const DepositPanel = () => {
       await tonConnectUI.sendTransaction(prepared.transaction);
       addToast('Transaction sent. Awaiting confirmation.', 'success');
     } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Transaction failed', 'error');
+      addToast(getApiErrorMessage(error, 'We could not complete that transaction. Please try again.'), 'error');
     } finally {
       setSendingTransaction(false);
     }
@@ -69,7 +70,7 @@ const DepositPanel = () => {
       setMemoData(data);
       addToast('Deposit memo generated.', 'success');
     } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Failed to generate memo', 'error');
+      addToast(getApiErrorMessage(error, 'We could not generate a deposit memo. Please try again.'), 'error');
     } finally {
       setLoading(false);
     }

@@ -6,6 +6,7 @@ import { useAuth } from '../../app/AuthProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { getPostAuthRedirectPath } from '../../features/auth/auth-routing';
 import { consumeVerificationEmail, resendVerificationEmail } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 
 function getVerificationError(value: string | null) {
   if (value === 'missing') {
@@ -58,7 +59,7 @@ export default function VerifyEmailPage() {
       })
       .catch((error) => {
         setConsumeError('That verification link is invalid or expired. Request a fresh one below.');
-        showError(error instanceof Error ? error.message : 'Unable to verify your email.');
+        showError(getApiErrorMessage(error, 'Unable to verify your email. Please request a fresh link.'));
         setConsuming(false);
       });
   }, [navigate, setAuthStateFromResponse, showError, success, token]);
@@ -72,7 +73,7 @@ export default function VerifyEmailPage() {
       setPreviewUrl(response.previewUrl ?? null);
       info(response.message ?? 'If it exists, a verification email is on the way.');
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to resend verification email.');
+      showError(getApiErrorMessage(error, 'We could not resend the verification email. Please try again.'));
     } finally {
       setLoading(false);
     }

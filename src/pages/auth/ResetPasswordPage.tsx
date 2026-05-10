@@ -4,6 +4,7 @@ import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { resetPassword } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -39,7 +40,7 @@ export default function ResetPasswordPage() {
       success(response.message ?? 'Password updated.');
       navigate('/auth/login', { replace: true });
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to reset your password.');
+      showError(getApiErrorMessage(error, 'We could not reset your password right now. Please try again.'));
     } finally {
       setLoading(false);
     }

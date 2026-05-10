@@ -5,6 +5,7 @@ import { useToast } from '../../app/ToastProvider';
 import { AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { getPostAuthRedirectPath } from '../../features/auth/auth-routing';
 import { consumeSuspiciousLogin } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 
 export default function ApproveLoginPage() {
   const navigate = useNavigate();
@@ -36,7 +37,7 @@ export default function ApproveLoginPage() {
       })
       .catch((error) => {
         setConsumeError('That sign-in approval link is invalid or expired. Start the sign-in flow again.');
-        showError(error instanceof Error ? error.message : 'Unable to approve this sign-in.');
+        showError(getApiErrorMessage(error, 'Unable to approve this sign-in.'));
         setConsuming(false);
       });
   }, [navigate, setAuthStateFromResponse, showError, success, token]);

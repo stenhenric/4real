@@ -49,7 +49,7 @@ export const SketchyButton = ({
     <button
       ref={elementRef}
       onMouseEnter={(event) => {
-        setHovered(true);
+        if (!props.disabled) setHovered(true);
         onMouseEnter?.(event);
       }}
       onMouseLeave={(event) => {

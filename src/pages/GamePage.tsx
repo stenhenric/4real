@@ -12,6 +12,7 @@ import { useGameRoom } from '../features/game/useGameRoom';
 import { getMatch, joinMatch, resignMatch } from '../services/matches.service';
 import { cn } from '../utils/cn';
 import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
+import { getApiErrorMessage } from '../utils/errors';
 import type { MatchDTO } from '../types/api';
 
 const BOARD_COLUMNS = Array.from({ length: 7 }, (_, index) => index);
@@ -21,7 +22,7 @@ const GamePage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, userData, refreshUser } = useAuth();
-  const { warning } = useToast();
+  const { error: showError } = useToast();
   const copyToClipboard = useCopyToClipboard();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousRoomStatusRef = useRef<string | null>(null);
@@ -38,7 +39,7 @@ const GamePage = () => {
     ...(user?.id ? { userId: user.id } : {}),
     enabled: roomAccessReady && Boolean(roomId && user?.id),
     onRoomError: (message) => {
-      warning(message);
+      showError(message);
       navigate('/play');
     },
     onGameOver: async (nextGameOver) => {
@@ -75,7 +76,7 @@ const GamePage = () => {
 
         setRoomAccessReady(false);
         if (match.status !== 'waiting') {
-          warning('This match is no longer open for new players.');
+          showError('This match is no longer open for new players.');
           navigate('/play');
         }
       })
@@ -84,7 +85,7 @@ const GamePage = () => {
           return;
         }
 
-        warning(error instanceof Error ? error.message : 'Unable to load match.');
+        showError(getApiErrorMessage(error, 'We could not load that match. Returning to lobby.'));
         navigate('/play');
       })
       .finally(() => {
@@ -96,7 +97,7 @@ const GamePage = () => {
     return () => {
       controller.abort();
     };
-  }, [inviteToken, navigate, roomId, user?.id, warning]);
+  }, [inviteToken, navigate, roomId, user?.id, showError]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -148,7 +149,7 @@ const GamePage = () => {
         await refreshUser();
       }
     } catch (error) {
-      warning(error instanceof Error ? error.message : 'Unable to join this match.');
+      showError(getApiErrorMessage(error, 'We could not join that match. Please try again.'));
       navigate('/play');
     } finally {
       setJoining(false);
@@ -167,7 +168,7 @@ const GamePage = () => {
       await refreshUser();
       navigate('/play');
     } catch (error) {
-      warning(error instanceof Error ? error.message : 'Unable to resign the match.');
+      showError(getApiErrorMessage(error, 'We could not resign that match. Please try again.'));
     } finally {
       setResigning(false);
     }

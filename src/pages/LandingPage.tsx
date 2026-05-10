@@ -140,7 +140,7 @@ export default function LandingPage() {
         aria-labelledby="hero-heading"
         className="animate-in fade-in duration-400"
       >
-        <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-start">
+        <div className="grid gap-8 md:grid-cols-[1fr_1.1fr] md:items-start">
 
           {/* Left — Board preview */}
           <div className="rough-border bg-white p-5 relative shadow-xl">
@@ -237,7 +237,7 @@ export default function LandingPage() {
               {!user && (
                 <Link
                   to="/auth/login"
-                  className="text-sm font-bold opacity-50 hover:opacity-100 transition-opacity py-3 underline"
+                  className="text-sm font-bold text-black/70 hover:text-black transition-colors py-3 underline"
                 >
                   Already have an account?
                 </Link>
@@ -365,7 +365,7 @@ export default function LandingPage() {
             {!user && (
               <Link
                 to="/auth/login"
-                className="text-sm font-bold opacity-50 hover:opacity-100 transition-opacity underline"
+                className="text-sm font-bold text-black/70 hover:text-black transition-colors underline"
               >
                 Sign in instead
               </Link>

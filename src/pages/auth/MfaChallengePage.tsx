@@ -10,6 +10,7 @@ import {
 } from '../../features/auth/AuthShell';
 import { getPostAuthPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { completeMfaChallenge } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 
 function addVerifiedFlag(path: string) {
   const separator = path.includes('?') ? '&' : '?';
@@ -56,7 +57,7 @@ export default function MfaChallengePage() {
       success('Verification complete.');
       navigate(returnTo ? addVerifiedFlag(returnTo) : '/auth/security?verified=1', { replace: true });
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to complete verification.');
+      showError(getApiErrorMessage(error, 'Unable to complete verification.'));
     } finally {
       setLoading(false);
     }

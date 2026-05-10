@@ -10,6 +10,7 @@ import { AuthInput } from '../../features/auth/components/AuthInput';
 import { PasswordInput } from '../../features/auth/components/PasswordInput';
 import { buildVerifyEmailPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { registerAccount, requestGoogleOAuthRedirect } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 import { ApiClientError } from '../../services/api/apiClient';
 
 type RegisterStep = 'account_details' | 'verification';
@@ -44,7 +45,7 @@ export default function RegisterPage() {
       window.location.assign(response.redirectTo);
     } catch (error) {
       setGoogleLoading(false);
-      showError(error instanceof Error ? error.message : 'Unable to start Google sign-in.');
+      showError(getApiErrorMessage(error, 'Unable to start Google sign-in.'));
     }
   };
 
@@ -98,7 +99,7 @@ export default function RegisterPage() {
         setUsernameError('That username is already taken. Please choose another.');
         setTurnstileToken(undefined);
       } else {
-        showError(error instanceof Error ? error.message : 'Unable to create your account right now.');
+        showError(getApiErrorMessage(error, 'We could not create your account right now. Please try again.'));
         turnstileRef.current?.reset();
         setTurnstileToken(undefined);
       }

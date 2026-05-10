@@ -13,6 +13,7 @@ import { updateOrderStatus } from '../../services/orders.service';
 import type { MerchantOrderDeskResponseDTO, OrderDTO } from '../../types/api';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
+import { getApiErrorMessage } from '../../utils/errors';
 
 type OrderTypeFilter = 'ALL' | 'BUY' | 'SELL';
 type OrderStatusFilter = 'ALL' | OrderDTO['status'];
@@ -57,7 +58,7 @@ export default function OrderDeskPage() {
       }
 
       setLoading(false);
-      showError(error instanceof Error ? error.message : 'Failed to load merchant orders.');
+      showError(getApiErrorMessage(error, 'Could not load merchant orders.'));
     }
   }, [page, showError, statusFilter, typeFilter]);
 
@@ -85,7 +86,7 @@ export default function OrderDeskPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Failed to update order.');
+      showError(getApiErrorMessage(error, 'Could not update that order.'));
     } finally {
       setRowAction(null);
     }
@@ -124,20 +125,25 @@ export default function OrderDeskPage() {
             </SketchyButton>
           ))}
 
-          <select
-            className="rounded-full border-2 border-black/10 bg-white px-4 py-2 text-sm font-bold"
-            onChange={(event) => {
-              setPage(1);
-              setStatusFilter(event.target.value as OrderStatusFilter);
-            }}
-            value={statusFilter}
-          >
-            {ORDER_STATUS_FILTERS.map((filter) => (
-              <option key={filter} value={filter}>
-                {filter}
-              </option>
-            ))}
-          </select>
+          {ORDER_STATUS_FILTERS.map((filter) => (
+            <SketchyButton
+              key={filter}
+              className={cn(
+                'rounded-full border-2 px-4 py-2 text-sm font-bold transition-colors',
+                statusFilter === filter
+                  ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
+                  : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
+              )}
+              fill={statusFilter === filter ? '#dbeafe' : '#ffffff'}
+              onClick={() => {
+                setPage(1);
+                setStatusFilter(filter);
+              }}
+              type="button"
+            >
+              {filter}
+            </SketchyButton>
+          ))}
         </div>
       </div>
 

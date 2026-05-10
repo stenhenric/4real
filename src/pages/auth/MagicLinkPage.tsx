@@ -5,6 +5,7 @@ import { useToast } from '../../app/ToastProvider';
 import { AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { getPostAuthRedirectPath } from '../../features/auth/auth-routing';
 import { consumeMagicLink } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 
 export default function MagicLinkPage() {
   const navigate = useNavigate();
@@ -36,7 +37,7 @@ export default function MagicLinkPage() {
       })
       .catch((error) => {
         setConsumeError('That sign-in link is invalid or expired. Request a fresh magic link to continue.');
-        showError(error instanceof Error ? error.message : 'Unable to complete magic-link sign-in.');
+        showError(getApiErrorMessage(error, 'Unable to complete magic-link sign-in.'));
         setConsuming(false);
       });
   }, [navigate, setAuthStateFromResponse, showError, success, token]);

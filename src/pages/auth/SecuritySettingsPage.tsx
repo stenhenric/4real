@@ -24,6 +24,7 @@ import {
 } from '../../features/auth/AuthShell';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { SECURITY_PAGE_COPY, shouldAutoStartTotpSetup } from './security-page-content';
+import { getApiErrorMessage } from '../../utils/errors';
 
 function formatSessionLabel(session: SessionListItemDTO) {
   const seen = new Date(session.lastSeenAt).toLocaleString();
@@ -114,7 +115,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to load active devices.');
+      showError(getApiErrorMessage(error, 'We could not load your active devices. Try refreshing the page.'));
     }
   }, [showError]);
 
@@ -145,7 +146,7 @@ export default function SecuritySettingsPage() {
       setSetupCode('');
       info('Authenticator ready. Enter the 6-digit code.');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to start MFA setup.';
+      const message = getApiErrorMessage(error, 'We could not start MFA setup. Please try again.');
       setMfaErrorMessage(message);
       showError(message);
     } finally {
@@ -227,7 +228,7 @@ export default function SecuritySettingsPage() {
 
       success('Multi-factor authentication enabled.');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to verify MFA setup.';
+      const message = getApiErrorMessage(error, 'We could not verify the authenticator code. Please try again.');
       setMfaErrorMessage(message);
       showError(message);
     } finally {
@@ -248,7 +249,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to regenerate recovery codes.');
+      showError(getApiErrorMessage(error, 'We could not regenerate your recovery codes. Please try again.'));
     } finally {
       setRecoveryBusy(false);
     }
@@ -295,7 +296,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      const message = error instanceof Error ? error.message : 'Unable to disable MFA.';
+      const message = getApiErrorMessage(error, 'We could not disable MFA. Please try again.');
       setMfaErrorMessage(message);
       showError(message);
     } finally {
@@ -322,7 +323,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to remove that device.');
+      showError(getApiErrorMessage(error, 'We could not remove that device. Please try again.'));
     } finally {
       setSessionAction(null);
     }
@@ -340,7 +341,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to sign out other devices.');
+      showError(getApiErrorMessage(error, 'We could not sign out other devices. Please try again.'));
     } finally {
       setSessionAction(null);
     }

@@ -146,6 +146,30 @@ export class InternalServerAppError extends HttpError {
   }
 }
 
+/**
+ * Use when a call to a third-party service (email, OAuth, blockchain, payment
+ * processor, etc.) fails.  The message is exposed to the client as a generic
+ * "service unavailable" notice; internal detail should be logged separately.
+ */
+export class ExternalServiceError extends HttpError {
+  constructor(message: string, code = deriveErrorCode(message, 'EXTERNAL_SERVICE_ERROR'), details?: unknown) {
+    super(503, code, message, true, details);
+    this.name = 'ExternalServiceError';
+  }
+}
+
+/**
+ * Use when a database operation fails (connection error, unexpected query
+ * failure, etc.).  `expose` is false so the raw DB detail never reaches the
+ * client — the middleware will substitute a generic 500 message.
+ */
+export class DatabaseError extends HttpError {
+  constructor(message: string, code = deriveErrorCode(message, 'DATABASE_ERROR'), details?: unknown) {
+    super(500, code, message, false, details);
+    this.name = 'DatabaseError';
+  }
+}
+
 export const badRequest = (message: string, code = deriveErrorCode(message, 'BAD_REQUEST'), details?: unknown) =>
   new ValidationError(message, code, details);
 export const unauthorized = (message: string, code = deriveErrorCode(message, 'UNAUTHORIZED'), details?: unknown) =>
@@ -176,3 +200,13 @@ export const serviceUnavailable = (
   code = deriveErrorCode(message, 'SERVICE_UNAVAILABLE'),
   details?: unknown,
 ) => new ServiceUnavailableError(message, code, details);
+export const externalServiceError = (
+  message: string,
+  code = deriveErrorCode(message, 'EXTERNAL_SERVICE_ERROR'),
+  details?: unknown,
+) => new ExternalServiceError(message, code, details);
+export const databaseError = (
+  message: string,
+  code = deriveErrorCode(message, 'DATABASE_ERROR'),
+  details?: unknown,
+) => new DatabaseError(message, code, details);

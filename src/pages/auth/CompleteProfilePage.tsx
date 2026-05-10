@@ -5,6 +5,7 @@ import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { completeProfile } from '../../services/auth.service';
+import { getApiErrorMessage } from '../../utils/errors';
 
 export default function CompleteProfilePage() {
   const navigate = useNavigate();
@@ -23,7 +24,7 @@ export default function CompleteProfilePage() {
       success('Profile completed.');
       navigate('/play', { replace: true });
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to complete your profile.');
+      showError(getApiErrorMessage(error, 'We could not save your profile right now. Please try again.'));
     } finally {
       setLoading(false);
     }
