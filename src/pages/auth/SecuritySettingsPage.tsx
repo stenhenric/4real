@@ -217,6 +217,14 @@ export default function SecuritySettingsPage() {
       setRecoveryCodes(response.recoveryCodes ?? []);
       setSetup(null);
       setSetupCode('');
+
+      if (searchParams.has('setup') || searchParams.has('verified')) {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('setup');
+        newParams.delete('verified');
+        navigate({ search: newParams.toString() }, { replace: true });
+      }
+
       success('Multi-factor authentication enabled.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to verify MFA setup.';
@@ -248,17 +256,39 @@ export default function SecuritySettingsPage() {
 
   const handleDisableMfa = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    const trimmedCode = disableCode.trim();
+    const trimmedRecoveryCode = disableRecoveryCode.trim();
+
+    if (!trimmedCode && !trimmedRecoveryCode) {
+      setMfaErrorMessage('Please provide either an authenticator code or a recovery code.');
+      return;
+    }
+
+    if (trimmedCode && trimmedRecoveryCode) {
+      setMfaErrorMessage('Please provide either an authenticator code or a recovery code, not both.');
+      return;
+    }
+
     setDisableBusy(true);
     setMfaErrorMessage(null);
 
     try {
       const response = await disableMfa({
-        ...(disableRecoveryCode.trim() ? { recoveryCode: disableRecoveryCode.trim() } : { code: disableCode }),
+        ...(trimmedRecoveryCode ? { recoveryCode: trimmedRecoveryCode } : { code: trimmedCode }),
       });
       setAuthStateFromResponse(response);
       setRecoveryCodes([]);
       setDisableCode('');
       setDisableRecoveryCode('');
+
+      if (searchParams.has('setup') || searchParams.has('verified')) {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('setup');
+        newParams.delete('verified');
+        navigate({ search: newParams.toString() }, { replace: true });
+      }
+
       success('Multi-factor authentication disabled.');
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {

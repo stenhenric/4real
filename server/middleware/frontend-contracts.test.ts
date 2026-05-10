@@ -303,4 +303,28 @@ test('security page auto-start helper only runs when setup is required and idle'
     setupBusy: false,
     autoStartAttempted: false,
   }), false);
+
+  assert.equal(shouldAutoStartTotpSetup({
+    setupRequested: true,
+    mfaEnabled: false,
+    hasSetup: false,
+    setupBusy: true,
+    autoStartAttempted: false,
+  }), false);
+
+  assert.equal(shouldAutoStartTotpSetup({
+    setupRequested: true,
+    mfaEnabled: false,
+    hasSetup: false,
+    setupBusy: false,
+    autoStartAttempted: true,
+  }), false);
+
+  assert.equal(shouldAutoStartTotpSetup({
+    setupRequested: true,
+    mfaEnabled: false,
+    hasSetup: false,
+    setupBusy: true,
+    autoStartAttempted: true,
+  }), false);
 });

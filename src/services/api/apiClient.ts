@@ -118,7 +118,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
 
   try {
     const contentType = response.headers.get('content-type');
-    if (contentType?.includes('application/json')) {
+    if (contentType?.includes('application/json') || contentType?.includes('application/problem+json')) {
       data = await response.json();
     } else {
       data = await response.text();
