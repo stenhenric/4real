@@ -72,8 +72,8 @@ export class OrderService {
         status: 'PENDING',
         ...(proof ? { proof } : {}),
         ...(transactionCode ? { transactionCode } : {}),
-        ...(mpesaNumber ? { mpesaNumber } : {}),
-        ...(mpesaName ? { mpesaName } : {}),
+        ...(type === 'SELL' && mpesaNumber ? { mpesaNumber } : {}),
+        ...(type === 'SELL' && mpesaName ? { mpesaName } : {}),
       }], { session: activeSession });
       savedOrder = createdOrders[0] ?? null;
 
