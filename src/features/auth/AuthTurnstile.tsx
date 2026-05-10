@@ -92,11 +92,24 @@ function ensureScript(): Promise<void> {
   return scriptLoadPromise;
 }
 
+const generateSecureId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    return Array.from(crypto.getRandomValues(new Uint8Array(8)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  // Fallback if no crypto available at all (unlikely in modern browsers)
+  return Date.now().toString(36);
+};
+
 export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
   ({ onSuccess, onError, onExpire }, ref) => {
     const siteKey = getTurnstileSiteKey();
 
-    const containerIdRef = useRef(`turnstile-${Math.random().toString(36).slice(2, 11)}`);
+    const containerIdRef = useRef(`turnstile-${generateSecureId()}`);
     const widgetIdRef = useRef<string | null>(null);
 
     // Stable callback refs — changing the JS callbacks won't cause the widget

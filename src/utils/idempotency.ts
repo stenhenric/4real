@@ -3,5 +3,9 @@ export function createIdempotencyKey(): string {
     return crypto.randomUUID();
   }
 
-  return `idempotency-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const randomPart = typeof crypto !== 'undefined' && crypto.getRandomValues
+    ? Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, '0')).join('')
+    : Math.random().toString(16).slice(2);
+
+  return `idempotency-${Date.now()}-${randomPart}`;
 }
