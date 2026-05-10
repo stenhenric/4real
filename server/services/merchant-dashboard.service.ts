@@ -279,7 +279,7 @@ async function fetchOrders(options: {
   const query = Order.find(options.filter)
     .sort({ createdAt: -1 })
     .populate('userId', 'username createdAt')
-    .select('userId type amount status proof transactionCode fiatCurrency exchangeRate fiatTotal createdAt');
+    .select('userId type amount status proof transactionCode mpesaNumber mpesaName fiatCurrency exchangeRate fiatTotal createdAt');
 
   if (options.page !== undefined && options.pageSize !== undefined) {
     query.skip((options.page - 1) * options.pageSize).limit(options.pageSize);

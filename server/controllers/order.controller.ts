@@ -152,8 +152,8 @@ export class OrderController {
         fiatTotal,
         proofDigest,
         proofMimeType: proofImage?.contentType,
-        mpesaNumber: parsedBody.mpesaNumber,
-        mpesaName: parsedBody.mpesaName,
+        ...(parsedBody.type === 'SELL' && parsedBody.mpesaNumber ? { mpesaNumber: parsedBody.mpesaNumber } : {}),
+        ...(parsedBody.type === 'SELL' && parsedBody.mpesaName ? { mpesaName: parsedBody.mpesaName } : {}),
       },
       execute: async ({ requestHash, session }: { requestHash: string; session: ClientSession }) => {
         const order = await OrderService.createOrder({
@@ -162,8 +162,8 @@ export class OrderController {
           amount: parsedBody.amount,
           proofRelayQueued: Boolean(proofRelay),
           ...(parsedBody.transactionCode ? { transactionCode: parsedBody.transactionCode } : {}),
-          ...(parsedBody.mpesaNumber ? { mpesaNumber: parsedBody.mpesaNumber } : {}),
-          ...(parsedBody.mpesaName ? { mpesaName: parsedBody.mpesaName } : {}),
+          ...(parsedBody.type === 'SELL' && parsedBody.mpesaNumber ? { mpesaNumber: parsedBody.mpesaNumber } : {}),
+          ...(parsedBody.type === 'SELL' && parsedBody.mpesaName ? { mpesaName: parsedBody.mpesaName } : {}),
           fiatCurrency: merchantConfig.fiatCurrency,
           exchangeRate,
           fiatTotal,
