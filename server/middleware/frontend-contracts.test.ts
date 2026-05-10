@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test, { mock } from 'node:test';
 
 import {
@@ -248,4 +249,58 @@ test('frontend auth service sends password login identifiers', async (t) => {
       },
     ],
   );
+});
+
+test('security page copy uses settings-oriented MFA guidance', () => {
+  const pageSource = readFileSync(join('src', 'pages', 'auth', 'SecuritySettingsPage.tsx'), 'utf8');
+  const contentSource = readFileSync(join('src', 'pages', 'auth', 'security-page-content.ts'), 'utf8');
+
+  assert.match(contentSource, /Protect your account\./);
+  assert.match(contentSource, /Set up your authenticator/);
+  assert.match(contentSource, /Recovery codes/);
+  assert.match(contentSource, /Active devices/);
+  assert.match(contentSource, /Turn off MFA/);
+  assert.doesNotMatch(contentSource, /Control access from one place\./);
+  assert.doesNotMatch(contentSource, /Device sessions/);
+  assert.match(pageSource, /SECURITY_PAGE_COPY/);
+});
+
+test('security page auto-start helper only runs when setup is required and idle', async () => {
+  const helperPath = join(process.cwd(), 'src', 'pages', 'auth', 'security-page-content.ts');
+
+  assert.equal(existsSync(helperPath), true, 'Expected security page helper module to exist');
+
+  const { shouldAutoStartTotpSetup } = await import(pathToFileURL(helperPath).href);
+
+  assert.equal(shouldAutoStartTotpSetup({
+    setupRequested: true,
+    mfaEnabled: false,
+    hasSetup: false,
+    setupBusy: false,
+    autoStartAttempted: false,
+  }), true);
+
+  assert.equal(shouldAutoStartTotpSetup({
+    setupRequested: false,
+    mfaEnabled: false,
+    hasSetup: false,
+    setupBusy: false,
+    autoStartAttempted: false,
+  }), false);
+
+  assert.equal(shouldAutoStartTotpSetup({
+    setupRequested: true,
+    mfaEnabled: true,
+    hasSetup: false,
+    setupBusy: false,
+    autoStartAttempted: false,
+  }), false);
+
+  assert.equal(shouldAutoStartTotpSetup({
+    setupRequested: true,
+    mfaEnabled: false,
+    hasSetup: true,
+    setupBusy: false,
+    autoStartAttempted: false,
+  }), false);
 });

@@ -8,6 +8,7 @@ interface AuthShellProps {
   children: React.ReactNode;
   aside?: React.ReactNode;
   footer?: React.ReactNode;
+  maxWidthClass?: string;
 }
 
 export function AuthShell({
@@ -17,9 +18,10 @@ export function AuthShell({
   children,
   aside,
   footer,
+  maxWidthClass = 'max-w-lg',
 }: AuthShellProps) {
   return (
-    <div className="mx-auto max-w-lg">
+    <div className={cn('mx-auto', maxWidthClass)}>
       <div className="rough-border bg-white p-8 relative shadow-xl">
         {/* Tape decoration matching app pattern */}
         <div className="tape w-20 h-6 -top-2 left-1/2 -ml-10 rotate-1" />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Copy, KeyRound, Laptop2, RefreshCcw, ShieldCheck, Smartphone, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
@@ -23,10 +23,47 @@ import {
   AuthShell,
 } from '../../features/auth/AuthShell';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
+import { SECURITY_PAGE_COPY, shouldAutoStartTotpSetup } from './security-page-content';
 
 function formatSessionLabel(session: SessionListItemDTO) {
   const seen = new Date(session.lastSeenAt).toLocaleString();
   return `${session.userAgent ?? 'Unknown device'} • Last seen ${seen}`;
+}
+
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[24px] border border-black/10 bg-black/5 px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/45">{label}</p>
+      <p className="mt-2 text-lg font-black">{value}</p>
+    </div>
+  );
+}
+
+function SetupStep({
+  step,
+  title,
+  description,
+  children,
+}: {
+  step: 1 | 2 | 3;
+  title: string;
+  description: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-[28px] border border-black/10 bg-paper/70 p-4 sm:p-5">
+      <div className="flex gap-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-ink-blue bg-white text-lg font-black text-ink-blue">
+          {step}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-xl font-black">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-black/65">{description}</p>
+          {children ? <div className="mt-4">{children}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function SecuritySettingsPage() {
@@ -42,6 +79,7 @@ export default function SecuritySettingsPage() {
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [disableBusy, setDisableBusy] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [mfaErrorMessage, setMfaErrorMessage] = useState<string | null>(null);
   const [setup, setSetup] = useState<{
     setupToken: string;
     totpSecret: string;
@@ -51,6 +89,7 @@ export default function SecuritySettingsPage() {
   const [disableCode, setDisableCode] = useState('');
   const [disableRecoveryCode, setDisableRecoveryCode] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const autoStartAttemptedRef = useRef(false);
 
   const setupRequested = searchParams.get('setup') === '1';
   const recentlyVerified = searchParams.get('verified') === '1';
@@ -75,7 +114,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to load device sessions.');
+      showError(error instanceof Error ? error.message : 'Unable to load active devices.');
     }
   }, [showError]);
 
@@ -88,13 +127,9 @@ export default function SecuritySettingsPage() {
     };
   }, [loadSessions]);
 
-  const otherSessions = useMemo(
-    () => sessions.filter((session) => session.id !== currentSession?.id),
-    [currentSession?.id, sessions],
-  );
-
-  const handleStartSetup = async () => {
+  const handleStartSetup = useCallback(async () => {
     setSetupBusy(true);
+    setMfaErrorMessage(null);
 
     try {
       const response = await startTotpSetup();
@@ -108,13 +143,60 @@ export default function SecuritySettingsPage() {
         otpauthUrl: response.otpauthUrl,
       });
       setSetupCode('');
-      info('Scan secret, then enter a 6-digit code.');
+      info('Authenticator ready. Enter the 6-digit code.');
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to start MFA setup.');
+      const message = error instanceof Error ? error.message : 'Unable to start MFA setup.';
+      setMfaErrorMessage(message);
+      showError(message);
     } finally {
       setSetupBusy(false);
     }
-  };
+  }, [info, showError]);
+
+  useEffect(() => {
+    if (!shouldAutoStartTotpSetup({
+      setupRequested,
+      mfaEnabled,
+      hasSetup: setup !== null,
+      setupBusy,
+      autoStartAttempted: autoStartAttemptedRef.current,
+    })) {
+      return;
+    }
+
+    autoStartAttemptedRef.current = true;
+    void handleStartSetup();
+  }, [handleStartSetup, mfaEnabled, setup, setupBusy, setupRequested]);
+
+  const otherSessions = useMemo(
+    () => sessions.filter((session) => session.id !== currentSession?.id),
+    [currentSession?.id, sessions],
+  );
+
+  const summaryItems = useMemo(() => ([
+    {
+      label: SECURITY_PAGE_COPY.summary.email,
+      value: userData?.emailVerifiedAt ? 'Verified' : 'Pending',
+    },
+    {
+      label: SECURITY_PAGE_COPY.summary.password,
+      value: userData?.hasPassword ? 'Enabled' : 'Not set',
+    },
+    {
+      label: SECURITY_PAGE_COPY.summary.mfa,
+      value: mfaEnabled ? 'Enabled' : 'Not set',
+    },
+    {
+      label: SECURITY_PAGE_COPY.summary.device,
+      value: currentSession ? 'Tracked' : 'Unavailable',
+    },
+  ]), [currentSession, mfaEnabled, userData?.emailVerifiedAt, userData?.hasPassword]);
+
+  const mfaBadgeLabel = mfaEnabled
+    ? SECURITY_PAGE_COPY.mfa.setupEnabled
+    : setup
+      ? SECURITY_PAGE_COPY.mfa.setupInProgress
+      : SECURITY_PAGE_COPY.mfa.setupRecommended;
 
   const handleVerifySetup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -123,6 +205,7 @@ export default function SecuritySettingsPage() {
     }
 
     setVerifyBusy(true);
+    setMfaErrorMessage(null);
 
     try {
       const response = await verifyTotpSetup({
@@ -136,7 +219,9 @@ export default function SecuritySettingsPage() {
       setSetupCode('');
       success('Multi-factor authentication enabled.');
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Unable to verify MFA setup.');
+      const message = error instanceof Error ? error.message : 'Unable to verify MFA setup.';
+      setMfaErrorMessage(message);
+      showError(message);
     } finally {
       setVerifyBusy(false);
     }
@@ -164,6 +249,7 @@ export default function SecuritySettingsPage() {
   const handleDisableMfa = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setDisableBusy(true);
+    setMfaErrorMessage(null);
 
     try {
       const response = await disableMfa({
@@ -179,7 +265,9 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to disable MFA.');
+      const message = error instanceof Error ? error.message : 'Unable to disable MFA.';
+      setMfaErrorMessage(message);
+      showError(message);
     } finally {
       setDisableBusy(false);
     }
@@ -192,19 +280,19 @@ export default function SecuritySettingsPage() {
       const response = await revokeSession(session.id);
       if (session.current) {
         clearAuth();
-        info('Session revoked. Sign in again.');
+        info('This browser was signed out. Sign in again.');
         navigate('/auth/login', { replace: true });
         return;
       }
 
       setSessions(response.sessions ?? []);
-      success('Session revoked.');
+      success('Device removed.');
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to revoke session.');
+      showError(error instanceof Error ? error.message : 'Unable to remove that device.');
     } finally {
       setSessionAction(null);
     }
@@ -216,13 +304,13 @@ export default function SecuritySettingsPage() {
     try {
       const response = await revokeOtherSessions();
       setSessions(response.sessions ?? []);
-      success('Other sessions revoked.');
+      success('Signed out other devices.');
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
         return;
       }
 
-      showError(error instanceof Error ? error.message : 'Unable to revoke other sessions.');
+      showError(error instanceof Error ? error.message : 'Unable to sign out other devices.');
     } finally {
       setSessionAction(null);
     }
@@ -230,80 +318,306 @@ export default function SecuritySettingsPage() {
 
   return (
     <AuthShell
-      eyebrow="Security Center"
-      title="Control access from one place."
-      description="Review device sessions, enable TOTP MFA, and keep recovery paths visible. High-risk actions may prompt a step-up challenge before they complete."
+      eyebrow={SECURITY_PAGE_COPY.eyebrow}
+      title={SECURITY_PAGE_COPY.title}
+      description={SECURITY_PAGE_COPY.description}
+      maxWidthClass="max-w-4xl"
     >
-      <div className="space-y-8">
+      <div className="space-y-6">
         {setupRequested ? (
           <AuthNotice tone="warning">
-            MFA setup is required before this protected action can continue.
+            {SECURITY_PAGE_COPY.forcedSetupNotice}
           </AuthNotice>
         ) : null}
         {recentlyVerified ? (
           <AuthNotice tone="success">
-            Verification complete. Your recent step-up is active for protected actions.
+            {SECURITY_PAGE_COPY.verifiedNotice}
           </AuthNotice>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[26px] border border-black/10 bg-[#FBFAF7] p-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-black/45">Email status</p>
-            <p className="mt-3 text-2xl font-black">{userData?.emailVerifiedAt ? 'Verified' : 'Pending'}</p>
-          </div>
-          <div className="rounded-[26px] border border-black/10 bg-[#FBFAF7] p-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-black/45">Password login</p>
-            <p className="mt-3 text-2xl font-black">{userData?.hasPassword ? 'Enabled' : 'Not set'}</p>
-          </div>
-          <div className="rounded-[26px] border border-black/10 bg-[#FBFAF7] p-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-black/45">MFA status</p>
-            <p className="mt-3 text-2xl font-black">{mfaEnabled ? 'Enabled' : 'Not enabled'}</p>
-          </div>
-          <div className="rounded-[26px] border border-black/10 bg-[#FBFAF7] p-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-black/45">Current device</p>
-            <p className="mt-3 text-2xl font-black">{currentSession ? 'Tracked' : 'Unavailable'}</p>
-          </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {summaryItems.map((item) => (
+            <SummaryCard key={item.label} label={item.label} value={item.value} />
+          ))}
         </div>
 
+        <section className="rough-border relative overflow-hidden bg-white p-6 shadow-lg">
+          <div className="tape w-18 h-5 -top-2 left-12 opacity-60" />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="relative inline-block">
+                <h2 className="text-3xl font-bold italic tracking-tight">
+                  {SECURITY_PAGE_COPY.mfa.title}
+                </h2>
+                <div className="highlighter bottom-1 left-0 h-3 w-full" />
+              </div>
+              <p className="mt-3 text-sm leading-6 text-black/65">
+                {mfaEnabled
+                  ? SECURITY_PAGE_COPY.mfa.enabledDescription
+                  : SECURITY_PAGE_COPY.mfa.disabledDescription}
+              </p>
+            </div>
+
+            <span className="inline-flex items-center gap-2 self-start rounded-full border-2 border-black bg-[#fff9c4] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-black shadow-sm">
+              {mfaEnabled ? <ShieldCheck size={14} /> : <Smartphone size={14} />}
+              {mfaBadgeLabel}
+            </span>
+          </div>
+
+          {mfaErrorMessage ? (
+            <div className="mt-5">
+              <AuthNotice tone="danger">{mfaErrorMessage}</AuthNotice>
+            </div>
+          ) : null}
+
+          {!mfaEnabled ? (
+            <div className="mt-6 space-y-4">
+              <SetupStep
+                step={1}
+                title={SECURITY_PAGE_COPY.mfa.stepOneTitle}
+                description={SECURITY_PAGE_COPY.mfa.stepOneDescription}
+              >
+                {setup ? (
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="space-y-4">
+                      <AuthField
+                        label={SECURITY_PAGE_COPY.mfa.secretLabel}
+                        readOnly={true}
+                        type="text"
+                        value={setup.totpSecret}
+                      />
+                      <AuthTextarea
+                        className="min-h-24"
+                        label={SECURITY_PAGE_COPY.mfa.urlLabel}
+                        readOnly={true}
+                        value={setup.otpauthUrl}
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-3 lg:w-56">
+                      <SketchyButton
+                        className="w-full px-4 py-3 text-sm"
+                        fill="#ffffff"
+                        onClick={() => void copyToClipboard(setup.totpSecret, 'Secret copied.')}
+                        type="button"
+                      >
+                        <Copy size={16} />
+                        {SECURITY_PAGE_COPY.mfa.copySecretAction}
+                      </SketchyButton>
+                      <SketchyButton
+                        className="w-full px-4 py-3 text-sm"
+                        fill="#ffffff"
+                        onClick={() => void copyToClipboard(setup.otpauthUrl, 'OTP Auth URL copied.')}
+                        type="button"
+                      >
+                        <Copy size={16} />
+                        {SECURITY_PAGE_COPY.mfa.copyUrlAction}
+                      </SketchyButton>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="max-w-xl text-sm leading-6 text-black/60">
+                      We will reveal your secret and OTP Auth URL here after setup starts.
+                    </p>
+                    <SketchyButton
+                      className="w-full px-5 py-3 text-sm sm:w-auto"
+                      disabled={setupBusy}
+                      onClick={() => void handleStartSetup()}
+                      type="button"
+                    >
+                      {setupBusy ? 'Preparing setup...' : SECURITY_PAGE_COPY.mfa.startAction}
+                    </SketchyButton>
+                  </div>
+                )}
+              </SetupStep>
+
+              <SetupStep
+                step={2}
+                title={SECURITY_PAGE_COPY.mfa.stepTwoTitle}
+                description={SECURITY_PAGE_COPY.mfa.stepTwoDescription}
+              >
+                <form className="space-y-4" onSubmit={handleVerifySetup}>
+                  <AuthField
+                    autoComplete="one-time-code"
+                    disabled={!setup}
+                    hint={setup ? 'Use the current code from your authenticator app.' : 'Start setup above to reveal your secret first.'}
+                    label="Authenticator code"
+                    maxLength={6}
+                    name="setupCode"
+                    onChange={(event) => setSetupCode(event.target.value)}
+                    placeholder="123456"
+                    required={setup !== null}
+                    type="text"
+                    value={setupCode}
+                  />
+                  <SketchyButton
+                    className="w-full px-5 py-3 text-base sm:w-auto"
+                    disabled={verifyBusy || !setup}
+                    type="submit"
+                  >
+                    {verifyBusy ? 'Verifying setup...' : SECURITY_PAGE_COPY.mfa.enableAction}
+                  </SketchyButton>
+                </form>
+              </SetupStep>
+
+              <SetupStep
+                step={3}
+                title={SECURITY_PAGE_COPY.mfa.stepThreeTitle}
+                description={SECURITY_PAGE_COPY.mfa.stepThreeDescription}
+              >
+                <div className="rounded-[22px] border border-black/10 bg-white px-4 py-3">
+                  <p className="text-sm leading-6 text-black/65">
+                    Each recovery code can be used once. Save them somewhere offline before you close this page.
+                  </p>
+                </div>
+              </SetupStep>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_1.1fr]">
+              <div className="rounded-[28px] border border-black/10 bg-paper/70 p-5">
+                <div className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-green-800">
+                  <ShieldCheck size={14} />
+                  {SECURITY_PAGE_COPY.mfa.setupEnabled}
+                </div>
+                <p className="mt-4 text-sm leading-6 text-black/65">
+                  Recovery codes are your offline fallback. Generate a new set only when you are ready to replace the current one.
+                </p>
+              </div>
+
+              <div className="rounded-[28px] border border-red-200 bg-red-50 p-5">
+                <div className="flex items-center gap-3">
+                  <KeyRound className="text-ink-red" size={20} />
+                  <h3 className="text-xl font-black">{SECURITY_PAGE_COPY.mfa.disableTitle}</h3>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-black/65">
+                  {SECURITY_PAGE_COPY.mfa.disableDescription}
+                </p>
+                <form className="mt-5 space-y-4" onSubmit={handleDisableMfa}>
+                  <AuthField
+                    autoComplete="one-time-code"
+                    label="Authenticator code"
+                    name="disableCode"
+                    onChange={(event) => setDisableCode(event.target.value)}
+                    placeholder="123456"
+                    type="text"
+                    value={disableCode}
+                  />
+                  <AuthField
+                    label="Recovery code"
+                    name="disableRecoveryCode"
+                    onChange={(event) => setDisableRecoveryCode(event.target.value)}
+                    placeholder="XXXX-XXXX"
+                    type="text"
+                    value={disableRecoveryCode}
+                  />
+                  <SketchyButton className="w-full px-5 py-3 text-base" disabled={disableBusy} type="submit">
+                    {disableBusy ? 'Turning off MFA...' : SECURITY_PAGE_COPY.mfa.disableTitle}
+                  </SketchyButton>
+                </form>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {(mfaEnabled || recoveryCodes.length > 0) ? (
+          <section className="rough-border bg-white p-6 shadow-lg">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h2 className="text-2xl font-black">{SECURITY_PAGE_COPY.recovery.title}</h2>
+                <p className="mt-1 text-sm leading-6 text-black/65">
+                  {SECURITY_PAGE_COPY.recovery.description}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                {recoveryCodes.length > 0 ? (
+                  <SketchyButton
+                    className="px-4 py-3 text-sm"
+                    fill="#ffffff"
+                    onClick={() => void copyToClipboard(recoveryCodes.join('\n'), 'Recovery codes copied.')}
+                    type="button"
+                  >
+                    <Copy size={16} />
+                    {SECURITY_PAGE_COPY.recovery.copyAllAction}
+                  </SketchyButton>
+                ) : null}
+
+                {mfaEnabled ? (
+                  <SketchyButton
+                    className="px-4 py-3 text-sm"
+                    disabled={recoveryBusy}
+                    fill="#ffffff"
+                    onClick={() => void handleRegenerateRecoveryCodes()}
+                    type="button"
+                  >
+                    <RefreshCcw size={16} />
+                    {recoveryBusy ? 'Generating...' : SECURITY_PAGE_COPY.mfa.refreshRecoveryAction}
+                  </SketchyButton>
+                ) : null}
+              </div>
+            </div>
+
+            {recoveryCodes.length > 0 ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {recoveryCodes.map((code) => (
+                  <div
+                    key={code}
+                    className="rounded-[20px] border border-black/10 bg-[#FBFAF7] px-4 py-3 font-mono text-sm font-semibold tracking-[0.2em]"
+                  >
+                    {code}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-[24px] border border-black/10 bg-paper/70 px-4 py-4">
+                <p className="text-sm leading-6 text-black/65">
+                  {mfaEnabled ? SECURITY_PAGE_COPY.recovery.empty : SECURITY_PAGE_COPY.recovery.setupPending}
+                </p>
+              </div>
+            )}
+          </section>
+        ) : null}
+
         <section className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-2xl font-black">Device sessions</h2>
-              <p className="mt-1 text-sm text-black/65">
-                One active session per device. Revoke lost or old devices from here.
+              <h2 className="text-2xl font-black">{SECURITY_PAGE_COPY.sessions.title}</h2>
+              <p className="mt-1 text-sm leading-6 text-black/65">
+                {SECURITY_PAGE_COPY.sessions.description}
               </p>
             </div>
             <SketchyButton
-              className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
+              className="w-full px-4 py-3 text-sm sm:w-auto"
               disabled={sessionAction === 'others' || otherSessions.length === 0}
               fill="#ffffff"
               onClick={() => void handleRevokeOtherSessions()}
               type="button"
             >
               <RefreshCcw size={16} />
-              Revoke others
+              {SECURITY_PAGE_COPY.sessions.revokeOthersAction}
             </SketchyButton>
           </div>
 
           {sessionsLoading ? (
-            <div className="rounded-[28px] border border-black/10 bg-white px-5 py-10 text-center text-sm text-black/55">
-              Loading your device sessions...
+            <div className="rough-border bg-white/90 px-5 py-8 text-center text-sm text-black/55">
+              Loading your active devices...
             </div>
           ) : (
             <div className="space-y-3">
               {sessions.map((session) => (
                 <div
                   key={session.id}
-                  className="rounded-[28px] border border-black/10 bg-white px-5 py-5"
+                  className="rounded-[28px] border border-black/10 bg-white px-5 py-5 shadow-sm"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center gap-2 rounded-full bg-ink-blue/10 px-3 py-1 text-xs font-bold uppercase text-ink-blue">
                           <Laptop2 size={14} />
-                          {session.current ? 'Current device' : 'Tracked device'}
+                          {session.current ? 'Current browser' : 'Tracked device'}
                         </span>
-                        <span className="text-xs font-mono text-black/45">{session.deviceId}</span>
+                        <span className="truncate text-xs font-mono text-black/45">{session.deviceId}</span>
                       </div>
                       <p className="mt-3 text-base font-semibold text-black">{formatSessionLabel(session)}</p>
                       <p className="mt-2 text-sm text-black/60">
@@ -315,15 +629,16 @@ export default function SecuritySettingsPage() {
                     </div>
 
                     <SketchyButton
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-ink-red transition-colors hover:bg-red-100"
+                      activeColor="#fee2e2"
+                      className="w-full px-4 py-3 text-sm text-ink-red sm:w-auto"
                       disabled={sessionAction === session.id}
-                      fill="#fef2f2"
-                      stroke="#fecaca"
+                      fill="#fff5f5"
+                      stroke="#ef4444"
                       onClick={() => void handleRevokeSession(session)}
                       type="button"
                     >
                       <Trash2 size={16} />
-                      {session.current ? 'Revoke this session' : 'Revoke device'}
+                      {session.current ? SECURITY_PAGE_COPY.sessions.currentAction : SECURITY_PAGE_COPY.sessions.otherAction}
                     </SketchyButton>
                   </div>
                 </div>
@@ -331,182 +646,6 @@ export default function SecuritySettingsPage() {
             </div>
           )}
         </section>
-
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-2xl font-black">Multi-factor authentication</h2>
-            <p className="mt-1 text-sm text-black/65">
-              TOTP is used for sensitive actions and suspicious sign-in review.
-            </p>
-          </div>
-
-          {!mfaEnabled ? (
-            <div className="space-y-4">
-              <div className="rounded-[28px] border border-black/10 bg-white px-5 py-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold uppercase text-yellow-900">
-                      <Smartphone size={14} />
-                      Setup recommended
-                    </div>
-                    <p className="mt-3 text-base text-black/70">
-                      Protect withdrawals, merchant operations, and session changes with an authenticator app.
-                    </p>
-                  </div>
-                  <SketchyButton disabled={setupBusy} onClick={() => void handleStartSetup()} type="button">
-                    {setupBusy ? 'Preparing setup...' : 'Start MFA setup'}
-                  </SketchyButton>
-                </div>
-              </div>
-
-              {setup ? (
-                <div className="rounded-[28px] border border-black/10 bg-white px-5 py-5">
-                  <div className="space-y-5">
-                    <AuthNotice tone="info">
-                      Add the secret below to your authenticator app, then confirm with the current 6-digit code.
-                    </AuthNotice>
-                    <AuthField
-                      label="TOTP Secret"
-                      readOnly={true}
-                      type="text"
-                      value={setup.totpSecret}
-                    />
-                    <SketchyButton
-                      className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
-                      fill="#ffffff"
-                      onClick={() => void copyToClipboard(setup.totpSecret, 'Secret copied.')}
-                      type="button"
-                    >
-                      <Copy size={16} />
-                      Copy secret
-                    </SketchyButton>
-                    <AuthTextarea
-                      label="OTP Auth URL"
-                      readOnly={true}
-                      value={setup.otpauthUrl}
-                    />
-                    <SketchyButton
-                      className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
-                      fill="#ffffff"
-                      onClick={() => void copyToClipboard(setup.otpauthUrl, 'OTP Auth URL copied.')}
-                      type="button"
-                    >
-                      <Copy size={16} />
-                      Copy OTP Auth URL
-                    </SketchyButton>
-
-                    <form className="space-y-4" onSubmit={handleVerifySetup}>
-                      <AuthField
-                        autoComplete="one-time-code"
-                        label="Authenticator Code"
-                        maxLength={6}
-                        name="setupCode"
-                        onChange={(event) => setSetupCode(event.target.value)}
-                        placeholder="123456"
-                        required
-                        type="text"
-                        value={setupCode}
-                      />
-                      <SketchyButton className="w-full py-3 text-base" disabled={verifyBusy} type="submit">
-                        {verifyBusy ? 'Verifying setup...' : 'Enable MFA'}
-                      </SketchyButton>
-                    </form>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="rounded-[28px] border border-black/10 bg-white px-5 py-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-xs font-bold uppercase text-green-800">
-                      <ShieldCheck size={14} />
-                      MFA enabled
-                    </div>
-                    <p className="mt-3 text-base text-black/70">
-                      Recovery codes are your offline fallback. Regenerating them invalidates the previous set.
-                    </p>
-                  </div>
-                  <SketchyButton
-                    className="inline-flex items-center justify-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
-                    disabled={recoveryBusy}
-                    fill="#ffffff"
-                    onClick={() => void handleRegenerateRecoveryCodes()}
-                    type="button"
-                  >
-                    <RefreshCcw size={16} />
-                    {recoveryBusy ? 'Refreshing...' : 'Regenerate recovery codes'}
-                  </SketchyButton>
-                </div>
-              </div>
-
-              <div className="rounded-[28px] border border-black/10 bg-white px-5 py-5">
-                <div className="flex items-center gap-3">
-                  <KeyRound className="text-ink-blue" size={20} />
-                  <h3 className="text-xl font-black">Disable MFA</h3>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-black/65">
-                  This action is protected. If your recent step-up expired, you will be redirected to verify before disable completes.
-                </p>
-                <form className="mt-5 space-y-4" onSubmit={handleDisableMfa}>
-                  <AuthField
-                    autoComplete="one-time-code"
-                    label="Authenticator Code"
-                    name="disableCode"
-                    onChange={(event) => setDisableCode(event.target.value)}
-                    placeholder="123456"
-                    type="text"
-                    value={disableCode}
-                  />
-                  <AuthField
-                    label="Recovery Code"
-                    name="disableRecoveryCode"
-                    onChange={(event) => setDisableRecoveryCode(event.target.value)}
-                    placeholder="XXXX-XXXX"
-                    type="text"
-                    value={disableRecoveryCode}
-                  />
-                  <SketchyButton className="w-full py-3 text-base" disabled={disableBusy} type="submit">
-                    {disableBusy ? 'Disabling MFA...' : 'Disable MFA'}
-                  </SketchyButton>
-                </form>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {recoveryCodes.length > 0 ? (
-          <section className="rounded-[28px] border border-black/10 bg-white px-5 py-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-2xl font-black">Recovery codes</h2>
-                <p className="mt-1 text-sm text-black/65">
-                  Store these offline. Each code can be used once.
-                </p>
-              </div>
-              <SketchyButton
-                className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-black/5"
-                fill="#ffffff"
-                onClick={() => void copyToClipboard(recoveryCodes.join('\n'), 'Recovery codes copied.')}
-                type="button"
-              >
-                <Copy size={16} />
-                Copy all
-              </SketchyButton>
-            </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {recoveryCodes.map((code) => (
-                <div
-                  key={code}
-                  className="rounded-[20px] border border-black/10 bg-[#FBFAF7] px-4 py-3 font-mono text-sm font-semibold tracking-[0.2em]"
-                >
-                  {code}
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
       </div>
     </AuthShell>
   );
