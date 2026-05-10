@@ -38,6 +38,8 @@ interface MerchantDashboardOrderDocument {
   status: 'PENDING' | 'DONE' | 'REJECTED';
   proof?: MerchantOrderDeskItemDTO['proof'];
   transactionCode?: MerchantOrderDeskItemDTO['transactionCode'];
+  mpesaNumber?: MerchantOrderDeskItemDTO['mpesaNumber'];
+  mpesaName?: MerchantOrderDeskItemDTO['mpesaName'];
   fiatCurrency?: MerchantOrderDeskItemDTO['fiatCurrency'];
   exchangeRate?: MerchantOrderDeskItemDTO['exchangeRate'];
   fiatTotal?: MerchantOrderDeskItemDTO['fiatTotal'];
@@ -308,6 +310,8 @@ async function fetchOrders(options: {
       riskFlags: risk.riskFlags,
       ...(order.proof ? { proof: order.proof } : {}),
       ...(order.transactionCode ? { transactionCode: order.transactionCode } : {}),
+      ...(order.mpesaNumber ? { mpesaNumber: order.mpesaNumber } : {}),
+      ...(order.mpesaName ? { mpesaName: order.mpesaName } : {}),
       ...(order.fiatCurrency ? { fiatCurrency: order.fiatCurrency } : {}),
       ...(order.exchangeRate !== undefined ? { exchangeRate: order.exchangeRate } : {}),
       ...(order.fiatTotal !== undefined ? { fiatTotal: order.fiatTotal } : {}),

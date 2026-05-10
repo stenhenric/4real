@@ -39,6 +39,8 @@ const MerchantPanel = () => {
   const [proofImage, setProofImage] = useState<File | null>(null);
   const [transactionCode, setTransactionCode] = useState('');
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [mpesaNumber, setMpesaNumber] = useState('');
+  const [mpesaName, setMpesaName] = useState('');
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<OrderDTO[]>([]);
   const [merchantConfig, setMerchantConfig] = useState<MerchantConfigDTO | null>(null);
@@ -76,6 +78,8 @@ const MerchantPanel = () => {
     setProofImage(null);
     setTransactionCode('');
     setPaymentConfirmed(false);
+    setMpesaNumber('');
+    setMpesaName('');
   };
 
   const handleTabChange = (nextTab: MerchantTab) => {
@@ -107,6 +111,14 @@ const MerchantPanel = () => {
     && paymentConfirmed
     && transactionCode.trim().length > 0
     && proofImage,
+  );
+
+  const sellReadyForSubmit = Boolean(
+    hasValidAmount
+    && rateConfigured
+    && mpesaNumber.trim().length > 0
+    && mpesaName.trim().length > 0
+    && paymentConfirmed
   );
 
   const buyInstructionTitle = useMemo(() => {
@@ -158,9 +170,21 @@ const MerchantPanel = () => {
         setOrders((currentOrders) => [order, ...currentOrders]);
         success('Buy order submitted.');
       } else {
+        if (!paymentConfirmed) {
+          throw new Error('Please review and confirm your details before submitting.');
+        }
+        if (!mpesaNumber.trim() || !mpesaName.trim()) {
+          throw new Error('Please provide your M-Pesa details.');
+        }
+        if (!/^(07\d{8}|254\d{9})$/.test(mpesaNumber.trim())) {
+          throw new Error('Please enter a valid M-Pesa number (07XXXXXXXXX or 254XXXXXXXXX).');
+        }
+
         const order = await createOrder({
           type: 'SELL',
           amount: parsedAmount,
+          mpesaNumber: mpesaNumber.trim(),
+          mpesaName: mpesaName.trim(),
         });
 
         setOrders((currentOrders) => [order, ...currentOrders]);
@@ -418,9 +442,69 @@ const MerchantPanel = () => {
                     <p className="text-sm font-mono opacity-70">
                       Rate: {rateConfigured ? `${formatMoney(activeRate)} ${fiatCurrency}/USDT` : 'Merchant rate not configured'}
                     </p>
-                    <p className="text-sm font-mono opacity-60">
-                      Submit your sell order and the merchant will process the fiat payout after review.
-                    </p>
+
+                    {!paymentConfirmed ? (
+                      <div className="space-y-4 pt-4 border-t-2 border-black/10">
+                        <div className="rounded-3xl border border-blue-500 bg-blue-50 px-4 py-4 mb-4">
+                          <p className="text-xs font-bold uppercase tracking-[0.25em] text-blue-800">
+                            Where should the merchant send KES?
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest" htmlFor="sell-mpesa-number">
+                            M-Pesa Phone Number
+                          </label>
+                          <input
+                            className="w-full text-lg font-mono bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors"
+                            id="sell-mpesa-number"
+                            onChange={(e) => setMpesaNumber(e.target.value)}
+                            placeholder="07XXXXXXXXX or 254XXXXXXXXX"
+                            type="text"
+                            value={mpesaNumber}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest" htmlFor="sell-mpesa-name">
+                            Registered M-Pesa Name
+                          </label>
+                          <input
+                            className="w-full text-lg font-mono bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors uppercase"
+                            id="sell-mpesa-name"
+                            onChange={(e) => setMpesaName(e.target.value)}
+                            placeholder="JOHN DOE"
+                            type="text"
+                            value={mpesaName}
+                          />
+                        </div>
+
+                        <SketchyButton
+                          className="w-full py-3 text-lg uppercase tracking-tighter mt-4"
+                          disabled={!hasValidAmount || !rateConfigured || !mpesaNumber.trim() || !mpesaName.trim()}
+                          onClick={() => setPaymentConfirmed(true)}
+                          type="button"
+                        >
+                          Review & Confirm
+                        </SketchyButton>
+                      </div>
+                    ) : (
+                      <div className="rounded-3xl border border-green-500 bg-green-50 px-4 py-4 space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-green-800 border-b border-green-200 pb-2 mb-2">
+                          Order Summary
+                        </p>
+                        <p className="text-sm font-mono text-green-900/80">
+                          <strong>Selling:</strong> {amount} USDT
+                        </p>
+                        <p className="text-sm font-mono text-green-900/80">
+                          <strong>Receiving:</strong> {hasValidAmount && rateConfigured ? `${formatMoney(fiatTotal)} ${fiatCurrency}` : `0.00 ${fiatCurrency}`}
+                        </p>
+                        <p className="text-sm font-mono text-green-900/80 pt-2">
+                          <strong>To M-Pesa:</strong> {mpesaNumber}
+                        </p>
+                        <p className="text-sm font-mono text-green-900/80 uppercase">
+                          <strong>Name:</strong> {mpesaName}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -445,7 +529,7 @@ const MerchantPanel = () => {
                 </div>
               ) : null}
 
-              <SketchyButton className="w-full py-4 text-2xl uppercase tracking-tighter" disabled={loading || (activeTab === 'buy' ? !buyReadyForSubmit : !hasValidAmount || !rateConfigured)} type="submit">
+              <SketchyButton className="w-full py-4 text-2xl uppercase tracking-tighter" disabled={loading || (activeTab === 'buy' ? !buyReadyForSubmit : !sellReadyForSubmit)} type="submit">
                 {loading
                   ? 'Processing...'
                   : activeTab === 'buy'

@@ -25,6 +25,8 @@ export class OrderService {
     proof,
     proofRelayQueued,
     transactionCode,
+    mpesaNumber,
+    mpesaName,
     fiatCurrency,
     exchangeRate,
     fiatTotal,
@@ -37,6 +39,8 @@ export class OrderService {
     proof?: TelegramOrderProof | undefined;
     proofRelayQueued?: boolean | undefined;
     transactionCode?: string | undefined;
+    mpesaNumber?: string | undefined;
+    mpesaName?: string | undefined;
     fiatCurrency: 'KES';
     exchangeRate: string;
     fiatTotal: string;
@@ -48,6 +52,10 @@ export class OrderService {
       const userIdString = userId.toString();
 
       if (type === 'SELL') {
+        if (!mpesaNumber || !mpesaName) {
+          throw badRequest('M-Pesa details are required for SELL orders', 'MPESA_DETAILS_REQUIRED');
+        }
+
         const updatedUser = await UserService.deductBalanceSafely(userIdString, amount, activeSession);
         if (!updatedUser) {
           throw badRequest('Insufficient balance', 'INSUFFICIENT_BALANCE');
@@ -64,6 +72,8 @@ export class OrderService {
         status: 'PENDING',
         ...(proof ? { proof } : {}),
         ...(transactionCode ? { transactionCode } : {}),
+        ...(type === 'SELL' && mpesaNumber ? { mpesaNumber } : {}),
+        ...(type === 'SELL' && mpesaName ? { mpesaName } : {}),
       }], { session: activeSession });
       savedOrder = createdOrders[0] ?? null;
 
@@ -96,6 +106,8 @@ export class OrderService {
           fiatCurrency: savedOrder.fiatCurrency,
           exchangeRate: savedOrder.exchangeRate,
           fiatTotal: savedOrder.fiatTotal,
+          mpesaNumber: savedOrder.mpesaNumber,
+          mpesaName: savedOrder.mpesaName,
           proofProvider: savedOrder.proof?.provider,
           proofUrl: savedOrder.proof?.url,
           proofRelayQueued: proofRelayQueued === true,

@@ -36,6 +36,8 @@ export interface OrderEmailParams {
   exchangeRate?: string;
   username?: string | null;
   transactionCode?: string | null;
+  mpesaNumber?: string | null;
+  mpesaName?: string | null;
   actionUrl?: string;
 }
 
@@ -160,6 +162,8 @@ export function buildOrderEmail(params: OrderEmailParams): ProductEmailContent {
     ...row('Fiat total', params.fiatTotal),
     ...row('Exchange rate', params.exchangeRate),
     ...row('Transaction code', params.transactionCode),
+    ...row('M-Pesa Number', params.mpesaNumber),
+    ...row('M-Pesa Name', params.mpesaName),
     ...row('Username', params.username),
     ...row('Action', params.actionUrl, params.actionUrl),
   ];

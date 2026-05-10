@@ -153,6 +153,8 @@ export interface OrderDTO {
   fiatCurrency?: FiatCurrency;
   exchangeRate?: RateString;
   fiatTotal?: KesAmountString;
+  mpesaNumber?: string;
+  mpesaName?: string;
   createdAt: string;
 }
 
@@ -187,6 +189,8 @@ export interface MerchantOrderDeskItemDTO {
   fiatCurrency?: FiatCurrency;
   exchangeRate?: RateString;
   fiatTotal?: KesAmountString;
+  mpesaNumber?: string;
+  mpesaName?: string;
   riskLevel: MerchantRiskLevel;
   riskFlags: string[];
 }
