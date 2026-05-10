@@ -25,7 +25,7 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 function createToastId() {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    : typeof crypto !== 'undefined' && crypto.getRandomValues ? `${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, '0')).join('')}` : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
