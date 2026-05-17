@@ -1,7 +1,9 @@
+import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { RedisStore, type RedisReply } from 'rate-limit-redis';
 
 import { getEnv } from '../config/env.ts';
+import { normalizeEmail, normalizeUsername } from '../services/auth-identity.service.ts';
 import { getRedisClient } from '../services/redis.service.ts';
 
 function createRateLimitStore(prefix: string) {
@@ -48,6 +50,38 @@ export function createAuthRateLimiter() {
     requestPropertyName: 'authRateLimit',
     legacyHeaders: false,
     skipSuccessfulRequests: true,
+    message: {
+      code: 'AUTH_RATE_LIMITED',
+      message: 'Too many authentication attempts, please try again later.',
+    },
+  });
+}
+
+function getNormalizedLoginIdentifier(value: unknown): string {
+  if (typeof value !== 'string') {
+    return 'invalid';
+  }
+
+  return value.includes('@') ? normalizeEmail(value) : normalizeUsername(value);
+}
+
+function hashRateLimitKey(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+export function createPasswordLoginIdentifierRateLimiter() {
+  const env = getEnv();
+  const store = createRateLimitStore('rl:auth-login-id:');
+
+  return rateLimit({
+    ...(store ? { store } : {}),
+    windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+    max: env.AUTH_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    requestPropertyName: 'authIdentifierRateLimit',
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    keyGenerator: (req) => hashRateLimitKey(getNormalizedLoginIdentifier(req.body?.identifier)),
     message: {
       code: 'AUTH_RATE_LIMITED',
       message: 'Too many authentication attempts, please try again later.',

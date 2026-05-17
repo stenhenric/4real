@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useTonAddress, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
-import { ArrowDownRight, CheckCircle, Copy } from 'lucide-react';
+import { ArrowDownRight, CheckCircle } from 'lucide-react';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { CopyField } from '../../components/ui/CopyField';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { useToast } from '../../app/ToastProvider';
 import { createDepositMemo, prepareTonConnectDeposit } from '../../services/transactions.service';
@@ -56,7 +57,7 @@ const DepositPanel = () => {
       await tonConnectUI.sendTransaction(prepared.transaction);
       addToast('Transaction sent. Awaiting confirmation.', 'success');
     } catch (error) {
-      addToast(getApiErrorMessage(error, 'We could not complete that transaction. Please try again.'), 'error');
+      addToast(getApiErrorMessage(error, 'Transaction failed. Please try again.'), 'error');
     } finally {
       setSendingTransaction(false);
     }
@@ -70,7 +71,7 @@ const DepositPanel = () => {
       setMemoData(data);
       addToast('Deposit memo generated.', 'success');
     } catch (error) {
-      addToast(getApiErrorMessage(error, 'We could not generate a deposit memo. Please try again.'), 'error');
+      addToast(getApiErrorMessage(error, 'Could not generate memo. Please try again.'), 'error');
     } finally {
       setLoading(false);
     }
@@ -80,8 +81,8 @@ const DepositPanel = () => {
     <div className="max-w-2xl mx-auto">
       <SketchyContainer roughness={1} className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
         <div className="flex items-center gap-4 mb-8">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-            <ArrowDownRight size={32} className="text-green-700" />
+          <div className="rough-border flex h-16 w-16 items-center justify-center bg-success-bg">
+            <ArrowDownRight size={32} className="text-success-text" />
           </div>
           <div>
             <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Deposit USDT</h2>
@@ -104,66 +105,29 @@ const DepositPanel = () => {
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            <div className="p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
-              <h3 className="font-bold text-yellow-800 uppercase tracking-tight mb-2 flex items-center gap-2">
-                ⚠️ Important Instructions
+            <div className="rough-border bg-warning-bg border-warning-border p-4">
+              <h3 className="font-bold text-warning-text uppercase tracking-tight mb-2 flex items-center gap-2">
+                <span aria-hidden="true">⚠️</span> Important Instructions
               </h3>
-              <p className="text-sm text-yellow-900 font-mono">{memoData.instructions}</p>
+              <p className="text-sm text-warning-text font-mono">{memoData.instructions}</p>
             </div>
 
             <div className="space-y-4">
-              <div>
-                <label
-                  className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
-                  htmlFor={DEPOSIT_ADDRESS_ID}
-                >
-                  Deposit Address
-                </label>
-                <div className="flex">
-                  <input
-                    className="flex-1 text-sm font-mono bg-black/5 border-2 border-black/10 rounded-l p-3 focus:outline-none"
-                    id={DEPOSIT_ADDRESS_ID}
-                    readOnly
-                    type="text"
-                    value={memoData.address}
-                  />
-                  <SketchyButton
-                    className="bg-ink-black text-white px-4 rounded-r hover:bg-black/80 transition-colors flex items-center gap-2"
-                    fill="#1a1a1a"
-                    stroke="#1a1a1a"
-                    onClick={() => void copyToClipboard(memoData.address)}
-                    type="button"
-                  >
-                    <Copy size={16} /> Copy
-                  </SketchyButton>
-                </div>
-              </div>
+              <CopyField
+                id={DEPOSIT_ADDRESS_ID}
+                label="Deposit Address"
+                onCopy={() => void copyToClipboard(memoData.address)}
+                value={memoData.address}
+              />
 
               <div>
-                <label
-                  className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
-                  htmlFor={DEPOSIT_MEMO_ID}
-                >
-                  Required Memo (Comment)
-                </label>
-                <div className="flex">
-                  <input
-                    className="flex-1 text-lg font-mono font-bold bg-green-50 border-2 border-green-500 text-green-800 rounded-l p-3 focus:outline-none"
-                    id={DEPOSIT_MEMO_ID}
-                    readOnly
-                    type="text"
-                    value={memoData.memo}
-                  />
-                  <SketchyButton
-                    className="bg-green-700 text-white px-4 rounded-r hover:bg-green-800 transition-colors flex items-center gap-2"
-                    fill="#15803d"
-                    stroke="#166534"
-                    onClick={() => void copyToClipboard(memoData.memo)}
-                    type="button"
-                  >
-                    <Copy size={16} /> Copy
-                  </SketchyButton>
-                </div>
+                <CopyField
+                  id={DEPOSIT_MEMO_ID}
+                  label="Required Memo (Comment)"
+                  onCopy={() => void copyToClipboard(memoData.memo)}
+                  value={memoData.memo}
+                  valueClassName="bg-success-bg text-success-text border-success-border"
+                />
                 <p className="text-xs text-red-500 font-bold mt-1 ml-1">
                   * You MUST include this memo, otherwise your funds will be lost.
                 </p>
@@ -203,7 +167,7 @@ const DepositPanel = () => {
                       : 'bg-ink-blue hover:opacity-90 text-white'
                   }`}
                   disabled={!wallet || sendingTransaction}
-                  fill={!wallet || sendingTransaction ? '#d1d5db' : '#2962ff'}
+                  fill={!wallet || sendingTransaction ? '#d1d5db' : 'var(--color-ink-blue)'}
                   onClick={handleDepositTonConnect}
                   type="button"
                 >

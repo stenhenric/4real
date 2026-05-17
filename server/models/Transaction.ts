@@ -54,5 +54,6 @@ const TransactionSchema: Schema = new Schema({
 TransactionSchema.index({ userId: 1, createdAt: -1 });
 TransactionSchema.index({ status: 1, createdAt: -1 });
 TransactionSchema.index({ referenceId: 1 });
+TransactionSchema.index({ createdAt: -1, _id: -1 });
 
 export const Transaction = mongoose.model<ITransaction>('Transaction', TransactionSchema);

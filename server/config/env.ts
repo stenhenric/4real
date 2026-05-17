@@ -60,6 +60,18 @@ const rawEnvSchema = z.object({
   REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   REDIS_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(250),
   REDIS_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(5_000),
+  RENDER: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
+  RENDER_INSTANCE_COUNT: z.coerce.number().int().positive().optional(),
+  WEB_CONCURRENCY: z.coerce.number().int().positive().optional(),
+  PRODUCTION_TOPOLOGY: z.enum(['single-instance', 'distributed']).default('single-instance'),
   TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
   TELEGRAM_PROOF_CHANNEL_ID: z.string().trim().optional(),
   TELEGRAM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
@@ -78,6 +90,7 @@ const rawEnvSchema = z.object({
   GENERAL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+  METRICS_TOKEN: z.string().trim().min(1).optional(),
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   KEEP_ALIVE_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   HEADERS_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
@@ -149,14 +162,51 @@ export interface AppEnv extends Omit<z.infer<typeof rawEnvSchema>, 'MONGODB_URI'
 
 let cachedEnv: AppEnv | null = null;
 
-function resolveAllowedOrigins(value?: string): string[] {
+function resolveConfiguredOrigin(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return new URL(value).origin;
+}
+
+function resolveAllowedOrigins(params: {
+  value: string | undefined;
+  nodeEnv: AppEnv['NODE_ENV'];
+  publicAppOrigin: string | undefined;
+  manifestUrl: string | undefined;
+}): string[] {
   const defaults = ['http://localhost:3000', 'http://localhost:5173'];
-  const origins = value
+  const origins = params.value
+    ? params.value
     ?.split(',')
     .map((entry) => entry.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    : undefined;
 
-  return origins && origins.length > 0 ? origins : defaults;
+  if (origins && origins.length > 0) {
+    if (params.nodeEnv === 'production' && origins.some(isLocalOrigin)) {
+      throw new Error('ALLOWED_ORIGINS must not include localhost origins in production');
+    }
+
+    return origins;
+  }
+
+  if (params.nodeEnv !== 'production') {
+    return defaults;
+  }
+
+  const derivedOrigin = resolveConfiguredOrigin(params.publicAppOrigin)
+    ?? resolveConfiguredOrigin(params.manifestUrl);
+  if (!derivedOrigin) {
+    throw new Error('ALLOWED_ORIGINS or PUBLIC_APP_ORIGIN must be configured in production');
+  }
+
+  if (isLocalOrigin(derivedOrigin)) {
+    throw new Error('PUBLIC_APP_ORIGIN must not be localhost in production');
+  }
+
+  return [derivedOrigin];
 }
 
 function resolveProofAllowedMimeTypes(value: string): string[] {
@@ -204,6 +254,27 @@ function isMongoTlsConfigured(uri: string): boolean {
     const params = new URLSearchParams(query);
     const tlsValue = params.get('tls') ?? params.get('ssl');
     return typeof tlsValue === 'string' && tlsValue.trim().toLowerCase() === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function isRedisTlsConfigured(uri: string): boolean {
+  try {
+    return new URL(uri).protocol === 'rediss:';
+  } catch {
+    return false;
+  }
+}
+
+function isRenderInternalRedisUrl(uri: string, renderEnabled: boolean): boolean {
+  if (!renderEnabled) {
+    return false;
+  }
+
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'redis:' && (url.hostname.includes('.') === false || url.hostname.endsWith('.internal'));
   } catch {
     return false;
   }
@@ -271,6 +342,42 @@ export function getEnv(): AppEnv {
         })()
       : undefined
   );
+  if (
+    parsed.data.NODE_ENV === 'production'
+    && (!redisUrl || (!isRedisTlsConfigured(redisUrl) && !isRenderInternalRedisUrl(redisUrl, parsed.data.RENDER)))
+  ) {
+    throw new Error('REDIS_URL must use rediss:// in production unless using a Render internal Redis URL');
+  }
+
+  if (parsed.data.NODE_ENV === 'production') {
+    if (!parsed.data.TRUST_PROXY) {
+      throw new Error('TRUST_PROXY must be explicitly configured in production');
+    }
+
+    const normalizedTrustProxy = parsed.data.TRUST_PROXY.trim().toLowerCase();
+    if (normalizedTrustProxy === 'true') {
+      throw new Error('TRUST_PROXY=true is not allowed in production; configure a specific hop count or proxy subnet');
+    }
+
+    if (
+      parsed.data.PRODUCTION_TOPOLOGY === 'distributed'
+      && (
+        !parsed.data.FEATURE_DISTRIBUTED_LOCK
+        || !parsed.data.FEATURE_BULLMQ_JOBS
+        || !parsed.data.FEATURE_REDIS_SOCKET_ADAPTER
+      )
+    ) {
+      throw new Error('Distributed production requires FEATURE_DISTRIBUTED_LOCK, FEATURE_BULLMQ_JOBS, and FEATURE_REDIS_SOCKET_ADAPTER');
+    }
+
+    if (parsed.data.PRODUCTION_TOPOLOGY === 'single-instance' && (parsed.data.RENDER_INSTANCE_COUNT ?? 1) !== 1) {
+      throw new Error('Single-instance production requires exactly one Render instance');
+    }
+
+    if (parsed.data.PRODUCTION_TOPOLOGY === 'single-instance' && (parsed.data.WEB_CONCURRENCY ?? 1) !== 1) {
+      throw new Error('Single-instance production requires WEB_CONCURRENCY=1');
+    }
+  }
 
   const totpEncryptionKey = parsed.data.TOTP_ENCRYPTION_KEY ?? (
     parsed.data.NODE_ENV === 'production'
@@ -295,7 +402,12 @@ export function getEnv(): AppEnv {
     ...parsed.data,
     MONGODB_URI: mongoUri,
     REDIS_URL: redisUrl,
-    allowedOrigins: resolveAllowedOrigins(parsed.data.ALLOWED_ORIGINS),
+    allowedOrigins: resolveAllowedOrigins({
+      value: parsed.data.ALLOWED_ORIGINS,
+      nodeEnv: parsed.data.NODE_ENV,
+      publicAppOrigin: parsed.data.PUBLIC_APP_ORIGIN,
+      manifestUrl: parsed.data.VITE_TON_MANIFEST_URL,
+    }),
     proofAllowedMimeTypes: resolveProofAllowedMimeTypes(parsed.data.PROOF_ALLOWED_MIME_TYPES),
     TOTP_ENCRYPTION_KEY: totpEncryptionKey,
     GOOGLE_CLIENT_ID: gmailClientId,

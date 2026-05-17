@@ -5,6 +5,8 @@ import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { formatDateTime, formatMoney, formatRelativeMinutes } from '../../features/merchant/format';
@@ -48,7 +50,7 @@ export default function OrderDeskPage() {
         setLoading(false);
       });
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(error, signal, { pageUnloading: document.visibilityState === 'hidden' })) {
         return;
       }
 
@@ -148,7 +150,105 @@ export default function OrderDeskPage() {
       </div>
 
       <SketchyContainer className="bg-white p-0">
-        <div className="overflow-x-auto">
+        <div className="space-y-4 p-4 md:hidden">
+          {loading ? (
+            <EmptyState>Loading merchant queue...</EmptyState>
+          ) : orders.length === 0 ? (
+            <EmptyState>No orders match the current filters.</EmptyState>
+          ) : (
+            orders.map((order) => (
+              <article key={order.id} className="rough-border bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge tone={order.type === 'BUY' ? 'info' : 'danger'}>{order.type}</StatusBadge>
+                      <StatusBadge tone={statusToneFromStatus(order.status)}>{order.status}</StatusBadge>
+                    </div>
+                    <p className="mt-3 text-2xl font-bold italic">{formatMoney(order.amount)} USDT</p>
+                    <p className="text-xs font-mono opacity-50">#{order.id.slice(0, 8)}</p>
+                  </div>
+                  <StatusBadge tone={statusToneFromStatus(order.riskLevel)}>
+                    {order.riskLevel === 'high' ? <ShieldAlert size={14} /> : order.riskLevel === 'medium' ? <AlertTriangle size={14} /> : null}
+                    {order.riskLevel}
+                  </StatusBadge>
+                </div>
+
+                <dl className="mt-4 grid gap-3 text-sm">
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">User</dt>
+                    <dd>
+                      <Link className="font-bold text-ink-blue hover:underline" to={`/profile/${order.user.id}`}>
+                        {order.user.username}
+                      </Link>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Submitted</dt>
+                    <dd className="font-mono">{formatDateTime(order.createdAt)} • {formatRelativeMinutes(order.waitMinutes)}</dd>
+                  </div>
+                  {order.exchangeRate && order.fiatTotal && order.fiatCurrency ? (
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Fiat quote</dt>
+                      <dd className="font-mono">{formatMoney(order.fiatTotal)} {order.fiatCurrency} at {formatMoney(order.exchangeRate)} {order.fiatCurrency}/USDT</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Proof</dt>
+                    <dd className="space-y-1 font-mono">
+                      {order.proof?.url ? (
+                        <a className="inline-flex items-center gap-1 font-bold text-ink-blue hover:underline" href={order.proof.url} rel="noopener noreferrer" target="_blank">
+                          Open proof <ExternalLink size={14} />
+                        </a>
+                      ) : (
+                        <span className="opacity-45">No proof</span>
+                      )}
+                      {order.transactionCode ? <p>Code: <span className="font-bold text-ink-black">{order.transactionCode}</span></p> : null}
+                    </dd>
+                  </div>
+                  {order.riskFlags.length > 0 ? (
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Risk flags</dt>
+                      <dd className="font-mono opacity-70">{order.riskFlags.join(' • ')}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  {order.status === 'PENDING' ? (
+                    <>
+                      <SketchyButton
+                        className="px-3 py-2 text-sm text-danger-text"
+                        disabled={rowAction === order.id}
+                        fill="var(--color-danger-bg)"
+                        onClick={() => {
+                          void handleStatusUpdate(order.id, 'REJECTED');
+                        }}
+                      >
+                        <X size={15} />
+                        Reject
+                      </SketchyButton>
+                      <SketchyButton
+                        className="px-3 py-2 text-sm text-success-text"
+                        disabled={rowAction === order.id}
+                        fill="var(--color-success-bg)"
+                        onClick={() => {
+                          void handleStatusUpdate(order.id, 'DONE');
+                        }}
+                      >
+                        <Check size={15} />
+                        Approve
+                      </SketchyButton>
+                    </>
+                  ) : (
+                    <span className="text-xs font-mono opacity-40">Final state</span>
+                  )}
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="border-b-2 border-black/10 bg-black/5 text-left text-xs font-bold uppercase tracking-[0.2em] text-black/50">
@@ -179,9 +279,9 @@ export default function OrderDeskPage() {
                   <tr key={order.id} className="border-b border-black/10 align-top last:border-b-0">
                     <td className="px-4 py-4">
                       <div className="flex items-start gap-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${order.type === 'BUY' ? 'bg-ink-blue/10 text-ink-blue' : 'bg-ink-red/10 text-ink-red'}`}>
+                        <StatusBadge tone={order.type === 'BUY' ? 'info' : 'danger'}>
                           {order.type}
-                        </span>
+                        </StatusBadge>
                         <div>
                           <p className="text-xl font-bold italic">{formatMoney(order.amount)} USDT</p>
                           <p className="text-xs font-mono opacity-50">#{order.id.slice(0, 8)}</p>
@@ -203,10 +303,10 @@ export default function OrderDeskPage() {
                       <div className="mt-1 opacity-60">{formatRelativeMinutes(order.waitMinutes)}</div>
                     </td>
                     <td className="px-4 py-4">
-                      <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold uppercase ${order.riskLevel === 'high' ? 'bg-red-100 text-ink-red' : order.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-700'}`}>
+                      <StatusBadge tone={statusToneFromStatus(order.riskLevel)}>
                         {order.riskLevel === 'high' ? <ShieldAlert size={14} /> : order.riskLevel === 'medium' ? <AlertTriangle size={14} /> : null}
                         {order.riskLevel}
-                      </span>
+                      </StatusBadge>
                       {order.riskFlags.length > 0 ? (
                         <p className="mt-2 max-w-xs text-sm font-mono opacity-70">{order.riskFlags.join(' • ')}</p>
                       ) : null}
@@ -234,9 +334,9 @@ export default function OrderDeskPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : order.status === 'DONE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-ink-red'}`}>
+                      <StatusBadge tone={statusToneFromStatus(order.status)}>
                         {order.status}
-                      </span>
+                      </StatusBadge>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end gap-2">

@@ -1,14 +1,14 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDownUp, BellDot, Landmark, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { RouteLoading } from '../../app/RouteLoading';
-import { SketchyButton } from '../SketchyButton';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { getMerchantDashboard } from '../../services/merchant-dashboard.service';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
+import { SketchyButton } from '../SketchyButton';
 import type { MerchantDashboardDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
 
@@ -98,8 +98,19 @@ export function MerchantLayout() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dashboardRequestRef = useRef<{ promise: Promise<void>; signal?: AbortSignal } | null>(null);
 
   const loadDashboard = useCallback(async (mode: 'initial' | 'manual' | 'poll', signal?: AbortSignal) => {
+    if (mode === 'poll' && document.visibilityState === 'hidden') {
+      return;
+    }
+
+    const activeRequest = dashboardRequestRef.current;
+    if (activeRequest && !activeRequest.signal?.aborted) {
+      await activeRequest.promise;
+      return;
+    }
+
     if (mode === 'initial') {
       setStatus((current) => current === 'ready' ? current : 'loading');
       setError(null);
@@ -107,33 +118,48 @@ export function MerchantLayout() {
       setIsRefreshing(true);
     }
 
+    const request = (async () => {
+      try {
+        const nextDashboard = await getMerchantDashboard(signal);
+        dashboardRef.current = nextDashboard;
+        startTransition(() => {
+          setDashboard(nextDashboard);
+          setStatus('ready');
+          setError(null);
+          setIsRefreshing(false);
+        });
+      } catch (loadError) {
+        if (isAbortError(loadError, signal)) {
+          return;
+        }
+
+        if (loadError instanceof ApiClientError && isHandledAuthRedirectCode(loadError.code)) {
+          setIsRefreshing(false);
+          return;
+        }
+
+        const message = loadError instanceof Error ? loadError.message : 'Failed to load merchant dashboard.';
+        setIsRefreshing(false);
+        setError(message);
+        if (!dashboardRef.current) {
+          setStatus('error');
+        }
+        if (mode === 'manual') {
+          showError(message);
+        }
+      }
+    })();
+
+    const trackedRequest: { promise: Promise<void>; signal?: AbortSignal } = signal
+      ? { promise: request, signal }
+      : { promise: request };
+    dashboardRequestRef.current = trackedRequest;
+
     try {
-      const nextDashboard = await getMerchantDashboard(signal);
-      dashboardRef.current = nextDashboard;
-      startTransition(() => {
-        setDashboard(nextDashboard);
-        setStatus('ready');
-        setError(null);
-        setIsRefreshing(false);
-      });
-    } catch (loadError) {
-      if (isAbortError(loadError)) {
-        return;
-      }
-
-      if (loadError instanceof ApiClientError && isHandledAuthRedirectCode(loadError.code)) {
-        setIsRefreshing(false);
-        return;
-      }
-
-      const message = loadError instanceof Error ? loadError.message : 'Failed to load merchant dashboard.';
-      setIsRefreshing(false);
-      setError(message);
-      if (!dashboardRef.current) {
-        setStatus('error');
-      }
-      if (mode === 'manual') {
-        showError(message);
+      await request;
+    } finally {
+      if (dashboardRequestRef.current === trackedRequest) {
+        dashboardRequestRef.current = null;
       }
     }
   }, [showError]);
@@ -166,15 +192,16 @@ export function MerchantLayout() {
         ? alertBadge
         : null
   );
-  const routeContext: MerchantOutletContext = {
+  const refreshDashboard = useCallback(async () => {
+    await loadDashboard('manual');
+  }, [loadDashboard]);
+  const routeContext = useMemo<MerchantOutletContext>(() => ({
     dashboard,
     status,
     isRefreshing,
     error,
-    refreshDashboard: async () => {
-      await loadDashboard('manual');
-    },
-  };
+    refreshDashboard,
+  }), [dashboard, error, isRefreshing, refreshDashboard, status]);
 
   return (
     <div className="min-h-screen bg-paper paper-texture">
@@ -272,7 +299,10 @@ export function MerchantLayout() {
                   TON gas {formatMoney(dashboard?.liquidity.tonBalanceTon)}
                 </div>
                 <SketchyButton
-                  className="inline-flex items-center gap-2 rounded-full border-2 border-ink-black px-4 py-2 text-sm font-bold transition-colors hover:bg-black/5 disabled:opacity-60"
+                  aria-label="Refresh merchant dashboard"
+                  className="h-10 px-3 text-sm font-semibold text-ink-black/70 shadow-sm transition-colors hover:text-ink-black disabled:opacity-60"
+                  fill="#ffffff"
+                  activeColor="rgba(0,0,0,0.05)"
                   disabled={isRefreshing}
                   onClick={() => {
                     void loadDashboard('manual');
@@ -322,7 +352,7 @@ export function MerchantLayout() {
                 </div>
               </nav>
 
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 px-4 py-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Pocket Snapshot</p>
                 <div className="mt-3 grid grid-cols-2 gap-3 font-mono text-sm">
                   <div>

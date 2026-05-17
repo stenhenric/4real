@@ -15,17 +15,20 @@ import {
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { AuthController } from '../controllers/auth.controller.ts';
 import { requireMfaStepUpIfEnabled } from '../middleware/auth.middleware.ts';
-import { decodeBase32 } from '../services/auth-crypto.service.ts';
+import { decodeBase32, encryptSecret, hashOpaqueToken } from '../services/auth-crypto.service.ts';
 import { AuthEmailService } from '../services/auth-email.service.ts';
 import { AuthMfaService } from '../services/auth-mfa.service.ts';
 import { AuthSessionService } from '../services/auth-session.service.ts';
+import { AuditService } from '../services/audit.service.ts';
 import { GoogleOAuthService } from '../services/google-oauth.service.ts';
 import { assertValidPassword } from '../services/password-policy.service.ts';
 import { OneTimeTokenService } from '../services/one-time-token.service.ts';
 import { hashPassword } from '../services/password-hash.service.ts';
 import { verifyTurnstileToken } from '../services/auth-turnstile.service.ts';
 import { createTotpSetup, verifyTotpCode } from '../services/totp.service.ts';
+import { ProductEmailNotificationService } from '../services/product-email-notification.service.ts';
 import { UserService } from '../services/user.service.ts';
+import { User } from '../models/User.ts';
 import { serviceUnavailable } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 
@@ -80,6 +83,122 @@ test('verifyTotpCode accepts the current 6-digit code and rejects malformed code
   assert.equal(verifyTotpCode(setup.secret, 'ABCDEF', now), false);
 });
 
+test('verifyUserFactor consumes a recovery code atomically and rejects duplicate redemption', async (t) => {
+  const secret = createTotpSetup({ issuer: '4real', accountName: 'alice@example.com' }).secret;
+  const enabledAt = new Date('2026-05-03T00:00:00.000Z');
+  const recoveryCode = 'ABCD-EFGH';
+  const recoveryCodeHash = hashOpaqueToken('ABCD-EFGH');
+  const user = createMockUser({
+    mfa: {
+      enabledAt,
+      totpSecretEncrypted: encryptSecret(secret),
+      recoveryCodeHashes: [recoveryCodeHash],
+    },
+  });
+
+  let consumed = false;
+  const consumeMock = t.mock.method(UserService, 'consumeMfaRecoveryCode', async (params: {
+    userId: string;
+    recoveryCodeHash: string;
+  }) => {
+    assert.equal(params.userId, 'user-1');
+    assert.equal(params.recoveryCodeHash, recoveryCodeHash);
+    if (consumed) {
+      return null;
+    }
+    consumed = true;
+    return createMockUser({
+      mfa: {
+        enabledAt,
+        totpSecretEncrypted: encryptSecret(secret),
+        recoveryCodeHashes: [],
+      },
+    });
+  });
+
+  const results = await Promise.allSettled([
+    AuthMfaService.verifyUserFactor(user, { code: undefined, recoveryCode }),
+    AuthMfaService.verifyUserFactor(user, { code: undefined, recoveryCode }),
+  ]);
+
+  assert.equal(consumeMock.mock.callCount(), 2);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  const rejected = results.find((result) => result.status === 'rejected');
+  assert.equal(
+    rejected?.status === 'rejected'
+      && typeof rejected.reason === 'object'
+      && rejected.reason !== null
+      && 'code' in rejected.reason
+      && rejected.reason.code === 'INVALID_TOTP_CODE',
+    true,
+  );
+});
+
+test('verifyUserFactor still accepts a valid TOTP code without consuming recovery codes', async (t) => {
+  const now = Date.now();
+  const secret = createTotpSetup({ issuer: '4real', accountName: 'alice@example.com' }).secret;
+  const user = createMockUser({
+    mfa: {
+      enabledAt: new Date('2026-05-03T00:00:00.000Z'),
+      totpSecretEncrypted: encryptSecret(secret),
+      recoveryCodeHashes: [hashOpaqueToken('ABCDEFGH')],
+    },
+  });
+  const consumeMock = t.mock.method(UserService, 'consumeMfaRecoveryCode', async () => {
+    throw new Error('recovery code should not be consumed for TOTP');
+  });
+
+  const verified = await AuthMfaService.verifyUserFactor(user, {
+    code: createTotpCode(secret, now),
+    recoveryCode: undefined,
+  });
+
+  assert.equal(verified, user);
+  assert.equal(consumeMock.mock.callCount(), 0);
+});
+
+test('regenerateRecoveryCodes returns one new set and emits audit plus security notification', async (t) => {
+  const secret = createTotpSetup({ issuer: '4real', accountName: 'alice@example.com' }).secret;
+  const user = createMockUser({
+    mfa: {
+      enabledAt: new Date('2026-05-03T00:00:00.000Z'),
+      totpSecretEncrypted: encryptSecret(secret),
+      recoveryCodeHashes: [hashOpaqueToken('OLD-CODE')],
+    },
+  });
+
+  let storedHashes: string[] = [];
+  const updateMock = t.mock.method(UserService, 'updateMfaState', async (params: {
+    recoveryCodeHashes: string[];
+  }) => {
+    storedHashes = params.recoveryCodeHashes;
+    return createMockUser({ mfa: { ...user.mfa, recoveryCodeHashes: params.recoveryCodeHashes } });
+  });
+  const auditMock = t.mock.method(AuditService, 'record', async (params) => {
+    assert.equal(params.eventType, 'mfa_recovery_codes_regenerated');
+    assert.equal(params.actorUserId, 'user-1');
+    assert.equal(params.targetUserId, 'user-1');
+  });
+  const notificationMock = t.mock.method(
+    ProductEmailNotificationService,
+    'sendSecurityAlert',
+    async (params: { userId: string; subject: string }) => {
+      assert.equal(params.userId, 'user-1');
+      assert.match(params.subject, /recovery codes/i);
+    },
+  );
+
+  const recoveryCodes = await AuthMfaService.regenerateRecoveryCodes(user, { actorUserId: 'user-1' });
+
+  assert.equal(recoveryCodes.length, 10);
+  assert.equal(new Set(recoveryCodes).size, 10);
+  assert.equal(storedHashes.length, 10);
+  assert.equal(storedHashes.some((hash) => recoveryCodes.includes(hash)), false);
+  assert.equal(updateMock.mock.callCount(), 1);
+  assert.equal(auditMock.mock.callCount(), 1);
+  assert.equal(notificationMock.mock.callCount(), 1);
+});
+
 test('assertValidPassword rejects common and predictable passwords', () => {
   assert.throws(
     () => assertValidPassword('administrator'),
@@ -105,8 +224,15 @@ test('assertValidPassword rejects common and predictable passwords', () => {
   });
 });
 
+test('User passwordHash is excluded from default queries by schema policy', () => {
+  assert.equal(User.schema.path('passwordHash')?.options?.select, false);
+});
+
 test('auth cookie names drop the __Host- prefix outside production and restore it in production', () => {
   const previousNodeEnv = process.env.NODE_ENV;
+  const previousRedisUrl = process.env.REDIS_URL;
+  const previousPublicAppOrigin = process.env.PUBLIC_APP_ORIGIN;
+  const previousAllowedOrigins = process.env.ALLOWED_ORIGINS;
 
   try {
     process.env.NODE_ENV = 'development';
@@ -120,6 +246,9 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
     assert.equal(getDeviceCookieOptions().secure, false);
 
     process.env.NODE_ENV = 'production';
+    process.env.REDIS_URL = 'rediss://redis.example.invalid:6379';
+    process.env.PUBLIC_APP_ORIGIN = 'https://app.example.com';
+    process.env.ALLOWED_ORIGINS = 'https://app.example.com';
     resetEnvCacheForTests();
 
     assert.equal(getAuthCookieName(), '__Host-4real-at');
@@ -135,6 +264,24 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
       process.env.NODE_ENV = previousNodeEnv;
     }
 
+    if (previousRedisUrl === undefined) {
+      delete process.env.REDIS_URL;
+    } else {
+      process.env.REDIS_URL = previousRedisUrl;
+    }
+
+    if (previousPublicAppOrigin === undefined) {
+      delete process.env.PUBLIC_APP_ORIGIN;
+    } else {
+      process.env.PUBLIC_APP_ORIGIN = previousPublicAppOrigin;
+    }
+
+    if (previousAllowedOrigins === undefined) {
+      delete process.env.ALLOWED_ORIGINS;
+    } else {
+      process.env.ALLOWED_ORIGINS = previousAllowedOrigins;
+    }
+
     resetEnvCacheForTests();
   }
 });
@@ -142,10 +289,16 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
 test('verifyTurnstileToken fails closed in production when the secret is missing', async () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  const previousRedisUrl = process.env.REDIS_URL;
+  const previousPublicAppOrigin = process.env.PUBLIC_APP_ORIGIN;
+  const previousAllowedOrigins = process.env.ALLOWED_ORIGINS;
 
   try {
     process.env.NODE_ENV = 'production';
     process.env.TURNSTILE_SECRET_KEY = '';
+    process.env.REDIS_URL = 'rediss://redis.example.invalid:6379';
+    process.env.PUBLIC_APP_ORIGIN = 'https://app.example.com';
+    process.env.ALLOWED_ORIGINS = 'https://app.example.com';
     resetEnvCacheForTests();
 
     await assert.rejects(
@@ -169,6 +322,55 @@ test('verifyTurnstileToken fails closed in production when the secret is missing
       process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
     }
 
+    if (previousRedisUrl === undefined) {
+      delete process.env.REDIS_URL;
+    } else {
+      process.env.REDIS_URL = previousRedisUrl;
+    }
+
+    if (previousPublicAppOrigin === undefined) {
+      delete process.env.PUBLIC_APP_ORIGIN;
+    } else {
+      process.env.PUBLIC_APP_ORIGIN = previousPublicAppOrigin;
+    }
+
+    if (previousAllowedOrigins === undefined) {
+      delete process.env.ALLOWED_ORIGINS;
+    } else {
+      process.env.ALLOWED_ORIGINS = previousAllowedOrigins;
+    }
+
+    resetEnvCacheForTests();
+  }
+});
+
+test('verifyTurnstileToken sends Cloudflare verification with a bounded abort signal', async (t) => {
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = 'turnstile-secret';
+  resetEnvCacheForTests();
+
+  try {
+    let capturedInit: RequestInit | undefined;
+    const fetchMock = t.mock.method(globalThis, 'fetch', async (_input: unknown, init?: RequestInit) => {
+      capturedInit = init;
+      return {
+        ok: true,
+        async json() {
+          return { success: true };
+        },
+      } as Response;
+    });
+
+    await verifyTurnstileToken('token', '127.0.0.1');
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.ok(capturedInit?.signal instanceof AbortSignal);
+  } finally {
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
     resetEnvCacheForTests();
   }
 });
@@ -497,6 +699,55 @@ test('consumeVerificationEmail issues a session and routes the browser to the ve
   assert.equal(balanceMock.mock.callCount(), 1);
   assert.equal(res.getHeader('cache-control'), 'no-store, max-age=0');
   assert.equal((res.payload as { redirectTo?: string }).redirectTo, '/auth/verified');
+});
+
+test('me keeps the user check first but fetches session metadata and balance concurrently', async (t) => {
+  let sessionsPending = false;
+  let balanceObservedSessionsPending = false;
+  const userMock = t.mock.method(UserService, 'findAuthUserById', async () => createMockUser());
+  const listMock = t.mock.method(AuthSessionService, 'listSessions', async () => {
+    sessionsPending = true;
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    sessionsPending = false;
+    return [{
+      id: 'session-1',
+      current: true,
+      deviceId: 'device-1',
+      userAgent: 'test-agent',
+      ipAddress: '127.0.0.1',
+      createdAt: '2026-05-03T01:00:00.000Z',
+      lastSeenAt: '2026-05-03T01:00:00.000Z',
+      idleExpiresAt: '2026-05-03T02:00:00.000Z',
+      absoluteExpiresAt: '2026-05-03T03:00:00.000Z',
+    }];
+  });
+  const balanceMock = t.mock.method(UserService, 'getDisplayBalance', async () => {
+    balanceObservedSessionsPending = sessionsPending;
+    return '125.500000';
+  });
+  const req = {
+    user: {
+      id: 'user-1',
+      sessionId: 'session-1',
+      deviceId: 'device-1',
+      isAdmin: false,
+      emailVerified: true,
+      usernameComplete: true,
+      mfaEnabled: false,
+    },
+  } as any;
+  const res = createResponseMock() as any;
+
+  await AuthController.me(req, res);
+
+  assert.equal(userMock.mock.callCount(), 1);
+  assert.equal(listMock.mock.callCount(), 1);
+  assert.equal(balanceMock.mock.callCount(), 1);
+  assert.equal(balanceObservedSessionsPending, true);
+  assert.equal((res.payload as { user?: { balance?: string } }).user?.balance, '125.500000');
+  assert.equal((res.payload as { session?: { id?: string } }).session?.id, 'session-1');
 });
 
 test('handleGoogleCallback redirects to login and logs stable session failure details when session creation fails', async (t) => {

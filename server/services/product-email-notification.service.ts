@@ -40,6 +40,11 @@ type SendDepositParams = DepositEmailParams & { userId?: string };
 type SendWithdrawalQueuedParams = Omit<WithdrawalEmailParams, 'scenario'> & { userId: string };
 type SendWithdrawalTransitionParams = WithdrawalEmailParams & { userId: string };
 type SendWithdrawalMerchantAlertParams = WithdrawalEmailParams;
+type SendSecurityAlertParams = {
+  userId: string;
+  subject: string;
+  summary: string;
+};
 type ProductEmailContent = { subject: string; text: string; html?: string };
 
 const defaultDependencies: ProductEmailNotificationDependencies = {
@@ -218,6 +223,17 @@ async function sendToMerchantAdmins(params: {
 }
 
 export class ProductEmailNotificationService {
+  static async sendSecurityAlert(params: SendSecurityAlertParams): Promise<void> {
+    await sendToVerifiedUser({
+      scenario: 'security_alert_user',
+      userId: params.userId,
+      render: () => ({
+        subject: params.subject,
+        text: params.summary,
+      }),
+    });
+  }
+
   static async sendOrderCreated(params: SendOrderCreatedParams): Promise<void> {
     await sendToVerifiedUser({
       scenario: 'order_created_user',

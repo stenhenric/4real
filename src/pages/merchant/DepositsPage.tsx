@@ -6,6 +6,8 @@ import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import {
@@ -61,7 +63,7 @@ export default function DepositsPage() {
         setLoading(false);
       });
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(error, signal, { pageUnloading: document.visibilityState === 'hidden' })) {
         return;
       }
 
@@ -296,7 +298,125 @@ export default function DepositsPage() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="space-y-4 p-4 md:hidden">
+          {loading ? (
+            <EmptyState>Loading deposit reviews...</EmptyState>
+          ) : deposits.length === 0 ? (
+            <EmptyState>No deposit reviews match the current filter.</EmptyState>
+          ) : (
+            deposits.map((deposit) => {
+              const userInputId = `deposit-user-${deposit.txHash}`;
+              const noteInputId = `deposit-note-${deposit.txHash}`;
+
+              return (
+                <article key={deposit.txHash} className="rough-border bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-2xl font-bold italic">{formatMoney(deposit.amountUsdt)} USDT</p>
+                      <p className="mt-2 break-all text-xs font-mono opacity-50">{deposit.txHash}</p>
+                    </div>
+                    <StatusBadge tone={statusToneFromStatus(deposit.memoStatus)}>{deposit.memoStatus}</StatusBadge>
+                  </div>
+
+                  <dl className="mt-4 grid gap-3 text-sm">
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Memo</dt>
+                      <dd className="break-all font-mono opacity-70">{deposit.comment || 'empty'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Candidate</dt>
+                      <dd className="font-mono">
+                        {deposit.candidateUsername ?? 'No exact memo owner'}
+                        <span className="block opacity-60">{deposit.candidateUserId ?? 'None'}</span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Observed</dt>
+                      <dd className="font-mono">{formatDateTime(deposit.txTime)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-widest opacity-50">Resolution</dt>
+                      <dd className="font-mono">
+                        {deposit.resolutionStatus === 'open' ? 'Waiting for operator action' : deposit.resolutionStatus}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {deposit.resolutionStatus === 'open' ? (
+                    <div className="mt-4 space-y-3">
+                      <div>
+                        <label className="mb-1 ml-1 block text-xs font-bold uppercase tracking-widest opacity-55" htmlFor={userInputId}>
+                          Target user ID
+                        </label>
+                        <input
+                          className="w-full border-b-4 border-black/20 bg-white px-3 py-2 text-sm font-mono"
+                          id={userInputId}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setUserOverrides((current) => ({
+                              ...current,
+                              [deposit.txHash]: nextValue,
+                            }));
+                          }}
+                          placeholder={deposit.candidateUserId ?? 'Target user ID'}
+                          type="text"
+                          value={userOverrides[deposit.txHash] ?? ''}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 ml-1 block text-xs font-bold uppercase tracking-widest opacity-55" htmlFor={noteInputId}>
+                          Operator note
+                        </label>
+                        <input
+                          className="w-full border-b-4 border-black/20 bg-white px-3 py-2 text-sm font-mono"
+                          id={noteInputId}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setNotes((current) => ({
+                              ...current,
+                              [deposit.txHash]: nextValue,
+                            }));
+                          }}
+                          placeholder="Operator note"
+                          type="text"
+                          value={notes[deposit.txHash] ?? ''}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <SketchyButton
+                          className="px-3 py-2 text-sm text-danger-text"
+                          disabled={rowAction === deposit.txHash}
+                          fill="var(--color-danger-bg)"
+                          onClick={() => {
+                            void handleReconcile(deposit, 'dismiss');
+                          }}
+                        >
+                          <X size={15} />
+                          Dismiss
+                        </SketchyButton>
+                        <SketchyButton
+                          className="px-3 py-2 text-sm text-success-text"
+                          disabled={rowAction === deposit.txHash}
+                          fill="var(--color-success-bg)"
+                          onClick={() => {
+                            void handleReconcile(deposit, 'credit');
+                          }}
+                        >
+                          <Check size={15} />
+                          Credit
+                        </SketchyButton>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-xs font-mono opacity-40">Final state</p>
+                  )}
+                </article>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="border-b-2 border-black/10 bg-black/5 text-left text-xs font-bold uppercase tracking-[0.2em] text-black/50">
@@ -332,9 +452,9 @@ export default function DepositsPage() {
                       </p>
                     </td>
                     <td className="px-4 py-4">
-                      <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold uppercase text-yellow-800">
+                      <StatusBadge tone={statusToneFromStatus(deposit.memoStatus)}>
                         {deposit.memoStatus}
-                      </span>
+                      </StatusBadge>
                     </td>
                     <td className="px-4 py-4 text-sm font-mono">
                       <div>{deposit.candidateUsername ?? 'No exact memo owner'}</div>
@@ -370,6 +490,7 @@ export default function DepositsPage() {
                       {deposit.resolutionStatus === 'open' ? (
                         <div className="flex flex-col items-end gap-3">
                           <input
+                            aria-label={`Target user ID for deposit ${deposit.txHash}`}
                             className="w-72 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-mono"
                             onChange={(event) => {
                               const nextValue = event.target.value;
@@ -383,6 +504,7 @@ export default function DepositsPage() {
                             value={userOverrides[deposit.txHash] ?? ''}
                           />
                           <input
+                            aria-label={`Operator note for deposit ${deposit.txHash}`}
                             className="w-72 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-mono"
                             onChange={(event) => {
                               const nextValue = event.target.value;

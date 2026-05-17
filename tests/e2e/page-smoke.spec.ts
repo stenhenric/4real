@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { closeContext, createLoggedInPage, loginAs, resetApp } from './helpers';
+import { APP_URL, closeContext, createLoggedInPage, loginAs, resetApp } from './helpers';
 
 type RouteExpectation = {
   path: string;
@@ -15,7 +15,11 @@ const MOCK_TON_WALLETS = [{
   about_url: 'https://example.com/mock-wallet',
   universal_url: 'https://example.com/mock-wallet/connect',
   bridge: [{ type: 'sse', url: 'https://example.com/mock-wallet/bridge' }],
-  platforms: ['ios', 'android', 'linux', 'macos', 'windows', 'chrome'],
+  platforms: ['ios', 'android', 'linux', 'macos', 'windows', 'chrome', 'firefox'],
+  features: [
+    { name: 'SendTransaction', maxMessages: 4 },
+    { name: 'SignData', types: ['text', 'binary', 'cell'] },
+  ],
 }];
 
 const DEFAULT_IGNORED_CONSOLE_ERRORS = [
@@ -145,6 +149,64 @@ test('player routes when a session is preloaded render the lobby leaderboard ban
     }
 
     await health.assertHealthy();
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('play lobby fetches leaderboard only after the leaderboard tab is opened', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  const requestedPaths: string[] = [];
+
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.origin === APP_URL) {
+      requestedPaths.push(url.pathname);
+    }
+    await route.continue();
+  });
+
+  try {
+    await page.goto('/play');
+    await expect(page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+
+    expect(requestedPaths.filter((path) => path === '/api/matches/active').length).toBeGreaterThanOrEqual(1);
+    expect(requestedPaths.filter((path) => path === '/api/users/leaderboard')).toHaveLength(0);
+
+    await page.getByRole('tab', { name: /leaderboard/i }).click();
+    await expect(page.getByRole('heading', { name: /top sketchers/i })).toBeVisible();
+    await expect.poll(
+      () => requestedPaths.filter((path) => path === '/api/users/leaderboard').length,
+    ).toBe(1);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('play lobby does not load TonConnect assets before wallet routes need them', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  const requestedAssetPaths: string[] = [];
+
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.origin === APP_URL) {
+      requestedAssetPaths.push(url.pathname);
+    }
+  });
+
+  try {
+    await page.goto('/play');
+    await expect(page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+
+    expect(requestedAssetPaths.some((path) => /\/assets\/tonconnect.*\.js/i.test(path))).toBe(false);
+
+    await page.goto('/bank');
+    await expect(page.getByRole('heading', { name: /the bank/i })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+
+    expect(requestedAssetPaths.some((path) => /\/assets\/tonconnect.*\.js/i.test(path))).toBe(true);
   } finally {
     await closeContext(context);
   }

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getCurrentUser, logout as logoutRequest } from '../services/auth.service';
 import { ApiClientError } from '../services/api/apiClient';
+import { shouldClearAuthAfterRefreshError } from '../features/auth/refresh-error';
 import { isAbortError } from '../utils/isAbortError';
 import type { AuthResponseDTO, AuthStatus, SessionListItemDTO, UserDTO } from '../types/api';
 
@@ -80,13 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      if (error instanceof ApiClientError && error.status === 401) {
+      if (shouldClearAuthAfterRefreshError(error)) {
         clearAuth();
         setLoading(false);
         return null;
       }
-
-      clearAuth();
     }
 
     setLoading(false);

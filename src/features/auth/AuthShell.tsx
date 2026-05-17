@@ -1,5 +1,6 @@
 import type * as React from 'react';
 import { cn } from '../../utils/cn';
+import { AuthInput } from './components/AuthInput';
 
 interface AuthShellProps {
   eyebrow: string;
@@ -61,20 +62,14 @@ export function AuthField({ label, hint, error, className, id, ...props }: AuthF
   const fieldId = id ?? props.name ?? label.toLowerCase().replace(/\s+/g, '-');
 
   return (
-    <label className="block" htmlFor={fieldId}>
-      <span className="font-mono font-bold text-[10px] uppercase tracking-widest opacity-50">{label}</span>
-      <input
-        {...props}
-        id={fieldId}
-        className={cn(
-          'mt-2 w-full bg-transparent border-b-4 border-black font-bold text-lg outline-none p-2 focus:bg-white/50 transition-colors placeholder:opacity-30',
-          error && 'border-ink-red',
-          className,
-        )}
-      />
-      {hint ? <span className="mt-1 block text-xs font-bold opacity-40">{hint}</span> : null}
-      {error ? <span className="mt-1 block text-sm font-bold text-ink-red">{error}</span> : null}
-    </label>
+    <AuthInput
+      {...props}
+      id={fieldId}
+      label={label}
+      hint={hint}
+      error={error}
+      inputClassName={className}
+    />
   );
 }
 
@@ -88,7 +83,7 @@ export function AuthTextarea({ label, hint, className, id, ...props }: AuthTexta
 
   return (
     <label className="block" htmlFor={fieldId}>
-      <span className="font-mono font-bold text-[10px] uppercase tracking-widest opacity-50">{label}</span>
+      <span className="font-mono font-bold text-[10px] uppercase tracking-widest opacity-60">{label}</span>
       <textarea
         {...props}
         id={fieldId}
@@ -113,11 +108,12 @@ export function AuthNotice({
     <div
       className={cn(
         'border-l-4 px-4 py-3 text-sm font-bold leading-6',
-        tone === 'info'    && 'border-ink-blue bg-ink-blue/5 text-ink-blue',
-        tone === 'success' && 'border-green-700 bg-green-50 text-green-800',
-        tone === 'warning' && 'border-yellow-500 bg-yellow-50 text-yellow-900',
-        tone === 'danger'  && 'border-ink-red bg-red-50 text-ink-red',
+        tone === 'info'    && 'border-info-border bg-info-bg text-info-text',
+        tone === 'success' && 'border-success-border bg-success-bg text-success-text',
+        tone === 'warning' && 'border-warning-border bg-warning-bg text-warning-text',
+        tone === 'danger'  && 'border-danger-border bg-danger-bg text-danger-text',
       )}
+      role={tone === 'danger' || tone === 'warning' ? 'alert' : 'status'}
     >
       {children}
     </div>

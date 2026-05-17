@@ -24,7 +24,7 @@ export default function CompleteProfilePage() {
       success('Profile completed.');
       navigate('/play', { replace: true });
     } catch (error) {
-      showError(getApiErrorMessage(error, 'We could not save your profile right now. Please try again.'));
+      showError(getApiErrorMessage(error, 'Could not save profile. Please try again.'));
     } finally {
       setLoading(false);
     }

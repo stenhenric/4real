@@ -32,12 +32,12 @@ export class DepositMemoRepository {
     return this.collection().find({ memo: { $in: memos } }).toArray();
   }
 
-  static async claimActiveMemo(memo: string, session?: mongoose.ClientSession) {
+  static async claimActiveMemo(memo: string, session?: mongoose.ClientSession, validAt: Date = new Date()) {
     return this.collection().findOneAndUpdate(
       {
         memo,
         used: { $ne: true },
-        expiresAt: { $gt: new Date() },
+        expiresAt: { $gt: validAt },
       },
       { $set: { used: true, usedAt: new Date() } },
       {

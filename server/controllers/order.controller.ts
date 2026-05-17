@@ -269,6 +269,6 @@ export class OrderController {
         ...(order.transactionCode ? { transactionCode: order.transactionCode } : {}),
       });
     }
-    res.json(serializeOrder(order));
+    res.json(serializeOrder(order, { includePayoutDetails: true }));
   }
 }

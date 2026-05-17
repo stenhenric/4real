@@ -101,11 +101,16 @@ test('consumeCallback verifies the Google ID token with the configured OAuth aud
       },
     });
 
-    const authorizationUrl = new URL(await GoogleOAuthService.createAuthorizationUrl('/play'));
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest('/play');
+    const authorizationUrl = new URL(authorizationRequest.authorizationUrl);
     const state = authorizationUrl.searchParams.get('state');
     assert.ok(state);
 
-    const profile = await GoogleOAuthService.consumeCallback({ state, code: 'auth-code' });
+    const profile = await GoogleOAuthService.consumeCallback({
+      state,
+      code: 'auth-code',
+      browserState: authorizationRequest.browserState,
+    });
 
     assert.deepEqual(verifiedTokens, ['signed-google-id-token']);
     assert.deepEqual(verifiedAudiences, ['google-oauth-client-id']);
@@ -138,12 +143,17 @@ test('consumeCallback rejects ID tokens that fail Google verification', async ()
       },
     });
 
-    const authorizationUrl = new URL(await GoogleOAuthService.createAuthorizationUrl());
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest();
+    const authorizationUrl = new URL(authorizationRequest.authorizationUrl);
     const state = authorizationUrl.searchParams.get('state');
     assert.ok(state);
 
     await assert.rejects(
-      () => GoogleOAuthService.consumeCallback({ state, code: 'auth-code' }),
+      () => GoogleOAuthService.consumeCallback({
+        state,
+        code: 'auth-code',
+        browserState: authorizationRequest.browserState,
+      }),
       (error: unknown) => typeof error === 'object'
         && error !== null
         && 'code' in error
@@ -177,12 +187,17 @@ test('consumeCallback rejects ID tokens with a mismatched nonce', async () => {
       }),
     });
 
-    const authorizationUrl = new URL(await GoogleOAuthService.createAuthorizationUrl());
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest();
+    const authorizationUrl = new URL(authorizationRequest.authorizationUrl);
     const state = authorizationUrl.searchParams.get('state');
     assert.ok(state);
 
     await assert.rejects(
-      () => GoogleOAuthService.consumeCallback({ state, code: 'auth-code' }),
+      () => GoogleOAuthService.consumeCallback({
+        state,
+        code: 'auth-code',
+        browserState: authorizationRequest.browserState,
+      }),
       (error: unknown) => typeof error === 'object'
         && error !== null
         && 'code' in error
@@ -227,7 +242,41 @@ test('consumeCallback rejects userinfo that does not match the verified token su
       }),
     });
 
-    const authorizationUrl = new URL(await GoogleOAuthService.createAuthorizationUrl());
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest();
+    const authorizationUrl = new URL(authorizationRequest.authorizationUrl);
+    const state = authorizationUrl.searchParams.get('state');
+    assert.ok(state);
+
+    await assert.rejects(
+      () => GoogleOAuthService.consumeCallback({
+        state,
+        code: 'auth-code',
+        browserState: authorizationRequest.browserState,
+      }),
+      (error: unknown) => typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: string }).code === 'GOOGLE_IDENTITY_MISMATCH',
+    );
+  });
+});
+
+test('consumeCallback rejects a valid OAuth state without the browser binding cookie value', async () => {
+  await withOAuthEnv(async () => {
+    const stateStore = new Map<string, string>();
+
+    setGoogleOAuthDependenciesForTests({
+      setState: async (key, _ttlSeconds, value) => {
+        stateStore.set(key, value);
+      },
+      getState: async (key) => stateStore.get(key) ?? null,
+      deleteState: async (key) => {
+        stateStore.delete(key);
+      },
+    });
+
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest();
+    const authorizationUrl = new URL(authorizationRequest.authorizationUrl);
     const state = authorizationUrl.searchParams.get('state');
     assert.ok(state);
 
@@ -236,7 +285,40 @@ test('consumeCallback rejects userinfo that does not match the verified token su
       (error: unknown) => typeof error === 'object'
         && error !== null
         && 'code' in error
-        && (error as { code?: string }).code === 'GOOGLE_IDENTITY_MISMATCH',
+        && (error as { code?: string }).code === 'GOOGLE_STATE_INVALID',
+    );
+  });
+});
+
+test('consumeCallback rejects a valid OAuth state with a mismatched browser binding value', async () => {
+  await withOAuthEnv(async () => {
+    const stateStore = new Map<string, string>();
+
+    setGoogleOAuthDependenciesForTests({
+      setState: async (key, _ttlSeconds, value) => {
+        stateStore.set(key, value);
+      },
+      getState: async (key) => stateStore.get(key) ?? null,
+      deleteState: async (key) => {
+        stateStore.delete(key);
+      },
+    });
+
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest();
+    const authorizationUrl = new URL(authorizationRequest.authorizationUrl);
+    const state = authorizationUrl.searchParams.get('state');
+    assert.ok(state);
+
+    await assert.rejects(
+      () => GoogleOAuthService.consumeCallback({
+        state,
+        code: 'auth-code',
+        browserState: 'different-browser-state',
+      }),
+      (error: unknown) => typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: string }).code === 'GOOGLE_STATE_INVALID',
     );
   });
 });

@@ -4,6 +4,8 @@ import { RouteLoading } from '../app/RouteLoading';
 import { useToast } from '../app/ToastProvider';
 import { SketchyButton } from '../components/SketchyButton';
 import { SketchyContainer } from '../components/SketchyContainer';
+import { EmptyState } from '../components/ui/EmptyState';
+import { StatusBadge, statusToneFromStatus } from '../components/ui/StatusBadge';
 import { getTransactionAccentClass, isCreditTransaction } from '../features/bank/transactionPresentation';
 import { getTransactions } from '../services/transactions.service';
 import { isAbortError } from '../utils/isAbortError';
@@ -103,9 +105,9 @@ const BankPage = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <SketchyContainer roughness={1} className="bg-white/80 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl">
-          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mb-4">
-            <ArrowDownRight size={40} className="text-green-700" />
+        <SketchyContainer roughness={1} className="bg-white/85 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl">
+          <div className="rough-border mb-4 flex h-20 w-20 items-center justify-center bg-success-bg">
+            <ArrowDownRight size={40} className="text-success-text" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Deposit</h2>
           <p className="text-xs font-mono font-bold opacity-50 mb-6">Automated USDT on TON</p>
@@ -114,9 +116,9 @@ const BankPage = () => {
           </SketchyButton>
         </SketchyContainer>
 
-        <SketchyContainer roughness={1} className="bg-white/80 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl">
-          <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mb-4">
-            <ArrowUpRight size={40} className="text-red-700" />
+        <SketchyContainer roughness={1} className="bg-white/85 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-xl">
+          <div className="rough-border mb-4 flex h-20 w-20 items-center justify-center bg-danger-bg">
+            <ArrowUpRight size={40} className="text-danger-text" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Withdraw</h2>
           <p className="text-xs font-mono font-bold opacity-50 mb-6">USDT to a TON wallet</p>
@@ -125,17 +127,18 @@ const BankPage = () => {
           </SketchyButton>
         </SketchyContainer>
 
-        <SketchyContainer roughness={1} className="bg-white/90 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-2xl border-4 border-yellow-500/30 relative">
-          <div className="absolute -top-3 -right-3 rotate-12 bg-yellow-400 text-black text-[10px] font-bold uppercase px-3 py-1 shadow-md border-2 border-black">
+        <SketchyContainer roughness={1} className="bg-white/90 flex flex-col items-center justify-center p-8 text-center hover:-translate-y-2 transition-transform shadow-2xl relative">
+          <div className="absolute -top-3 -right-3 rotate-12 bg-note-yellow text-black text-[10px] font-bold uppercase px-3 py-1 shadow-md border-2 border-black">
             P2P Active
           </div>
-          <div className="w-20 h-20 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
-            <Store size={40} className="text-yellow-700" />
+          <div className="rough-border mb-4 flex h-20 w-20 items-center justify-center bg-note-yellow">
+            <Store size={40} className="text-warning-text" />
           </div>
           <h2 className="text-2xl font-bold uppercase tracking-tighter mb-2">Merchant</h2>
           <p className="text-xs font-mono font-bold opacity-60 mb-6">Fiat / M-Pesa P2P</p>
           <SketchyButton
-            className="w-full bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-700"
+            className="w-full text-warning-text"
+            fill="var(--color-note-yellow)"
             onClick={() => setActiveView('merchant')}
           >
             Buy / Sell via Fiat
@@ -153,11 +156,7 @@ const BankPage = () => {
 
         <div className="space-y-4">
           {transactions.length === 0 ? (
-            <div className="py-12 text-center border-2 border-dashed border-black/10 rounded">
-              <p className="italic opacity-30 font-bold uppercase tracking-widest">
-                No ink has been spilled yet.
-              </p>
-            </div>
+            <EmptyState>No ink has been spilled yet.</EmptyState>
           ) : (
             transactions.map((transaction) => (
               <div
@@ -187,13 +186,9 @@ const BankPage = () => {
                     {moneyToNumber(transaction.amount) > 0 ? '+' : ''}
                     {formatMoneyValue(transaction.amount)}
                   </span>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase mt-1
-                    ${transaction.status === 'COMPLETED' || transaction.status === 'DONE' || transaction.status === 'confirmed' ? 'bg-green-100 text-green-700' :
-                      transaction.status === 'PENDING' || transaction.status === 'queued' || transaction.status === 'processing' || transaction.status === 'sent' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}
-                  >
+                  <StatusBadge className="mt-1" tone={statusToneFromStatus(transaction.status)}>
                     {transaction.status}
-                  </span>
+                  </StatusBadge>
                 </div>
               </div>
             ))

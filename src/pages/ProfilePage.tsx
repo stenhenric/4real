@@ -4,13 +4,12 @@ import { ArrowLeft, Gamepad2, Medal } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { SketchyButton } from '../components/SketchyButton';
+import { EmptyState } from '../components/ui/EmptyState';
+import { MiniMatchCard } from '../components/ui/MiniMatchCard';
 import { getUserMatches } from '../services/matches.service';
 import { getUserProfile } from '../services/users.service';
 import { isAbortError } from '../utils/isAbortError';
-import { cn } from '../utils/cn';
 import type { MatchDTO, UserProfileDTO } from '../types/api';
-
-const MINI_BOARD_SLOTS = Array.from({ length: 14 }, (_, index) => index);
 
 const ProfilePage = () => {
   const { userId } = useParams();
@@ -70,7 +69,7 @@ const ProfilePage = () => {
   const isOwnProfile = currentUser?.id === userId;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8 mobile-bottom-safe md:pb-0">
       <Link className="inline-flex items-center gap-2 font-bold hover:underline mb-4" to="/play">
         <ArrowLeft size={18} /> Back to Lobby
       </Link>
@@ -78,7 +77,7 @@ const ProfilePage = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-1">
           <div className="rough-border bg-white text-center py-10 relative shadow-lg">
-            <div className="absolute -top-3 -left-3 text-3xl z-10 drop-shadow-md">📎</div>
+            <div aria-hidden="true" className="absolute -top-3 -left-3 text-3xl z-10 drop-shadow-md">📎</div>
             <div className="w-32 h-32 mx-auto sketchy-border rounded-full flex items-center justify-center bg-black/5 mb-6 overflow-hidden relative">
               <div className="tape w-12 h-4 -top-1 left-1/2 -ml-6 z-20"></div>
               <svg viewBox="0 0 100 100" className="w-20 h-20 opacity-30">
@@ -144,7 +143,7 @@ const ProfilePage = () => {
                   key={feature}
                   className="p-4 bg-white sketchy-border text-center grayscale opacity-20 hover:opacity-100 transition-all cursor-help relative group"
                 >
-                  <div className="w-12 h-12 mx-auto rounded-full bg-black/5 mb-3 flex items-center justify-center">
+                  <div aria-hidden="true" className="w-12 h-12 mx-auto rounded-full bg-black/5 mb-3 flex items-center justify-center">
                     🏆
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-tight">{feature}</p>
@@ -163,43 +162,10 @@ const ProfilePage = () => {
             </h2>
             <div className="space-y-6">
               {history.length === 0 ? (
-                <p className="italic opacity-30 py-12 text-center font-bold uppercase tracking-widest">
-                  No ink logs found.
-                </p>
+                <EmptyState>No ink logs found.</EmptyState>
               ) : (
                 history.map((match) => (
-                  <div
-                    key={match._id ?? match.roomId}
-                    className="p-6 bg-white sketchy-border flex items-center justify-between hover:bg-black/5 transition-colors"
-                  >
-                    <div>
-                      <p className="font-bold text-xl flex items-center gap-2 uppercase tracking-tighter">
-                        {match.p1Username} <span className="opacity-20 text-sm">VS</span>{' '}
-                        {match.p2Username || 'GHOST'}
-                      </p>
-                      <p className="text-[10px] opacity-40 font-mono font-bold italic uppercase mt-1">
-                        Outcome:{' '}
-                        <span className={match.winnerId === userId ? 'text-green-600' : 'text-red-600'}>
-                          {match.winnerId === userId
-                            ? 'VICTORY'
-                            : match.winnerId === 'draw'
-                              ? 'DRAW'
-                              : 'DEFEAT'}
-                        </span>
-                      </p>
-                    </div>
-                    <div className="sketch-grid w-20 h-16 p-1 bg-black/5 border-2 border-black/10">
-                      {MINI_BOARD_SLOTS.map((slot) => (
-                        <div
-                          key={slot}
-                          className={cn(
-                            'slot w-2 h-2',
-                            match.moveHistory?.[slot] && (slot % 2 === 0 ? 'disc-red border-0' : 'disc-blue border-0'),
-                          )}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <MiniMatchCard key={match._id ?? match.roomId} currentUserId={userId} match={match} />
                 ))
               )}
             </div>

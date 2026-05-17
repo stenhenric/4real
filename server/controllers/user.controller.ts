@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 
-import { applyPublicCacheHeaders } from '../http/cache-policy.ts';
+import { applyPublicSharedCacheHeaders } from '../http/cache-policy.ts';
 import { serializeLeaderboardUser, serializeUserProfile } from '../serializers/api.ts';
 import { CacheKeys, CACHE_TTLS, getOrPopulateJson } from '../services/cache.service.ts';
 import { UserService } from '../services/user.service.ts';
@@ -18,7 +18,6 @@ export class UserController {
       throw notFound('User not found');
     }
 
-    applyPublicCacheHeaders(res, 30);
     res.json(serializeUserProfile(user));
   }
 
@@ -31,7 +30,10 @@ export class UserController {
         return leaderboardUsers.map((user) => serializeLeaderboardUser(user));
       },
     });
-    applyPublicCacheHeaders(res, 30);
+    applyPublicSharedCacheHeaders(res, 30, {
+      staleWhileRevalidateSeconds: 30,
+      staleIfErrorSeconds: 60,
+    });
     res.json(users);
   }
 }

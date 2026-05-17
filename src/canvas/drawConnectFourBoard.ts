@@ -3,6 +3,14 @@ import type { BoardCell, WinningLine } from '../features/game/types';
 
 type Board = BoardCell[][];
 
+function themeColor(name: string, fallback: string) {
+  if (typeof document === 'undefined') {
+    return fallback;
+  }
+
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
 export function drawConnectFourBoard(
   canvas: HTMLCanvasElement,
   board: Board | undefined,
@@ -22,11 +30,14 @@ export function drawConnectFourBoard(
   const generator = rough.canvas(canvas);
   const cellWidth = canvas.width / 7;
   const cellHeight = canvas.height / 6;
+  const boardLine = themeColor('--color-game-board-line', '#1A365D');
+  const redDisc = themeColor('--color-disc-red', '#ef4444');
+  const blueDisc = themeColor('--color-disc-blue', '#3b82f6');
 
   for (let row = 0; row <= 6; row += 1) {
     generator.line(0, row * cellHeight, canvas.width, row * cellHeight, {
       roughness: 1.2,
-      stroke: '#4338ca',
+      stroke: boardLine,
       strokeWidth: 1.5,
     });
   }
@@ -34,7 +45,7 @@ export function drawConnectFourBoard(
   for (let column = 0; column <= 7; column += 1) {
     generator.line(column * cellWidth, 0, column * cellWidth, canvas.height, {
       roughness: 1.2,
-      stroke: '#4338ca',
+      stroke: boardLine,
       strokeWidth: 1.5,
     });
   }
@@ -50,11 +61,11 @@ export function drawConnectFourBoard(
       const radius = Math.min(cellWidth, cellHeight) * 0.35;
 
       generator.circle(centerX, centerY, radius * 2, {
-        fill: cell === 'R' ? '#ef4444' : '#3b82f6',
+        fill: cell === 'R' ? redDisc : blueDisc,
         fillStyle: 'cross-hatch',
         hachureGap: 3,
         roughness: 2,
-        stroke: cell === 'R' ? '#ef4444' : '#3b82f6',
+        stroke: cell === 'R' ? redDisc : blueDisc,
       });
     });
   });

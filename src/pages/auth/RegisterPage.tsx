@@ -99,7 +99,7 @@ export default function RegisterPage() {
         setUsernameError('That username is already taken. Please choose another.');
         setTurnstileToken(undefined);
       } else {
-        showError(getApiErrorMessage(error, 'We could not create your account right now. Please try again.'));
+        showError(getApiErrorMessage(error, 'Could not create account. Please try again.'));
         turnstileRef.current?.reset();
         setTurnstileToken(undefined);
       }

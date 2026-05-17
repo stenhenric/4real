@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 
 import { resetEnvCacheForTests } from '../config/env.ts';
 import type { RoomState } from '../services/game-room.service.ts';
+import { checkWin, createEmptyBoard } from '../services/game-room.service.ts';
 import { GameRoomRegistry } from '../services/game-room-registry.service.ts';
 import { MatchService } from '../services/match.service.ts';
 import { RealtimeMatchService } from '../services/realtime-match.service.ts';
@@ -299,6 +300,22 @@ test('RealtimeMatchService.makeMove rejects malformed room ids before touching m
     },
   );
   assert.equal(getMatchMock.mock.callCount(), 0);
+});
+
+test('checkWin returns exactly four cells when a move completes a longer connected line', () => {
+  const board = createEmptyBoard();
+  for (const column of [0, 1, 2, 3, 4]) {
+    const row = board[5];
+    assert.ok(row);
+    row[column] = 'R';
+  }
+
+  assert.deepEqual(checkWin(board, 5, 2, 'R'), [
+    [5, 2],
+    [5, 3],
+    [5, 4],
+    [5, 1],
+  ]);
 });
 
 test('GameRoomRegistry keeps distributed room membership when a stale socket disconnects after reconnect', async (t) => {

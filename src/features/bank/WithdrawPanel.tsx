@@ -55,7 +55,7 @@ const WithdrawPanel = () => {
         return;
       }
 
-      addToast(getApiErrorMessage(error, 'We could not complete the withdrawal. Please try again.'), 'error');
+      addToast(getApiErrorMessage(error, 'Withdrawal failed. Please try again.'), 'error');
     } finally {
       setLoading(false);
     }
@@ -65,8 +65,8 @@ const WithdrawPanel = () => {
     <div className="max-w-2xl mx-auto">
       <SketchyContainer roughness={1} className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
         <div className="flex items-center gap-4 mb-8">
-          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
-            <ArrowUpRight size={32} className="text-red-700" />
+          <div className="rough-border flex h-16 w-16 items-center justify-center bg-danger-bg">
+            <ArrowUpRight size={32} className="text-danger-text" />
           </div>
           <div>
             <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Withdraw USDT</h2>
@@ -115,8 +115,8 @@ const WithdrawPanel = () => {
               </label>
               {wallet && (
                 <SketchyButton
-                  className="text-[10px] font-bold uppercase bg-ink-blue text-white px-2 py-1 rounded hover:bg-blue-600 mb-1"
-                  fill="#2962ff"
+                  className="text-[10px] font-bold uppercase text-white px-2 py-1 mb-1"
+                  fill="var(--color-ink-blue)"
                   onClick={() => setToAddress(connectedWalletAddress)}
                   type="button"
                 >

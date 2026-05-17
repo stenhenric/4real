@@ -4,6 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 
 import { getEnv, getPublicAppOrigin } from '../config/env.ts';
 import { getRedisClient } from './redis.service.ts';
+import { hashOpaqueToken } from './auth-crypto.service.ts';
 import { badRequest, serviceUnavailable } from '../utils/http-error.ts';
 
 const GOOGLE_STATE_PREFIX = 'auth:google:state:';
@@ -12,6 +13,7 @@ const GOOGLE_STATE_TTL_SECONDS = 10 * 60;
 interface GoogleStatePayload {
   nonce: string;
   codeVerifier: string;
+  browserStateHash: string;
   redirectTo?: string;
 }
 
@@ -88,6 +90,7 @@ function parseGoogleState(rawState: string): GoogleStatePayload {
     if (
       typeof parsed.nonce !== 'string'
       || typeof parsed.codeVerifier !== 'string'
+      || typeof parsed.browserStateHash !== 'string'
       || (parsed.redirectTo !== undefined && typeof parsed.redirectTo !== 'string')
     ) {
       throw new Error('Invalid Google OAuth state shape');
@@ -96,6 +99,7 @@ function parseGoogleState(rawState: string): GoogleStatePayload {
     return {
       nonce: parsed.nonce,
       codeVerifier: parsed.codeVerifier,
+      browserStateHash: parsed.browserStateHash,
       ...(parsed.redirectTo ? { redirectTo: parsed.redirectTo } : {}),
     };
   } catch {
@@ -134,7 +138,10 @@ async function verifyGoogleIdToken(idToken: string, audience: string): Promise<{
 }
 
 export class GoogleOAuthService {
-  static async createAuthorizationUrl(redirectTo?: string): Promise<string> {
+  static async createAuthorizationRequest(redirectTo?: string): Promise<{
+    authorizationUrl: string;
+    browserState: string;
+  }> {
     const env = getEnv();
     if (!isGoogleOAuthConfigured()) {
       throw serviceUnavailable('Google OAuth is not configured', 'GOOGLE_OAUTH_UNAVAILABLE');
@@ -143,10 +150,12 @@ export class GoogleOAuthService {
     const state = crypto.randomUUID();
     const nonce = base64UrlEncode(crypto.randomBytes(24));
     const codeVerifier = base64UrlEncode(crypto.randomBytes(32));
+    const browserState = base64UrlEncode(crypto.randomBytes(24));
 
     const payload: GoogleStatePayload = {
       nonce,
       codeVerifier,
+      browserStateHash: hashOpaqueToken(browserState),
       ...(redirectTo ? { redirectTo } : {}),
     };
 
@@ -167,10 +176,17 @@ export class GoogleOAuthService {
     authorizationUrl.searchParams.set('code_challenge_method', 'S256');
     authorizationUrl.searchParams.set('prompt', 'select_account');
 
-    return authorizationUrl.toString();
+    return {
+      authorizationUrl: authorizationUrl.toString(),
+      browserState,
+    };
   }
 
-  static async consumeCallback(params: { state: string; code: string }) {
+  static async createAuthorizationUrl(redirectTo?: string): Promise<string> {
+    return (await this.createAuthorizationRequest(redirectTo)).authorizationUrl;
+  }
+
+  static async consumeCallback(params: { state: string; code: string; browserState?: string | null }) {
     const env = getEnv();
     if (!isGoogleOAuthConfigured()) {
       throw serviceUnavailable('Google OAuth is not configured', 'GOOGLE_OAUTH_UNAVAILABLE');
@@ -185,6 +201,14 @@ export class GoogleOAuthService {
     }
 
     const state = parseGoogleState(rawState);
+    if (
+      typeof params.browserState !== 'string'
+      || params.browserState.length === 0
+      || hashOpaqueToken(params.browserState) !== state.browserStateHash
+    ) {
+      throw badRequest('Google sign-in session is invalid', 'GOOGLE_STATE_INVALID');
+    }
+
     const tokenResponse = await googleOAuthDependencies.fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

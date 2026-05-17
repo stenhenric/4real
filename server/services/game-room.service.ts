@@ -142,7 +142,7 @@ export function checkWin(board: (string | null)[][], row: number, col: number, s
     }
 
     if (count >= 4) {
-      return line;
+      return line.slice(0, 4);
     }
   }
 

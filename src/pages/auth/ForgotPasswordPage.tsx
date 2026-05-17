@@ -36,7 +36,7 @@ export default function ForgotPasswordPage() {
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
     } catch (error) {
-      showError(getApiErrorMessage(error, 'We could not send a reset link right now. Please try again.'));
+      showError(getApiErrorMessage(error, 'Could not send reset link. Please try again.'));
       turnstileRef.current?.reset();
       setTurnstileToken(undefined);
     } finally {

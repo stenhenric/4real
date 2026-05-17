@@ -18,6 +18,10 @@ export function getDeviceCookieName(): string {
   return `${getCookiePrefix()}4real-did`;
 }
 
+export function getGoogleOAuthStateCookieName(): string {
+  return `${getCookiePrefix()}4real-google-oauth`;
+}
+
 function getBaseCookieOptions(): CookieOptions {
   const { NODE_ENV } = getEnv();
 
@@ -54,6 +58,14 @@ export function getDeviceCookieOptions(): CookieOptions {
   };
 }
 
+export function getGoogleOAuthStateCookieOptions(): CookieOptions {
+  return {
+    ...getBaseCookieOptions(),
+    sameSite: 'lax',
+    maxAge: 10 * 60 * 1000,
+  };
+}
+
 export function getAuthCookieClearOptions(): CookieOptions {
   return getBaseCookieOptions();
 }
@@ -64,4 +76,11 @@ export function getRefreshCookieClearOptions(): CookieOptions {
 
 export function getDeviceCookieClearOptions(): CookieOptions {
   return getBaseCookieOptions();
+}
+
+export function getGoogleOAuthStateCookieClearOptions(): CookieOptions {
+  return {
+    ...getBaseCookieOptions(),
+    sameSite: 'lax',
+  };
 }

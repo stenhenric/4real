@@ -256,6 +256,10 @@ export const merchantDepositReplayWindowRequestSchema = z.object({
   dryRun: z.coerce.boolean().optional().default(true),
 });
 
+export const withdrawalRecoveryRequestSchema = z.object({
+  action: z.enum(['confirm', 'refund']),
+});
+
 export const withdrawRequestSchema = z.object({
   toAddress: z.string().trim().min(1).refine(
     (value) => {
@@ -299,5 +303,6 @@ export type UpdateOrderStatusRequest = z.infer<typeof updateOrderStatusRequestSc
 export type UpdateMerchantConfigRequest = z.infer<typeof updateMerchantConfigRequestSchema>;
 export type MerchantDepositReconcileRequest = z.infer<typeof merchantDepositReconcileRequestSchema>;
 export type MerchantDepositReplayWindowRequest = z.infer<typeof merchantDepositReplayWindowRequestSchema>;
+export type WithdrawalRecoveryRequest = z.infer<typeof withdrawalRecoveryRequestSchema>;
 export type WithdrawRequest = z.infer<typeof withdrawRequestSchema>;
 export type PrepareTonConnectDepositRequest = z.infer<typeof prepareTonConnectDepositRequestSchema>;

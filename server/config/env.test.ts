@@ -65,3 +65,137 @@ test('getEnv returns the Gmail delivery settings when they are configured', () =
     assert.equal(env.EMAIL_FROM, REQUIRED_BASE_ENV.EMAIL_FROM);
   });
 });
+
+test('getEnv derives production allowed origins from PUBLIC_APP_ORIGIN instead of localhost defaults', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: undefined,
+  }, () => {
+    assert.deepEqual(getEnv().allowedOrigins, ['https://app.example.com']);
+  });
+});
+
+test('getEnv rejects localhost public origins in production', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'http://localhost:3000',
+    ALLOWED_ORIGINS: undefined,
+  }, () => {
+    assert.throws(() => getEnv(), /PUBLIC_APP_ORIGIN must not be localhost in production/i);
+  });
+});
+
+test('getEnv rejects cleartext Redis URLs in production', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'redis://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+  }, () => {
+    assert.throws(() => getEnv(), /REDIS_URL must use rediss:\/\/ in production/i);
+  });
+});
+
+test('getEnv allows Render internal cleartext Redis URLs in production', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    RENDER: 'true',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'redis://red-example-kv:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+  }, () => {
+    assert.equal(getEnv().REDIS_URL, 'redis://red-example-kv:6379');
+  });
+});
+
+test('getEnv documents and enforces single-instance production topology by default', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+    PRODUCTION_TOPOLOGY: undefined,
+    FEATURE_DISTRIBUTED_LOCK: 'false',
+    FEATURE_BULLMQ_JOBS: 'false',
+    FEATURE_REDIS_SOCKET_ADAPTER: 'false',
+  }, () => {
+    assert.equal(getEnv().PRODUCTION_TOPOLOGY, 'single-instance');
+  });
+});
+
+test('getEnv rejects distributed production topology unless coordination flags are enabled', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+    PRODUCTION_TOPOLOGY: 'distributed',
+    FEATURE_DISTRIBUTED_LOCK: 'true',
+    FEATURE_BULLMQ_JOBS: 'false',
+    FEATURE_REDIS_SOCKET_ADAPTER: 'true',
+  }, () => {
+    assert.throws(() => getEnv(), /distributed production requires FEATURE_DISTRIBUTED_LOCK, FEATURE_BULLMQ_JOBS, and FEATURE_REDIS_SOCKET_ADAPTER/i);
+  });
+});
+
+test('getEnv requires explicit bounded TRUST_PROXY in production', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: undefined,
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+  }, () => {
+    assert.throws(() => getEnv(), /TRUST_PROXY must be explicitly configured in production/i);
+  });
+
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: 'true',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+  }, () => {
+    assert.throws(() => getEnv(), /TRUST_PROXY=true is not allowed in production/i);
+  });
+});
+
+test('getEnv rejects multiple Render instances in single-instance production topology when configured', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    RENDER_INSTANCE_COUNT: '2',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+    PRODUCTION_TOPOLOGY: 'single-instance',
+  }, () => {
+    assert.throws(() => getEnv(), /single-instance production requires exactly one Render instance/i);
+  });
+});
+
+test('getEnv allows cleartext Redis URLs outside production', () => {
+  withEnv({
+    NODE_ENV: 'test',
+    REDIS_URL: 'redis://127.0.0.1:6379',
+  }, () => {
+    assert.equal(getEnv().REDIS_URL, 'redis://127.0.0.1:6379');
+  });
+});

@@ -1,9 +1,9 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { TonConnectButton } from '@tonconnect/ui-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { LogOut, Home, Landmark, ShieldCheck, User } from 'lucide-react';
 import { formatMoneyValue } from '../utils/exact-money.ts';
+import { SketchyButton } from './SketchyButton';
 
 const Navbar = () => {
   const { userData, user, logout } = useAuth();
@@ -65,12 +65,6 @@ const Navbar = () => {
               </Link>
             )}
             
-            {/* TonConnect — scaled down on mobile */}
-            <div className="relative scale-[0.8] md:scale-100 origin-right">
-              <div className="tape hidden md:block"></div>
-              <TonConnectButton />
-            </div>
-
             <Link to="/auth/security" className="p-2 hover:bg-black/5 rounded-full" aria-label="Open security settings">
               <ShieldCheck size={24} />
             </Link>
@@ -80,14 +74,14 @@ const Navbar = () => {
               <User size={24} />
             </Link>
             
-            <button
+            <SketchyButton
               aria-label="Log out"
-              className="hidden p-2 rounded-full transition-colors hover:bg-red-50 hover:text-red-600 md:block"
+              className="hidden p-2 transition-colors hover:bg-red-50 hover:text-red-600 md:block"
               onClick={handleLogout}
               type="button"
             >
               <LogOut size={24} />
-            </button>
+            </SketchyButton>
           </div>
         </div>
       </nav>
@@ -126,14 +120,14 @@ const Navbar = () => {
             <User size={22} />
             Profile
           </NavLink>
-          <button
+          <SketchyButton
             type="button"
             onClick={handleLogout}
-            className="flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 text-black/50 hover:text-black/80"
+            className="px-4 py-1 text-xs font-bold text-black/50 transition-colors hover:text-black/80 [&>span]:flex-col [&>span]:gap-0.5"
           >
             <LogOut size={22} />
             Logout
-          </button>
+          </SketchyButton>
         </div>
       </nav>
     </>

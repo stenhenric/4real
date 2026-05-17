@@ -26,7 +26,17 @@ test('keeps merchant admin routes protected and lets ops review a submitted buy 
         'base64',
       ),
     });
-    await customer.page.getByRole('button', { name: /submit buy order/i }).click();
+    await expect(customer.page.getByText(/selected: proof\.png/i)).toBeVisible();
+    const submitBuyOrder = customer.page.getByRole('button', { name: /submit buy order/i });
+    await expect(submitBuyOrder).toBeEnabled();
+    await Promise.all([
+      customer.page.waitForResponse((response) => (
+        response.url().includes('/api/orders')
+        && response.request().method() === 'POST'
+        && response.status() === 201
+      )),
+      submitBuyOrder.click(),
+    ]);
     await expectToast(customer.page, /buy order submitted/i);
     await expect(customer.page.getByText(/buy usdt 10\.00 usdt/i)).toBeVisible();
 

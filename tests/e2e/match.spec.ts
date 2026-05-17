@@ -70,6 +70,38 @@ test('lets two authenticated players create, join, and finish a realtime public 
   }
 });
 
+test('create match submits only one room when the create control is activated twice', async ({ browser }) => {
+  const playerOne = await createLoggedInPage(browser, 'player1@example.com');
+  let createRequests = 0;
+
+  try {
+    await playerOne.page.route('**/api/matches', async (route) => {
+      if (route.request().method() === 'POST') {
+        createRequests += 1;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      await route.continue();
+    });
+
+    await playerOne.page.goto('/play');
+    await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerOne.page.getByRole('button', { name: /new draft/i }).click();
+    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /free public/i }).click();
+    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /^Create Match$/ }).dblclick();
+
+    await expect(playerOne.page).toHaveURL(/\/game\//);
+    await expect.poll(() => createRequests).toBe(1);
+
+    const activeMatchesResponse = await playerOne.page.request.get('/api/matches/active');
+    expect(activeMatchesResponse.ok()).toBeTruthy();
+    const activeMatches = await activeMatchesResponse.json();
+    expect(activeMatches).toHaveLength(1);
+  } finally {
+    await closeContext(playerOne.context);
+  }
+});
+
 test('settles a paid public match with merchant commission end to end', async ({ browser }) => {
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
   const playerTwo = await createLoggedInPage(browser, 'player2@example.com');

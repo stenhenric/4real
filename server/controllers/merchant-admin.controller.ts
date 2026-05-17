@@ -8,7 +8,6 @@ import {
 } from '../services/deposit-ingestion.service.ts';
 import { MerchantDashboardService } from '../services/merchant-dashboard.service.ts';
 import { getMerchantConfig, updateMerchantConfig } from '../services/merchant-config.service.ts';
-import { CacheKeys, CACHE_TTLS, getOrPopulateJson } from '../services/cache.service.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import type {
   MerchantDepositReconcileRequest,
@@ -143,12 +142,7 @@ export class MerchantAdminController {
   }
 
   static async getDashboard(req: AuthRequest, res: Response): Promise<void> {
-    const { value: dashboard } = await getOrPopulateJson({
-      key: CacheKeys.merchantDashboard(),
-      ttlSeconds: CACHE_TTLS.merchantDashboard,
-      loader: async () => MerchantDashboardService.getDashboard(getBackgroundJobs(req)),
-    });
-    res.json(dashboard);
+    res.json(await MerchantDashboardService.getDashboard(getBackgroundJobs(req)));
   }
 
   static async getOrders(req: AuthRequest, res: Response): Promise<void> {

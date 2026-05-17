@@ -71,7 +71,10 @@ test('createOrder reserves SELL balances and creates the pending ledger entry in
   const userId = new mongoose.Types.ObjectId();
   const orderId = new mongoose.Types.ObjectId();
   const deductMock = mock.method(UserService, 'deductBalanceSafely', async () => ({ _id: userId } as any));
-  const createOrderMock = mock.method(Order, 'create', async () => ([{
+  let createdOrderInput: Record<string, unknown> | undefined;
+  const createOrderMock = mock.method(Order, 'create', async (documents) => {
+    createdOrderInput = documents[0] as Record<string, unknown>;
+    return [{
     _id: orderId,
     userId,
     type: 'SELL',
@@ -87,8 +90,11 @@ test('createOrder reserves SELL balances and creates the pending ledger entry in
     fiatCurrency: 'KES',
     exchangeRate: 140,
     fiatTotal: 1680,
+    mpesaNumber: '254700111222',
+    mpesaName: 'Alice Seller',
     createdAt: new Date(),
-  }] as any));
+  }] as any;
+  });
   const auditMock = mock.method(AuditService, 'record', async () => {});
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-1' } as any));
 
@@ -108,6 +114,8 @@ test('createOrder reserves SELL balances and creates the pending ledger entry in
       chatId: '-100123',
     },
     transactionCode: 'QWE123ABC',
+    mpesaNumber: '254700111222',
+    mpesaName: 'Alice Seller',
     fiatCurrency: 'KES',
     exchangeRate: 140,
     fiatTotal: 1680,
@@ -117,6 +125,8 @@ test('createOrder reserves SELL balances and creates the pending ledger entry in
   assert.equal(deductMock.mock.callCount(), 1);
   assert.equal(deductMock.mock.calls[0].arguments[0], userId.toString());
   assert.equal(createOrderMock.mock.callCount(), 1);
+  assert.equal(createdOrderInput?.mpesaNumber, '254700111222');
+  assert.equal(createdOrderInput?.mpesaName, 'Alice Seller');
   assert.equal(createTransactionMock.mock.callCount(), 1);
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { status: string }).status, 'PENDING');
 });

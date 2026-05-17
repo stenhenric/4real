@@ -1,9 +1,10 @@
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Clock, Play, Plus, Trophy, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { SketchyButton } from '../components/SketchyButton';
+import { EmptyState } from '../components/ui/EmptyState';
 import { createMatch, getActiveMatches } from '../services/matches.service';
 import { getLeaderboard } from '../services/users.service';
 import { createGameSocket } from '../sockets/gameSocket';
@@ -26,10 +27,13 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
   const [activeMatches, setActiveMatches] = useState<MatchDTO[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUserDTO[]>([]);
+  const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
   const [wager, setWager] = useState('0');
   const [isDrafting, setIsDrafting] = useState(false);
+  const [isCreatingMatch, setIsCreatingMatch] = useState(false);
   const [draftStep, setDraftStep] = useState<1 | 2>(1);
   const [draftType, setDraftType] = useState<'private' | 'free_public' | 'paid_public' | null>(null);
+  const creatingMatchRef = useRef(false);
 
   const refreshActiveMatches = useEffectEvent(async (signal?: AbortSignal) => {
     try {
@@ -52,24 +56,40 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
       if (!signal?.aborted) {
         setLeaderboard(leaderboardEntries);
       }
+      return true;
     } catch (error) {
       if (!isAbortError(error)) {
         showError('Failed to fetch leaderboard.');
       }
+      return false;
     }
   });
 
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.all([
-      refreshActiveMatches(controller.signal),
-      refreshLeaderboard(controller.signal),
-    ]);
+    void refreshActiveMatches(controller.signal);
 
     return () => {
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'leaderboard' || leaderboardLoaded) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    void refreshLeaderboard(controller.signal).then((loaded) => {
+      if (loaded && !controller.signal.aborted) {
+        setLeaderboardLoaded(true);
+      }
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [activeTab, leaderboardLoaded]);
 
   useEffect(() => {
     if (!user) {
@@ -119,6 +139,12 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
       return;
     }
 
+    if (creatingMatchRef.current) {
+      return;
+    }
+
+    creatingMatchRef.current = true;
+    setIsCreatingMatch(true);
     try {
       const match = await createMatch({ wager: parsedWager.toFixed(6), isPrivate });
       if (parsedWager > 0) {
@@ -126,7 +152,10 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
       }
       navigate(match.inviteUrl ?? `/game/${match.roomId}`);
     } catch (error) {
-      showError(getApiErrorMessage(error, 'We could not create your match right now. Please try again.'));
+      showError(getApiErrorMessage(error, 'Could not create match. Please try again.'));
+    } finally {
+      creatingMatchRef.current = false;
+      setIsCreatingMatch(false);
     }
   };
 
@@ -144,15 +173,15 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
     <div className="space-y-8 max-w-6xl mx-auto">
       <div
         aria-label="Dashboard sections"
-        className="flex flex-wrap gap-4 border-b-4 border-black/10 pb-4 mb-8 sticky top-0 bg-paper z-20 py-4"
+        className="-mx-4 mb-8 flex gap-3 overflow-x-auto border-b-4 border-black/10 bg-paper px-4 py-4 sticky top-0 z-20 md:mx-0 md:flex-wrap md:px-0"
         role="tablist"
       >
         <SketchyButton
           activeColor="#fff9c4"
           aria-controls="dashboard-panel-lobby"
           aria-selected={activeTab === 'lobby'}
-          className={`flex items-center gap-2 text-xl ${activeTab === 'lobby' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
-          fill={activeTab === 'lobby' ? '#fff9c4' : 'transparent'}
+          className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'lobby' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
+          fill={activeTab === 'lobby' ? 'var(--color-note-yellow)' : 'transparent'}
           id="dashboard-tab-lobby"
           onClick={() => setActiveTab('lobby')}
           role="tab"
@@ -163,8 +192,8 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
           activeColor="#fff9c4"
           aria-controls="dashboard-panel-leaderboard"
           aria-selected={activeTab === 'leaderboard'}
-          className={`flex items-center gap-2 text-xl ${activeTab === 'leaderboard' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
-          fill={activeTab === 'leaderboard' ? '#fff9c4' : 'transparent'}
+          className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'leaderboard' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
+          fill={activeTab === 'leaderboard' ? 'var(--color-note-yellow)' : 'transparent'}
           id="dashboard-tab-leaderboard"
           onClick={() => setActiveTab('leaderboard')}
           role="tab"
@@ -175,8 +204,8 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
           activeColor="#fff9c4"
           aria-controls="dashboard-panel-archives"
           aria-selected={activeTab === 'archives'}
-          className={`flex items-center gap-2 text-xl ${activeTab === 'archives' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
-          fill={activeTab === 'archives' ? '#fff9c4' : 'transparent'}
+          className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'archives' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
+          fill={activeTab === 'archives' ? 'var(--color-note-yellow)' : 'transparent'}
           id="dashboard-tab-archives"
           onClick={() => setActiveTab('archives')}
           role="tab"
@@ -187,8 +216,8 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
           activeColor="#fff9c4"
           aria-controls="dashboard-panel-stats"
           aria-selected={activeTab === 'stats'}
-          className={`flex items-center gap-2 text-xl ${activeTab === 'stats' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
-          fill={activeTab === 'stats' ? '#fff9c4' : 'transparent'}
+          className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'stats' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
+          fill={activeTab === 'stats' ? 'var(--color-note-yellow)' : 'transparent'}
           id="dashboard-tab-stats"
           onClick={() => setActiveTab('stats')}
           role="tab"
@@ -238,50 +267,57 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 {draftStep === 1 && (
                   <div className="space-y-4">
                     <p className="font-bold uppercase opacity-50 text-sm mb-4">Step 1: Select Match Type</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div onClick={() => setDraftType('private')} className="cursor-pointer h-full">
-                        <SketchyButton 
-                          fill={draftType === 'private' ? '#fff9c4' : 'transparent'}
-                          className="flex flex-col items-center justify-center p-4 h-full w-full pointer-events-none"
-                        >
-                          <span className="font-bold text-lg mb-2">Private Match</span>
-                          <span className="text-xs opacity-60 text-center">Hidden from lobby. Invite code required.</span>
-                        </SketchyButton>
-                      </div>
-                      <div onClick={() => setDraftType('free_public')} className="cursor-pointer h-full">
-                        <SketchyButton 
-                          fill={draftType === 'free_public' ? '#fff9c4' : 'transparent'}
-                          className="flex flex-col items-center justify-center p-4 h-full w-full pointer-events-none"
-                        >
-                          <span className="font-bold text-lg mb-2">Free Public</span>
-                          <span className="text-xs opacity-60 text-center">Visible in Free lobby. No wager.</span>
-                        </SketchyButton>
-                      </div>
-                      <div onClick={() => setDraftType('paid_public')} className="cursor-pointer h-full">
-                        <SketchyButton 
-                          fill={draftType === 'paid_public' ? '#fff9c4' : 'transparent'}
-                          className="flex flex-col items-center justify-center p-4 h-full w-full pointer-events-none"
-                        >
-                          <span className="font-bold text-lg mb-2">Paid Public</span>
-                          <span className="text-xs opacity-60 text-center">Visible in Paid lobby. Wager required.</span>
-                        </SketchyButton>
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4" role="radiogroup" aria-label="Match type">
+                      <SketchyButton
+                        aria-checked={draftType === 'private'}
+                        fill={draftType === 'private' ? 'var(--color-note-yellow)' : 'transparent'}
+                        className="flex h-full w-full flex-col items-center justify-center p-4 text-center"
+                        onClick={() => setDraftType('private')}
+                        role="radio"
+                        type="button"
+                      >
+                        <span className="font-bold text-lg mb-2">Private Match</span>
+                        <span className="text-xs opacity-60 text-center">Hidden from lobby. Invite code required.</span>
+                      </SketchyButton>
+                      <SketchyButton
+                        aria-checked={draftType === 'free_public'}
+                        fill={draftType === 'free_public' ? 'var(--color-note-yellow)' : 'transparent'}
+                        className="flex h-full w-full flex-col items-center justify-center p-4 text-center"
+                        onClick={() => setDraftType('free_public')}
+                        role="radio"
+                        type="button"
+                      >
+                        <span className="font-bold text-lg mb-2">Free Public</span>
+                        <span className="text-xs opacity-60 text-center">Visible in Free lobby. No wager.</span>
+                      </SketchyButton>
+                      <SketchyButton
+                        aria-checked={draftType === 'paid_public'}
+                        fill={draftType === 'paid_public' ? 'var(--color-note-yellow)' : 'transparent'}
+                        className="flex h-full w-full flex-col items-center justify-center p-4 text-center"
+                        onClick={() => setDraftType('paid_public')}
+                        role="radio"
+                        type="button"
+                      >
+                        <span className="font-bold text-lg mb-2">Paid Public</span>
+                        <span className="text-xs opacity-60 text-center">Visible in Paid lobby. Wager required.</span>
+                      </SketchyButton>
                     </div>
                     
                     <div className="flex justify-end mt-6">
-                      <div onClick={() => {
-                        if (draftType) {
+                      <SketchyButton
+                        className="px-8"
+                        disabled={!draftType || isCreatingMatch}
+                        onClick={() => {
                           if (draftType === 'free_public') {
                             void createGameHandler();
                           } else {
                             setDraftStep(2);
                           }
-                        }
-                      }} className={!draftType ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}>
-                        <SketchyButton className="px-8 pointer-events-none">
-                          {draftType === 'free_public' ? 'Create Match' : 'Next Step'}
-                        </SketchyButton>
-                      </div>
+                        }}
+                        type="button"
+                      >
+                        {isCreatingMatch ? 'Creating...' : draftType === 'free_public' ? 'Create Match' : 'Next Step'}
+                      </SketchyButton>
                     </div>
                   </div>
                 )}
@@ -307,12 +343,19 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                     </div>
                     
                     <div className="flex justify-between mt-6">
-                      <div onClick={() => setDraftStep(1)} className="cursor-pointer">
-                        <SketchyButton className="pointer-events-none">Back</SketchyButton>
-                      </div>
-                      <div onClick={() => void createGameHandler()} className="cursor-pointer">
-                        <SketchyButton className="bg-black/5 pointer-events-none">Create Match</SketchyButton>
-                      </div>
+                      <SketchyButton onClick={() => setDraftStep(1)} type="button">Back</SketchyButton>
+                      <SketchyButton
+                        onClick={() => {
+                          if (!isCreatingMatch) {
+                            void createGameHandler();
+                          }
+                        }}
+                        className="bg-black/5"
+                        disabled={isCreatingMatch}
+                        type="button"
+                      >
+                        {isCreatingMatch ? 'Creating...' : 'Create Match'}
+                      </SketchyButton>
                     </div>
                   </div>
                 )}
@@ -328,9 +371,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                   </h3>
                   <div className="space-y-4">
                     {freeMatches.length === 0 ? (
-                      <div className="p-6 text-center border-2 border-dashed border-black/10 rounded-xl">
-                        <p className="italic opacity-30 font-bold text-sm uppercase tracking-widest">No free drafts...</p>
-                      </div>
+                      <EmptyState>No free drafts...</EmptyState>
                     ) : (
                       freeMatches.map((match) => (
                         <div
@@ -357,21 +398,19 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
 
                 {/* Paid Matches Column */}
                 <div>
-                  <h3 className="font-bold text-xl uppercase tracking-tighter mb-4 flex items-center gap-2 text-amber-600">
-                    Paid Public <span className="text-xs bg-amber-500 text-black px-2 py-0.5 rounded-full">{paidMatches.length}</span>
+                  <h3 className="font-bold text-xl uppercase tracking-tighter mb-4 flex items-center gap-2 text-warning-text">
+                    Paid Public <span className="text-xs bg-note-yellow text-black px-2 py-0.5 rounded-full">{paidMatches.length}</span>
                   </h3>
                   <div className="space-y-4">
                     {paidMatches.length === 0 ? (
-                      <div className="p-6 text-center border-2 border-dashed border-black/10 rounded-xl">
-                        <p className="italic opacity-30 font-bold text-sm uppercase tracking-widest">No paid drafts...</p>
-                      </div>
+                      <EmptyState>No paid drafts...</EmptyState>
                     ) : (
                       paidMatches.map((match) => (
                         <div
                           key={match._id ?? match.roomId}
-                          className="group relative p-5 bg-white rough-border border-amber-500/30 hover:border-amber-500 hover:-translate-y-1 hover:shadow-xl transition-all duration-300"
+                          className="group relative p-5 bg-white rough-border hover:-translate-y-1 hover:shadow-xl transition-all duration-300"
                         >
-                          <div className="absolute -left-2 -top-2 bg-amber-400 text-black font-bold text-[10px] px-2 py-1 rotate-[-5deg] rough-border shadow-sm z-10">
+                          <div className="absolute -left-2 -top-2 bg-note-yellow text-black font-bold text-[10px] px-2 py-1 rotate-[-5deg] rough-border shadow-sm z-10">
                             {formatMoneyValue(match.wager)} USDT
                           </div>
                           <div className="absolute top-2 right-2 flex items-center gap-1 opacity-20">
@@ -383,7 +422,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                               NODE: {match.roomId.toUpperCase()}
                             </p>
                           </div>
-                          <SketchyButton className="w-full text-sm py-2 bg-amber-400/10" onClick={() => navigate(`/game/${match.roomId}`)}>
+                          <SketchyButton className="w-full text-sm py-2" fill="var(--color-note-yellow)" onClick={() => navigate(`/game/${match.roomId}`)}>
                             Join & Wager
                           </SketchyButton>
                         </div>

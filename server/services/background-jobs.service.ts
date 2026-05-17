@@ -112,11 +112,17 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
     await initWorker();
     await recoverStuckWithdrawals();
   } catch (error) {
+    const lastError = error instanceof Error ? error.message : String(error);
+    const lastFailedAt = new Date().toISOString();
     state.withdrawalWorker.enabled = false;
     state.withdrawalConfirmation.enabled = false;
     state.hotWalletMonitor.enabled = false;
-    state.withdrawalWorker.lastFailedAt = new Date().toISOString();
-    state.withdrawalWorker.lastError = error instanceof Error ? error.message : String(error);
+    state.withdrawalWorker.lastFailedAt = lastFailedAt;
+    state.withdrawalConfirmation.lastFailedAt = lastFailedAt;
+    state.hotWalletMonitor.lastFailedAt = lastFailedAt;
+    state.withdrawalWorker.lastError = lastError;
+    state.withdrawalConfirmation.lastError = lastError;
+    state.hotWalletMonitor.lastError = lastError;
     logger.error('background_job.initialization_failed', { job: 'withdrawalWorker', error });
   }
 

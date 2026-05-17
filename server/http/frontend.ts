@@ -7,6 +7,7 @@ import { getEnv } from '../config/env.ts';
 import {
   applyImmutableAssetCacheHeaders,
   applyNoStoreHeaders,
+  applyPublicSharedCacheHeaders,
 } from './cache-policy.ts';
 import { logger } from '../utils/logger.ts';
 
@@ -85,6 +86,7 @@ function registerStaticFrontend(app: Express): void {
 
   app.use((req, res, next) => {
     if (isProbePath(req.path)) {
+      applyNoStoreHeaders(res);
       return res.status(404).send('Not found');
     }
 
@@ -100,9 +102,23 @@ function registerStaticFrontend(app: Express): void {
     },
   }));
 
-  app.use(express.static(distPath, { index: false }));
+  app.use(express.static(distPath, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        applyNoStoreHeaders(res);
+        return;
+      }
+
+      applyPublicSharedCacheHeaders(res, 86400, {
+        staleWhileRevalidateSeconds: 3600,
+        staleIfErrorSeconds: 86400,
+      });
+    },
+  }));
   app.get('*', (req, res) => {
     if (!isFrontendRoute(req.path)) {
+      applyNoStoreHeaders(res);
       return res.status(404).send('Not found');
     }
 

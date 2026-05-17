@@ -4,6 +4,7 @@ import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { getPostAuthRedirectPath } from '../../features/auth/auth-routing';
+import { scrubSensitiveTokenFromCurrentUrl } from '../../features/auth/url-token';
 import { consumeSuspiciousLogin } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
 
@@ -13,7 +14,7 @@ export default function ApproveLoginPage() {
   const [searchParams] = useSearchParams();
   const { setAuthStateFromResponse } = useAuth();
   const { success, error: showError } = useToast();
-  const token = searchParams.get('token')?.trim() ?? '';
+  const [token] = useState(() => searchParams.get('token')?.trim() ?? '');
   const email = searchParams.get('email')?.trim() ?? '';
   const previewUrl = ((location.state ?? null) as { previewUrl?: string } | null)?.previewUrl ?? null;
   const [consuming, setConsuming] = useState(token.length > 0);
@@ -26,6 +27,7 @@ export default function ApproveLoginPage() {
     }
 
     startedRef.current = true;
+    scrubSensitiveTokenFromCurrentUrl();
     setConsuming(true);
     setConsumeError(null);
 

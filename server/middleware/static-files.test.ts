@@ -21,8 +21,11 @@ async function withFrontendServer(run: (baseUrl: string) => Promise<void>): Prom
 
   try {
     await mkdir(path.join(distPath, 'assets'), { recursive: true });
+    await mkdir(path.join(distPath, 'fonts'), { recursive: true });
     await writeFile(path.join(distPath, 'index.html'), '<!doctype html><title>4real test shell</title>');
     await writeFile(path.join(distPath, 'assets', 'app.js'), 'console.log("asset");');
+    await writeFile(path.join(distPath, 'fonts', 'cabin-sketch-700.woff2'), 'font bytes');
+    await writeFile(path.join(distPath, 'tonconnect-icon.svg'), '<svg></svg>');
     await writeFile(path.join(distPath, 'phpinfo.php'), 'sensitive phpinfo output');
     process.chdir(tempRoot);
 
@@ -101,8 +104,34 @@ test('frontend middleware serves the SPA shell for known app routes', async () =
       const body = await response.text();
 
       assert.equal(response.status, 200, route);
+      assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0', route);
       assert.match(body, /4real test shell/, route);
     }
+  });
+});
+
+test('frontend static files carry explicit asset cache policies', async () => {
+  await withFrontendServer(async (baseUrl) => {
+    const bundledAsset = await fetch(`${baseUrl}/assets/app.js`);
+    assert.equal(bundledAsset.status, 200);
+    assert.equal(bundledAsset.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.match(bundledAsset.headers.get('vary') ?? '', /(?:^|,\s*)Accept-Encoding(?:,|$)/);
+
+    const font = await fetch(`${baseUrl}/fonts/cabin-sketch-700.woff2`);
+    assert.equal(font.status, 200);
+    assert.equal(
+      font.headers.get('cache-control'),
+      'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600, stale-if-error=86400',
+    );
+    assert.match(font.headers.get('vary') ?? '', /(?:^|,\s*)Accept-Encoding(?:,|$)/);
+
+    const icon = await fetch(`${baseUrl}/tonconnect-icon.svg`);
+    assert.equal(icon.status, 200);
+    assert.equal(
+      icon.headers.get('cache-control'),
+      'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600, stale-if-error=86400',
+    );
+    assert.match(icon.headers.get('vary') ?? '', /(?:^|,\s*)Accept-Encoding(?:,|$)/);
   });
 });
 
@@ -127,6 +156,7 @@ test('frontend middleware returns 404 for scanner and debug probe paths', async 
       const body = await response.text();
 
       assert.equal(response.status, 404, route);
+      assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0', route);
       assert.doesNotMatch(body, /4real test shell/, route);
       assert.doesNotMatch(body, /sensitive phpinfo output/, route);
     }

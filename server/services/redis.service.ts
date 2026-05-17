@@ -1,6 +1,7 @@
 import { Redis } from 'ioredis';
 
 import { getEnv } from '../config/env.ts';
+import { recordRedisOperation } from './metrics.service.ts';
 
 let sharedRedisClient: Redis | null = null;
 
@@ -44,10 +45,22 @@ export async function probeRedis(): Promise<'up' | 'down' | 'disabled'> {
     return 'disabled';
   }
 
+  const startedAt = performance.now();
   try {
     const pong = await getRedisClient().ping();
-    return pong === 'PONG' ? 'up' : 'down';
+    const status = pong === 'PONG' ? 'up' : 'down';
+    recordRedisOperation({
+      operation: 'ping',
+      outcome: status === 'up' ? 'success' : 'failure',
+      durationMs: performance.now() - startedAt,
+    });
+    return status;
   } catch {
+    recordRedisOperation({
+      operation: 'ping',
+      outcome: 'failure',
+      durationMs: performance.now() - startedAt,
+    });
     return 'down';
   }
 }

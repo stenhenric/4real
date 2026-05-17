@@ -27,6 +27,7 @@ function createMockUser(id = new mongoose.Types.ObjectId()) {
 function createMockSession(overrides: Record<string, unknown> = {}) {
   const now = new Date('2026-05-06T00:00:00.000Z');
   return {
+    _id: new mongoose.Types.ObjectId(),
     sessionId: 'session-1',
     userId: new mongoose.Types.ObjectId(),
     deviceId: 'device-1',
@@ -197,6 +198,13 @@ test('refreshSession queries the refresh session with an active-session filter',
     capturedFilter = filter;
     return session;
   });
+  const updateMock = t.mock.method(AuthSession, 'updateOne', async () => ({
+    acknowledged: true,
+    matchedCount: 1,
+    modifiedCount: 1,
+    upsertedCount: 0,
+    upsertedId: null,
+  }) as any);
   t.mock.method(UserService, 'findAuthUserById', async () => user);
 
   const result = await AuthSessionService.refreshSession({
@@ -216,6 +224,9 @@ test('refreshSession queries the refresh session with an active-session filter',
   });
   assert(redisCalls.some((entry) => entry.method === 'setex'));
   assert(redisCalls.some((entry) => entry.method === 'del'));
+  assert.equal(updateMock.mock.callCount(), 1);
+  assert.equal(updateMock.mock.calls[0]?.arguments[0]?._id, session._id);
+  assert.equal(updateMock.mock.calls[0]?.arguments[0]?.currentRefreshTokenHash, refreshTokenHash);
 });
 
 test('logoutFromTokens removes token hashes when revoking a session', async (t) => {
@@ -278,6 +289,71 @@ test('AuthSession refresh-token uniqueness only indexes string hashes', () => {
     currentRefreshTokenHash: { $type: 'string' },
   });
   assert.equal(refreshIndex[1]?.sparse, undefined);
+});
+
+test('AuthSession schema declares a TTL index on absoluteExpiresAt', () => {
+  const absoluteExpiryIndexes = AuthSession.schema.indexes().filter(([fields]) => (
+    fields.absoluteExpiresAt === 1
+  ));
+  const ttlIndex = absoluteExpiryIndexes.find(([fields, options]) => (
+    fields.absoluteExpiresAt === 1 && options?.expireAfterSeconds === 0
+  ));
+
+  assert.equal(absoluteExpiryIndexes.length, 1);
+  assert(ttlIndex);
+});
+
+test('refreshSession revokes sessions when the atomic refresh update loses the race', async (t) => {
+  const refreshToken = 'refresh-token';
+  const refreshTokenHash = hashOpaqueToken(refreshToken);
+  const user = createMockUser();
+  const session = createMockSession({
+    _id: new mongoose.Types.ObjectId(),
+    sessionId: 'session-1',
+    userId: user._id,
+    currentAccessTokenHash: 'previous-access-hash',
+    currentRefreshTokenHash: refreshTokenHash,
+  });
+
+  setAuthSessionDependenciesForTests({
+    getRedisClient: () => ({
+      get: async () => null,
+      setex: async () => 'OK',
+      del: async () => 1,
+    }) as any,
+  });
+  t.after(() => resetAuthSessionDependenciesForTests());
+  t.mock.method(AuthSession, 'findOne', async () => session);
+  t.mock.method(AuthSession, 'updateOne', async () => ({
+    acknowledged: true,
+    matchedCount: 0,
+    modifiedCount: 0,
+    upsertedCount: 0,
+    upsertedId: null,
+  }) as any);
+  t.mock.method(UserService, 'findAuthUserById', async () => user);
+  const revokeMock = t.mock.method(AuthSessionService, 'revokeAllSessionsForUser', async () => undefined);
+
+  await assert.rejects(
+    () => AuthSessionService.refreshSession({
+      refreshToken,
+      metadata: {
+        deviceId: 'device-1',
+        ipAddress: '127.0.0.1',
+        userAgent: 'test-agent',
+      },
+    }),
+    (error: unknown) => typeof error === 'object'
+      && error !== null
+      && 'code' in error
+      && (error as { code?: string }).code === 'SESSION_REPLAY_DETECTED',
+  );
+
+  assert.equal(revokeMock.mock.callCount(), 1);
+  assert.deepEqual(revokeMock.mock.calls[0]?.arguments, [
+    user._id.toString(),
+    'refresh_reuse_detected',
+  ]);
 });
 
 test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index', async (t) => {

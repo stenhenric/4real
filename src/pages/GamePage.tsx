@@ -224,8 +224,8 @@ const GamePage = () => {
   const myIndex = room.players.findIndex((player) => player.userId === user?.id);
   const opponentIndex = room.players.findIndex((player) => player.userId !== user?.id);
 
-  const myColorClass = myIndex === 0 ? 'bg-[#ef4444]' : 'bg-[#3b82f6]';
-  const opponentColorClass = opponentIndex === 0 ? 'bg-[#ef4444]' : 'bg-[#3b82f6]';
+  const myColorClass = myIndex === 0 ? 'bg-disc-red' : 'bg-disc-blue';
+  const opponentColorClass = opponentIndex === 0 ? 'bg-disc-red' : 'bg-disc-blue';
 
   const handleBoardClick = (event: MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -345,11 +345,11 @@ const GamePage = () => {
             </div>
           </div>
 
-          <div className="relative group">
+          <div className="relative group bg-white">
             <canvas
               aria-describedby="game-board-help"
               aria-label="Connect board. Use the mouse or number keys 1 through 7 to drop a disc."
-              className="w-full h-auto cursor-pointer"
+              className="h-auto w-full cursor-pointer rounded-sm focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ink-blue"
               height={480}
               onClick={handleBoardClick}
               onKeyDown={handleBoardKeyDown}

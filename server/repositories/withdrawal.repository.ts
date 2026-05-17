@@ -60,6 +60,10 @@ export class WithdrawalRepository {
     return this.collection().findOne({ withdrawalId, userId });
   }
 
+  static async findByWithdrawalId(withdrawalId: string, session?: mongoose.ClientSession) {
+    return this.collection().findOne({ withdrawalId }, session ? { session } : undefined);
+  }
+
   static async claimNextQueued(maxRetries: number) {
     return this.collection().findOneAndUpdate(
       { status: 'queued', retries: { $lt: maxRetries } },
@@ -119,6 +123,27 @@ export class WithdrawalRepository {
       },
       session ? { session } : undefined,
     );
+  }
+
+  static async markStuckRefunded(id: WithdrawalDocumentId, lastError: string, session?: mongoose.ClientSession): Promise<boolean> {
+    const result = await this.collection().updateOne(
+      {
+        _id: id,
+        status: 'stuck',
+        txHash: { $exists: false },
+        confirmedAt: { $exists: false },
+      },
+      {
+        $set: {
+          status: 'failed',
+          lastError,
+          updatedAt: new Date(),
+        },
+      },
+      session ? { session } : undefined,
+    );
+
+    return result.modifiedCount === 1;
   }
 
   static async findStaleProcessing(startedBefore: Date) {
@@ -189,6 +214,7 @@ export class WithdrawalRepository {
       { key: { withdrawalId: 1 }, unique: true },
       { key: { status: 1, createdAt: 1 } },
       { key: { status: 1, sentAt: 1 } },
+      { key: { status: 1, startedAt: 1 } },
       { key: { userId: 1, createdAt: -1 } },
       { key: { createdAt: -1 } },
       { key: { txHash: 1 }, sparse: true },

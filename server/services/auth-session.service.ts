@@ -249,6 +249,18 @@ async function authSessionExists(
   return result;
 }
 
+async function authSessionUpdateOne(
+  label: string,
+  filter: Record<string, unknown>,
+  update: Record<string, unknown>,
+): Promise<{ matchedCount?: number; modifiedCount?: number }> {
+  const clonedFilter = prepareAuthSessionFilter(label, filter);
+  const beforeSnapshot = shouldDebugAuthSessionQueries() ? snapshotAuthSessionQuery(clonedFilter) : null;
+  const result = await AuthSession.updateOne(clonedFilter, update);
+  debugAuthSessionQueryMutation(label, beforeSnapshot, clonedFilter);
+  return result as { matchedCount?: number; modifiedCount?: number };
+}
+
 function createAccessRedisPayload(params: {
   userId: string;
   sessionId: string;
@@ -544,14 +556,33 @@ export class AuthSessionService {
       const nextAccessTokenHash = hashOpaqueToken(nextAccessToken);
       const nextRefreshTokenHash = hashOpaqueToken(nextRefreshToken);
       const now = new Date();
+      const nextIdleExpiresAt = getIdleExpiryDate(now, session.absoluteExpiresAt);
+
+      const updateResult = await authSessionUpdateOne('AuthSession.updateOne.refreshSession.rotate', {
+        _id: session._id,
+        currentRefreshTokenHash: refreshTokenHash,
+        ...buildActiveSessionQuery(),
+      }, {
+        $set: {
+          currentAccessTokenHash: nextAccessTokenHash,
+          currentRefreshTokenHash: nextRefreshTokenHash,
+          lastSeenAt: now,
+          lastIp: params.metadata.ipAddress ?? null,
+          lastUserAgent: params.metadata.userAgent ?? null,
+          idleExpiresAt: nextIdleExpiresAt,
+        },
+      });
+      if (updateResult.modifiedCount !== 1) {
+        await this.revokeAllSessionsForUser(user._id.toString(), 'refresh_reuse_detected');
+        throw unauthorized('Session replay detected', 'SESSION_REPLAY_DETECTED');
+      }
 
       session.currentAccessTokenHash = nextAccessTokenHash;
       session.currentRefreshTokenHash = nextRefreshTokenHash;
       session.lastSeenAt = now;
       session.lastIp = params.metadata.ipAddress ?? null;
       session.lastUserAgent = params.metadata.userAgent ?? null;
-      session.idleExpiresAt = getIdleExpiryDate(now, session.absoluteExpiresAt);
-      await session.save();
+      session.idleExpiresAt = nextIdleExpiresAt;
 
       await setAccessRecord({
         accessTokenHash: nextAccessTokenHash,

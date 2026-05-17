@@ -114,11 +114,11 @@ export class UserService {
   }
 
   static async findByEmail(email: string): Promise<IUser | null> {
-    return User.findOne({ email: normalizeEmail(email) });
+    return User.findOne({ email: normalizeEmail(email) }).select('+passwordHash');
   }
 
   static async findByUsername(username: string): Promise<IUser | null> {
-    return User.findOne({ usernameNormalized: normalizeUsername(username) });
+    return User.findOne({ usernameNormalized: normalizeUsername(username) }).select('+passwordHash');
   }
 
   static async findByGoogleSubject(googleSubject: string): Promise<IUser | null> {
@@ -147,7 +147,7 @@ export class UserService {
   }
 
   static async findAuthUserById(id: string): Promise<IUser | null> {
-    return User.findById(id);
+    return User.findById(id).select('+passwordHash');
   }
 
   static async markEmailVerified(id: string): Promise<IUser | null> {
@@ -210,6 +210,29 @@ export class UserService {
       },
       { returnDocument: 'after' },
     );
+  }
+
+  static async consumeMfaRecoveryCode(params: {
+    userId: string;
+    recoveryCodeHash: string;
+  }): Promise<IUser | null> {
+    const result = await User.updateOne(
+      {
+        _id: params.userId,
+        'mfa.recoveryCodeHashes': params.recoveryCodeHash,
+      },
+      {
+        $pull: {
+          'mfa.recoveryCodeHashes': params.recoveryCodeHash,
+        },
+      },
+    );
+
+    if (result.modifiedCount !== 1) {
+      return null;
+    }
+
+    return this.findAuthUserById(params.userId);
   }
 
   static async updateSecurityLogin(params: {

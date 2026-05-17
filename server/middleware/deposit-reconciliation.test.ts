@@ -292,6 +292,210 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
   assert.equal(sendDepositMock.mock.calls[1].arguments[0]?.senderAddress, SENDER_OWNER_ADDRESS);
 });
 
+test('replayDepositWindow dry-run treats a memo as active when the transfer happened before expiry', async (t) => {
+  registerCleanup(t);
+
+  const transferTime = 1_700_000_100;
+  const memoExpiresAt = new Date((transferTime + 60) * 1000);
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'historical-valid-hash',
+      transaction_now: transferTime,
+      jetton_master: USDT_MASTER,
+      amount: '2500000',
+      source: SENDER_OWNER_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+      decoded_forward_payload: { comment: 'memo-historical-valid' },
+    },
+  ]) as Response);
+  const seenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const unmatchedMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => [
+    {
+      memo: 'memo-historical-valid',
+      userId: '507f1f77bcf86cd799439011',
+      createdAt: new Date((transferTime - 60) * 1000),
+      expiresAt: memoExpiresAt,
+      used: false,
+    },
+  ]);
+  const userFindMock = mock.method(User, 'find', (() => createLeanQuery([
+    {
+      _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      username: 'memo-owner',
+    },
+  ])) as any);
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => seenHashesMock.mock.restore());
+  t.after(() => unmatchedMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+  t.after(() => userFindMock.mock.restore());
+
+  const result = await replayDepositWindow({
+    sinceUnixTime: transferTime - 10,
+    untilUnixTime: transferTime + 10,
+    dryRun: true,
+  });
+
+  assert.equal(result.transfers.length, 1);
+  assert.equal(result.transfers[0].decision, 'credit');
+  assert.equal(result.transfers[0].memoStatus, 'active');
+  assert.equal(result.transfers[0].candidateUserId, '507f1f77bcf86cd799439011');
+});
+
+test('replayDepositWindow apply credits a historical memo once and treats duplicate transfer hashes as processed', async (t) => {
+  registerCleanup(t);
+
+  const transferTime = 1_700_000_120;
+  const memoExpiresAt = new Date((transferTime + 60) * 1000);
+  const transfer = {
+    transaction_hash: 'historical-duplicate-hash',
+    transaction_now: transferTime,
+    jetton_master: USDT_MASTER,
+    amount: '2500000',
+    source: SENDER_OWNER_ADDRESS,
+    source_wallet: SENDER_JETTON_WALLET,
+    decoded_forward_payload: { comment: 'memo-historical-claim-once' },
+  };
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([transfer, transfer]) as Response);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => [
+    {
+      memo: 'memo-historical-claim-once',
+      userId: '507f1f77bcf86cd799439011',
+      createdAt: new Date((transferTime - 60) * 1000),
+      expiresAt: memoExpiresAt,
+      used: false,
+    },
+  ]);
+  const findSeenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const findUnmatchedBatchMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const claimMemoMock = mock.method(DepositMemoRepository, 'claimActiveMemo', async (memo, _session, validAt) => {
+    assert.equal(memo, 'memo-historical-claim-once');
+    assert.ok(validAt instanceof Date);
+    assert.equal(validAt.toISOString(), new Date(transferTime * 1000).toISOString());
+    return {
+      memo: 'memo-historical-claim-once',
+      userId: '507f1f77bcf86cd799439011',
+      createdAt: new Date((transferTime - 60) * 1000),
+      expiresAt: memoExpiresAt,
+      used: true,
+      usedAt: new Date(),
+    };
+  });
+  const createProcessedMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const createDepositMock = mock.method(DepositRepository, 'create', async () => {});
+  const createUnmatchedMock = mock.method(UnmatchedDepositRepository, 'create', async () => {});
+  const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
+  const userFindMock = mock.method(User, 'find', (() => createLeanQuery([
+    {
+      _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      username: 'memo-owner',
+    },
+  ])) as any);
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+  t.after(() => findSeenHashesMock.mock.restore());
+  t.after(() => findUnmatchedBatchMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => claimMemoMock.mock.restore());
+  t.after(() => createProcessedMock.mock.restore());
+  t.after(() => createDepositMock.mock.restore());
+  t.after(() => createUnmatchedMock.mock.restore());
+  t.after(() => creditMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
+  t.after(() => userFindMock.mock.restore());
+
+  const result = await replayDepositWindow({
+    sinceUnixTime: transferTime - 10,
+    untilUnixTime: transferTime + 10,
+    dryRun: false,
+  });
+
+  assert.deepEqual(result.transfers.map((item) => item.decision), ['credit', 'already_processed']);
+  assert.equal(claimMemoMock.mock.callCount(), 1);
+  assert.equal(createDepositMock.mock.callCount(), 1);
+  assert.equal(creditMock.mock.callCount(), 1);
+  assert.equal(createUnmatchedMock.mock.callCount(), 0);
+});
+
+test('replayDepositWindow does not credit a memo when the transfer happened after expiry', async (t) => {
+  registerCleanup(t);
+
+  const transferTime = 1_700_000_180;
+  const memoExpiresAt = new Date((transferTime - 60) * 1000);
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'historical-expired-hash',
+      transaction_now: transferTime,
+      jetton_master: USDT_MASTER,
+      amount: '1500000',
+      source: SENDER_OWNER_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+      decoded_forward_payload: { comment: 'memo-historical-expired' },
+    },
+  ]) as Response);
+  const findSeenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const findUnmatchedBatchMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => [
+    {
+      memo: 'memo-historical-expired',
+      userId: '507f1f77bcf86cd799439011',
+      createdAt: new Date((transferTime - 120) * 1000),
+      expiresAt: memoExpiresAt,
+      used: false,
+    },
+  ]);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const claimMemoMock = mock.method(DepositMemoRepository, 'claimActiveMemo', async () => {
+    throw new Error('expired historical memo should not be claimed');
+  });
+  const createUnmatchedMock = mock.method(UnmatchedDepositRepository, 'create', async () => {});
+  const createProcessedMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const createDepositMock = mock.method(DepositRepository, 'create', async () => {});
+  const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
+  const userFindMock = mock.method(User, 'find', (() => createLeanQuery([
+    {
+      _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      username: 'memo-owner',
+    },
+  ])) as any);
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => findSeenHashesMock.mock.restore());
+  t.after(() => findUnmatchedBatchMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => claimMemoMock.mock.restore());
+  t.after(() => createUnmatchedMock.mock.restore());
+  t.after(() => createProcessedMock.mock.restore());
+  t.after(() => createDepositMock.mock.restore());
+  t.after(() => creditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
+  t.after(() => userFindMock.mock.restore());
+
+  const result = await replayDepositWindow({
+    sinceUnixTime: transferTime - 10,
+    untilUnixTime: transferTime + 10,
+    dryRun: false,
+  });
+
+  assert.deepEqual(result.transfers.map((item) => item.decision), ['unmatched']);
+  assert.equal(result.transfers[0].memoStatus, 'inactive');
+  assert.equal(claimMemoMock.mock.callCount(), 0);
+  assert.equal(createUnmatchedMock.mock.callCount(), 1);
+  assert.equal(createDepositMock.mock.callCount(), 0);
+  assert.equal(creditMock.mock.callCount(), 0);
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.scenario, 'deposit_unmatched_merchant');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.memoStatus, 'inactive');
+});
+
 test('reconcileMerchantDeposit credits an open unmatched deposit and marks it reconciled', async (t) => {
   registerCleanup(t);
 

@@ -178,7 +178,7 @@ export function regenerateRecoveryCodes() {
 }
 
 export function logout() {
-  return request('/auth/logout', { method: 'POST' });
+  return request('/auth/logout', { method: 'POST', skipAuthRefresh: true });
 }
 
 export function refreshSession() {

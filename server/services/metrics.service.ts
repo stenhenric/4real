@@ -180,6 +180,79 @@ export function recordMongoOperation(params: {
   );
 }
 
+export function recordRedisOperation(params: {
+  operation: string;
+  outcome: 'success' | 'failure';
+  durationMs: number;
+}): void {
+  observeHistogram(
+    'redis_operation_duration_ms',
+    'Observed Redis operation duration in milliseconds.',
+    {
+      operation: params.operation,
+      outcome: params.outcome,
+    },
+    params.durationMs,
+  );
+}
+
+export function recordExternalProviderOperation(params: {
+  provider: string;
+  operation: string;
+  outcome: 'success' | 'failure' | 'timeout' | 'rate_limited';
+  durationMs: number;
+}): void {
+  observeHistogram(
+    'external_provider_duration_ms',
+    'Observed external provider operation duration in milliseconds.',
+    {
+      provider: params.provider,
+      operation: params.operation,
+      outcome: params.outcome,
+    },
+    params.durationMs,
+  );
+}
+
+export function recordReadinessDependency(params: {
+  dependency: string;
+  status: string;
+  durationMs: number;
+}): void {
+  observeHistogram(
+    'readiness_dependency_duration_ms',
+    'Observed readiness dependency probe duration in milliseconds.',
+    {
+      dependency: params.dependency,
+      status: params.status,
+    },
+    params.durationMs,
+  );
+}
+
+export function recordCacheEvent(params: {
+  event:
+    | 'hit'
+    | 'miss'
+    | 'write'
+    | 'invalidate'
+    | 'read_failed'
+    | 'write_failed'
+    | 'invalidate_failed'
+    | 'coalesced'
+    | 'loader_failed';
+  namespace: string;
+}): void {
+  incrementCounter(
+    'cache_events_total',
+    'Total application cache events grouped by cache namespace and event type.',
+    {
+      event: params.event,
+      namespace: params.namespace,
+    },
+  );
+}
+
 export function recordBackgroundJobRun(params: {
   job: string;
   outcome: 'success' | 'failure' | 'skipped_overlap';

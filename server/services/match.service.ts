@@ -12,6 +12,7 @@ import { calculateMatchPayout, calculateDrawPayout } from './match-payout.servic
 import { UserService } from './user.service.ts';
 import { AuditService } from './audit.service.ts';
 import { TransactionService } from './transaction.service.ts';
+import { CacheKeys, invalidateCacheKeys } from './cache.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
 
 type MatchSettlementReason = NonNullable<IMatch['settlementReason']>;
@@ -57,6 +58,13 @@ function negateUsdtAmount(value: string): string {
 
 function subtractUsdtAmounts(left: string, right: string): string {
   return formatUsdtAmount(parseUsdtAmount(left) - parseUsdtAmount(right));
+}
+
+async function invalidatePublicMatchReadCaches(): Promise<void> {
+  await invalidateCacheKeys([
+    CacheKeys.activeMatches(),
+    CacheKeys.leaderboard(10),
+  ]);
 }
 
 async function runOwnTransaction<T>(work: (session: mongoose.ClientSession) => Promise<T>): Promise<T> {
@@ -368,6 +376,7 @@ export class MatchService {
         isPrivate: finalSettledMatch.isPrivate,
       });
     }
+    await invalidatePublicMatchReadCaches();
 
     return finalSettledMatch;
   }
@@ -424,6 +433,7 @@ export class MatchService {
         status: finalSettledMatch.status,
         isPrivate: finalSettledMatch.isPrivate,
       });
+      await invalidatePublicMatchReadCaches();
     }
 
     return finalSettledMatch;
@@ -515,6 +525,7 @@ export class MatchService {
         status: 'completed',
         isPrivate,
       });
+      await invalidatePublicMatchReadCaches();
     }
 
     return expired;
@@ -545,6 +556,7 @@ export class MatchService {
         status: expiredMatch.status,
         isPrivate: expiredMatch.isPrivate,
       });
+      await invalidatePublicMatchReadCaches();
     }
 
     return Boolean(expiredMatch);

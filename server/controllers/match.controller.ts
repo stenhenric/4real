@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 
-import { applyPublicCacheHeaders } from '../http/cache-policy.ts';
+import { applyPublicSharedCacheHeaders } from '../http/cache-policy.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeMatch } from '../serializers/api.ts';
@@ -51,7 +51,10 @@ export class MatchController {
         return activeMatches.map((match) => serializeMatch(match));
       },
     });
-    applyPublicCacheHeaders(res, 5);
+    applyPublicSharedCacheHeaders(res, 5, {
+      staleWhileRevalidateSeconds: 10,
+      staleIfErrorSeconds: 30,
+    });
     res.json(matches);
   }
 

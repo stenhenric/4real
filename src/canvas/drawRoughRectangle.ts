@@ -5,7 +5,7 @@ interface DrawRoughRectangleOptions {
   y: number;
   width: number;
   height: number;
-  fill: string;
+  fill?: string | undefined;
   fillStyle: 'hachure' | 'solid' | 'zigzag' | 'cross-hatch' | 'dots' | 'dashed';
   stroke: string;
   strokeWidth: number;
@@ -24,8 +24,10 @@ export function drawRoughRectangle(canvas: HTMLCanvasElement, options: DrawRough
 
   const generator = rough.canvas(canvas);
   generator.rectangle(options.x, options.y, options.width, options.height, {
-    fill: options.fill,
-    fillStyle: options.fillStyle,
+    ...(options.fill && options.fill !== 'transparent' ? {
+      fill: options.fill,
+      fillStyle: options.fillStyle,
+    } : {}),
     ...(options.fillWeight !== undefined ? { fillWeight: options.fillWeight } : {}),
     hachureGap: options.hachureGap,
     roughness: options.roughness,

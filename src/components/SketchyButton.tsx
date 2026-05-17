@@ -1,53 +1,75 @@
 import type * as React from 'react';
-import { useEffect, useRef, useState } from 'react';
-import { drawRoughRectangle } from '../canvas/drawRoughRectangle';
-import { useElementSize } from '../hooks/useElementSize';
+import { useState } from 'react';
 import { cn } from '../utils/cn';
 
 type SketchyButtonProps = React.ComponentProps<'button'> & {
   fill?: string;
   stroke?: string;
   activeColor?: string;
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  size?: 'default' | 'compact' | 'icon';
 };
+
+const VARIANT_COLORS: Record<NonNullable<SketchyButtonProps['variant']>, {
+  fill: string;
+  activeColor: string;
+  stroke: string;
+}> = {
+  primary: {
+    fill: 'var(--color-note-yellow)',
+    activeColor: 'var(--color-note-yellow)',
+    stroke: 'var(--color-ink-black)',
+  },
+  secondary: {
+    fill: '#ffffff',
+    activeColor: 'var(--color-paper-soft)',
+    stroke: 'var(--color-ink-black)',
+  },
+  danger: {
+    fill: 'var(--color-danger-bg)',
+    activeColor: 'var(--color-danger-bg)',
+    stroke: 'var(--color-ink-red)',
+  },
+  ghost: {
+    fill: 'transparent',
+    activeColor: 'rgba(26, 26, 26, 0.06)',
+    stroke: 'var(--color-ink-black)',
+  },
+};
+
+function resolveCssColor(value: string, fallback: string) {
+  if (typeof document === 'undefined' || !value.startsWith('var(')) {
+    return value;
+  }
+
+  const tokenName = value.slice(4, -1).trim();
+  return getComputedStyle(document.documentElement).getPropertyValue(tokenName).trim() || fallback;
+}
 
 export const SketchyButton = ({ 
   children, 
   className,
-  fill = 'transparent',
-  stroke = '#1a1a1a',
-  activeColor = '#e5e7eb',
+  fill,
+  stroke,
+  activeColor,
+  variant = 'ghost',
+  size: buttonSize = 'default',
+  style,
   onMouseEnter,
   onMouseLeave,
   type = 'button',
   ...props 
 }: SketchyButtonProps) => {
-  const { elementRef, size } = useElementSize<HTMLButtonElement>();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hovered, setHovered] = useState(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || size.width <= 0 || size.height <= 0) {
-      return;
-    }
-
-    drawRoughRectangle(canvas, {
-      x: 4,
-      y: 4,
-      width: size.width - 8,
-      height: size.height - 8,
-      fill: hovered ? activeColor : fill,
-      fillStyle: 'hachure',
-      hachureGap: 8,
-      roughness: 1.2,
-      stroke,
-      strokeWidth: 2,
-    });
-  }, [activeColor, fill, hovered, size.height, size.width, stroke]);
+  const variantColors = VARIANT_COLORS[variant];
+  const resolvedFill = fill ?? variantColors.fill;
+  const resolvedStroke = stroke ?? variantColors.stroke;
+  const resolvedActiveColor = activeColor ?? variantColors.activeColor;
+  const currentFill = hovered ? resolvedActiveColor : resolvedFill;
+  const resolvedBorderColor = resolveCssColor(resolvedStroke, '#1a1a1a');
 
   return (
     <button
-      ref={elementRef}
       onMouseEnter={(event) => {
         if (!props.disabled) setHovered(true);
         onMouseEnter?.(event);
@@ -57,18 +79,22 @@ export const SketchyButton = ({
         onMouseLeave?.(event);
       }}
       className={cn(
-        "relative px-6 py-2 font-bold transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue disabled:opacity-50 disabled:cursor-not-allowed",
+        "sketchy-border relative inline-flex min-w-0 items-center justify-center font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue disabled:opacity-50 disabled:cursor-not-allowed",
+        buttonSize === 'default' && 'px-6 py-2',
+        buttonSize === 'compact' && 'px-3 py-1 text-sm',
+        buttonSize === 'icon' && 'aspect-square p-2',
         className
       )}
+      style={{
+        borderColor: resolvedBorderColor,
+        ...(currentFill !== 'transparent'
+          ? { backgroundColor: currentFill }
+          : {}),
+        ...style,
+      }}
       type={type}
       {...props}
     >
-      <canvas 
-        ref={canvasRef} 
-        width={size.width} 
-        height={size.height} 
-        className="absolute top-0 left-0 pointer-events-none z-0"
-      />
       <span className="relative z-10 flex min-w-0 items-center justify-center gap-2">{children}</span>
     </button>
   );

@@ -21,11 +21,32 @@
   --font-sans: "Cabin Sketch", system-ui, sans-serif;
   --font-display: "Cabin Sketch", system-ui, sans-serif;
   --font-mono: "Cabin Sketch", system-ui, sans-serif;
+  --color-paper-base: #F2EFE9;
   --color-paper: #F2EFE9;
+  --color-paper-soft: #FBFAF7;
+  --color-paper-rule: #D1D5DB;
   --color-ink-blue: #1A365D;
   --color-ink-red: #9B2C2C;
   --color-ink-black: #1A1A1A;
+  --color-note-yellow: #fff9c4;
+  --color-note-yellow-border: #fbc02d;
+  --color-note-blue: #E8F0FB;
   --color-marker-yellow: rgba(255, 255, 0, 0.4);
+  --color-success-bg: #dcfce7;
+  --color-success-text: #166534;
+  --color-success-border: #15803d;
+  --color-warning-bg: #fef3c7;
+  --color-warning-text: #854d0e;
+  --color-warning-border: #ca8a04;
+  --color-danger-bg: #fee2e2;
+  --color-danger-text: #991b1b;
+  --color-danger-border: #b91c1c;
+  --color-info-bg: #e0f2fe;
+  --color-info-text: #1A365D;
+  --color-info-border: #1A365D;
+  --color-game-board-line: #1A365D;
+  --color-disc-red: #ef4444;
+  --color-disc-blue: #3b82f6;
 }
 
 html,
@@ -36,7 +57,7 @@ body,
 
 body {
   @apply bg-paper text-ink-black min-h-screen font-sans antialiased;
-  background-image: repeating-linear-gradient(var(--color-paper) 0px, var(--color-paper) 23px, #D1D5DB 24px);
+  background-image: repeating-linear-gradient(var(--color-paper) 0px, var(--color-paper) 23px, var(--color-paper-rule) 24px);
   background-size: 100% 24px;
 }
 
@@ -100,10 +121,21 @@ a:focus-visible {
 }
 
 .sticky-note {
-  background: #fff9c4;
+  background: var(--color-note-yellow);
   transform: rotate(-1deg);
   box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-  border-left: 1px solid #fbc02d;
+  border-left: 1px solid var(--color-note-yellow-border);
+}
+
+.sketch-card {
+  border: 2.5px solid var(--color-ink-black);
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  background: white;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.08);
+}
+
+.mobile-bottom-safe {
+  padding-bottom: max(6rem, calc(5rem + env(safe-area-inset-bottom)));
 }
 
 .tape {
@@ -144,13 +176,13 @@ a:focus-visible {
 }
 
 .disc-red {
-  background: repeating-conic-gradient(var(--color-ink-red) 0% 25%, transparent 0% 50%) 50% / 2px 2px;
-  border: 1px solid var(--color-ink-red);
+  background: repeating-conic-gradient(var(--color-disc-red) 0% 25%, transparent 0% 50%) 50% / 2px 2px;
+  border: 1px solid var(--color-disc-red);
 }
 
 .disc-blue {
-  background: repeating-conic-gradient(var(--color-ink-blue) 0% 25%, transparent 0% 50%) 50% / 2px 2px;
-  border: 1px solid var(--color-ink-blue);
+  background: repeating-conic-gradient(var(--color-disc-blue) 0% 25%, transparent 0% 50%) 50% / 2px 2px;
+  border: 1px solid var(--color-disc-blue);
 }
 
 @keyframes bounce-subtle {
@@ -182,4 +214,15 @@ a:focus-visible {
   animation: sketchy-wobble 1.5s linear infinite;
   background-color: white;
   box-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

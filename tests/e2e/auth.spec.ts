@@ -69,7 +69,14 @@ test('boots the app, enforces auth, supports register verify login logout, and p
 
   await expect(signInButton).toBeEnabled();
   await passwordInput().fill(DEFAULT_PASSWORD);
-  await signInButton.click();
+  await Promise.all([
+    page.waitForResponse((response) => (
+      response.url().includes('/api/auth/login/password')
+      && response.request().method() === 'POST'
+      && response.status() === 200
+    )),
+    signInButton.click(),
+  ]);
   await expect(page).toHaveURL(/\/play$/);
   await expect(page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
 });

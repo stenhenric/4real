@@ -1,4 +1,5 @@
 import { getEnv } from '../config/env.ts';
+import { recordCacheEvent } from './metrics.service.ts';
 import { logger } from '../utils/logger.ts';
 
 export const CACHE_TTLS = {
@@ -6,6 +7,7 @@ export const CACHE_TTLS = {
   activeMatches: 5,
   merchantConfig: 60,
   merchantDashboard: 5,
+  merchantBalanceSnapshot: 30,
   jettonWallet: 24 * 60 * 60,
 } as const;
 
@@ -14,6 +16,7 @@ const CACHE_NAMESPACE_VERSIONS = {
   activeMatches: 1,
   merchantConfig: 1,
   merchantDashboard: 1,
+  merchantBalanceSnapshot: 1,
   jettonWallet: 1,
 } as const;
 
@@ -47,6 +50,11 @@ function buildCacheKey(namespace: CacheNamespace, ...parts: CacheKeyPart[]): str
   return ['4real', 'cache', namespace, `v${version}`, ...normalizedParts].join(':');
 }
 
+function getCacheNamespace(key: string): string {
+  const [, cachePrefix, namespace] = key.split(':');
+  return cachePrefix === 'cache' && namespace ? namespace : 'unknown';
+}
+
 export const CacheKeys = {
   leaderboard(limit: number) {
     return buildCacheKey('leaderboard', 'top', limit);
@@ -59,6 +67,9 @@ export const CacheKeys = {
   },
   merchantDashboard() {
     return buildCacheKey('merchantDashboard', 'summary');
+  },
+  merchantBalanceSnapshot(ownerAddress: string) {
+    return buildCacheKey('merchantBalanceSnapshot', ownerAddress);
   },
   jettonWallet(ownerAddress: string | null, jettonMaster: string | null) {
     return buildCacheKey('jettonWallet', ownerAddress, jettonMaster);
@@ -88,6 +99,7 @@ async function readCachedString(key: string): Promise<string | null> {
   try {
     return await (await getCacheRedisClient()).get(key);
   } catch (error) {
+    recordCacheEvent({ event: 'read_failed', namespace: getCacheNamespace(key) });
     logger.warn('cache.read_failed', { key, error });
     return null;
   }
@@ -99,6 +111,7 @@ async function writeCachedString(key: string, value: string, ttlSeconds: number)
     value,
     expiresAtMs: Date.now() + (jitteredTtl * 1000),
   });
+  recordCacheEvent({ event: 'write', namespace: getCacheNamespace(key) });
 
   if (shouldUseMemoryOnlyCache()) {
     return;
@@ -107,6 +120,7 @@ async function writeCachedString(key: string, value: string, ttlSeconds: number)
   try {
     await (await getCacheRedisClient()).set(key, value, 'EX', jitteredTtl);
   } catch (error) {
+    recordCacheEvent({ event: 'write_failed', namespace: getCacheNamespace(key) });
     logger.warn('cache.write_failed', { key, error });
   }
 }
@@ -118,6 +132,7 @@ export async function invalidateCacheKeys(keys: string[]): Promise<void> {
 
   for (const key of keys) {
     localCache.delete(key);
+    recordCacheEvent({ event: 'invalidate', namespace: getCacheNamespace(key) });
   }
 
   if (shouldUseMemoryOnlyCache()) {
@@ -127,6 +142,9 @@ export async function invalidateCacheKeys(keys: string[]): Promise<void> {
   try {
     await (await getCacheRedisClient()).del(...keys);
   } catch (error) {
+    for (const key of keys) {
+      recordCacheEvent({ event: 'invalidate_failed', namespace: getCacheNamespace(key) });
+    }
     logger.warn('cache.invalidate_failed', { keys, error });
   }
 }
@@ -139,6 +157,7 @@ export async function getOrPopulateJson<T>(params: {
   const cached = await readCachedString(params.key);
   if (cached !== null) {
     try {
+      recordCacheEvent({ event: 'hit', namespace: getCacheNamespace(params.key) });
       return {
         value: JSON.parse(cached) as T,
         cacheStatus: 'hit',
@@ -148,14 +167,22 @@ export async function getOrPopulateJson<T>(params: {
       logger.warn('cache.decode_failed', { key: params.key, error });
     }
   }
+  recordCacheEvent({ event: 'miss', namespace: getCacheNamespace(params.key) });
 
   const existingLoad = inflightLoads.get(params.key) as Promise<{ value: T; cacheStatus: 'miss' }> | undefined;
   if (existingLoad) {
+    recordCacheEvent({ event: 'coalesced', namespace: getCacheNamespace(params.key) });
     return existingLoad;
   }
 
   const nextLoad = (async () => {
-    const value = await params.loader();
+    let value: T;
+    try {
+      value = await params.loader();
+    } catch (error) {
+      recordCacheEvent({ event: 'loader_failed', namespace: getCacheNamespace(params.key) });
+      throw error;
+    }
     await writeCachedString(params.key, JSON.stringify(value), params.ttlSeconds);
     return {
       value,

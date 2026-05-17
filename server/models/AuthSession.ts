@@ -74,7 +74,7 @@ const AuthSessionSchema = new Schema<IAuthSession>({
   deviceId: { type: String, required: true, index: true },
   currentAccessTokenHash: { type: String, default: undefined, index: true, sparse: true },
   currentRefreshTokenHash: { type: String, default: undefined },
-  absoluteExpiresAt: { type: Date, required: true, index: true },
+  absoluteExpiresAt: { type: Date, required: true },
   idleExpiresAt: { type: Date, required: true, index: true },
   lastSeenAt: { type: Date, required: true, default: () => new Date() },
   lastIp: { type: String, default: null },
@@ -90,6 +90,7 @@ AuthSessionSchema.index({ currentRefreshTokenHash: 1 }, {
   partialFilterExpression: REFRESH_TOKEN_PARTIAL_FILTER,
 });
 AuthSessionSchema.index({ userId: 1, deviceId: 1, revokedAt: 1 });
+AuthSessionSchema.index({ absoluteExpiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const AuthSession = mongoose.model<IAuthSession>('AuthSession', AuthSessionSchema);
 

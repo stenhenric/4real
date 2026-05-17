@@ -258,13 +258,13 @@ export default function LoginPage() {
 
         {step === 'password_entry' && (
           <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handlePasswordLogin}>
-            <button
+            <SketchyButton
               type="button"
               onClick={resetStep}
               className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
             >
               ← Back to options
-            </button>
+            </SketchyButton>
             
             <AuthInput
               autoComplete="username"
@@ -312,13 +312,13 @@ export default function LoginPage() {
 
         {step === 'magic_link_verification' && (
           <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handleMagicLinkSubmit}>
-            <button
+            <SketchyButton
               type="button"
               onClick={resetStep}
               className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
             >
               ← Back to options
-            </button>
+            </SketchyButton>
 
             <AuthNotice tone="info">
               Verify you are human to send a magic link to {identifier.trim()}.

@@ -1,5 +1,8 @@
 import { getEnv } from '../config/env.ts';
+import { recordExternalProviderOperation } from './metrics.service.ts';
 import { badRequest, serviceUnavailable } from '../utils/http-error.ts';
+
+const TURNSTILE_VERIFY_TIMEOUT_MS = 5_000;
 
 export async function verifyTurnstileToken(token?: string, remoteIp?: string): Promise<void> {
   const env = getEnv();
@@ -22,17 +25,42 @@ export async function verifyTurnstileToken(token?: string, remoteIp?: string): P
     body.set('remoteip', remoteIp);
   }
 
-  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
+  const startedAt = performance.now();
+  let response: Response;
+  try {
+    response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: AbortSignal.timeout(TURNSTILE_VERIFY_TIMEOUT_MS),
+    });
+  } catch (error) {
+    recordExternalProviderOperation({
+      provider: 'turnstile',
+      operation: 'siteverify',
+      outcome: error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'failure',
+      durationMs: performance.now() - startedAt,
+    });
+    throw error;
+  }
 
   if (!response.ok) {
+    recordExternalProviderOperation({
+      provider: 'turnstile',
+      operation: 'siteverify',
+      outcome: 'failure',
+      durationMs: performance.now() - startedAt,
+    });
     throw serviceUnavailable('Turnstile verification failed', 'TURNSTILE_UNAVAILABLE');
   }
 
   const payload = await response.json() as { success?: boolean };
+  recordExternalProviderOperation({
+    provider: 'turnstile',
+    operation: 'siteverify',
+    outcome: payload.success === true ? 'success' : 'failure',
+    durationMs: performance.now() - startedAt,
+  });
   if (payload.success !== true) {
     throw badRequest('Bot verification failed', 'TURNSTILE_FAILED');
   }

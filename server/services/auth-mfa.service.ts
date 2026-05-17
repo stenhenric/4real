@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 
 import { getEnv } from '../config/env.ts';
 import { createRecoveryCode, decryptSecret, encryptSecret, hashOpaqueToken } from './auth-crypto.service.ts';
+import { AuditService } from './audit.service.ts';
+import { ProductEmailNotificationService } from './product-email-notification.service.ts';
 import { getRedisClient } from './redis.service.ts';
 import { createTotpSetup, verifyTotpCode } from './totp.service.ts';
 import type { IUser } from '../models/User.ts';
@@ -136,19 +138,11 @@ export class AuthMfaService {
 
     if (params.recoveryCode) {
       const recoveryHash = hashRecoveryCode(params.recoveryCode);
-      const existingHashes = user.mfa.recoveryCodeHashes ?? [];
-      if (existingHashes.includes(recoveryHash)) {
-        const nextHashes = existingHashes.filter((entry) => entry !== recoveryHash);
-        const updatedUser = await UserService.updateMfaState({
-          userId: user._id.toString(),
-          totpSecretEncrypted: user.mfa.totpSecretEncrypted,
-          enabledAt: user.mfa.enabledAt ?? new Date(),
-          recoveryCodeHashes: nextHashes,
-        });
-        if (!updatedUser) {
-          throw unauthorized('MFA verification failed', 'MFA_VERIFICATION_FAILED');
-        }
-
+      const updatedUser = await UserService.consumeMfaRecoveryCode({
+        userId: user._id.toString(),
+        recoveryCodeHash: recoveryHash,
+      });
+      if (updatedUser) {
         return updatedUser;
       }
     }
@@ -165,7 +159,7 @@ export class AuthMfaService {
     });
   }
 
-  static async regenerateRecoveryCodes(user: IUser): Promise<string[]> {
+  static async regenerateRecoveryCodes(user: IUser, options: { actorUserId?: string | null } = {}): Promise<string[]> {
     if (!user.mfa?.enabledAt || !user.mfa?.totpSecretEncrypted) {
       throw unauthorized('MFA is not enabled for this account', 'MFA_NOT_ENABLED');
     }
@@ -176,6 +170,18 @@ export class AuthMfaService {
       totpSecretEncrypted: user.mfa.totpSecretEncrypted,
       enabledAt: user.mfa.enabledAt,
       recoveryCodeHashes: recoveryCodes.map((entry) => hashRecoveryCode(entry)),
+    });
+    await AuditService.record({
+      eventType: 'mfa_recovery_codes_regenerated',
+      actorUserId: options.actorUserId ?? user._id.toString(),
+      targetUserId: user._id.toString(),
+      resourceType: 'user',
+      resourceId: user._id.toString(),
+    });
+    await ProductEmailNotificationService.sendSecurityAlert({
+      userId: user._id.toString(),
+      subject: 'Your 4real recovery codes were regenerated',
+      summary: 'Your MFA recovery codes were regenerated. If this was not you, reset your password and review your active sessions.',
     });
     return recoveryCodes;
   }

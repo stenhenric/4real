@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import { MerchantAdminController } from '../controllers/merchant-admin.controller.ts';
+import { WithdrawalRecoveryController } from '../controllers/withdrawal-recovery.controller.ts';
 import { authenticateToken, requireAdmin, requireMfaStepUp, requireVerifiedAccount } from '../middleware/auth.middleware.ts';
 import { validateBody } from '../middleware/validate.middleware.ts';
 import { asyncHandler } from '../utils/async-handler.ts';
@@ -8,6 +9,7 @@ import {
   merchantDepositReconcileRequestSchema,
   merchantDepositReplayWindowRequestSchema,
   updateMerchantConfigRequestSchema,
+  withdrawalRecoveryRequestSchema,
 } from '../validation/request-schemas.ts';
 
 const router = Router();
@@ -28,6 +30,11 @@ router.post(
   '/merchant/deposits/:txHash/reconcile',
   validateBody(merchantDepositReconcileRequestSchema),
   asyncHandler(MerchantAdminController.reconcileDeposit),
+);
+router.post(
+  '/withdrawals/:withdrawalId/recover',
+  validateBody(withdrawalRecoveryRequestSchema),
+  asyncHandler(WithdrawalRecoveryController.recover),
 );
 
 export default router;

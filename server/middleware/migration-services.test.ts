@@ -283,3 +283,36 @@ test('serializeOrder returns a stable DTO for populated and unpopulated users', 
   assert.equal(populated.exchangeRate, '140.000000');
   assert.equal(populated.fiatTotal, '700.00');
 });
+
+test('serializeOrder only includes SELL payout details for authorized review surfaces', () => {
+  const createdAt = new Date('2026-01-02T00:00:00.000Z');
+  const orderId = new mongoose.Types.ObjectId();
+  const userId = new mongoose.Types.ObjectId();
+  const sellOrder = {
+    _id: orderId,
+    userId,
+    type: 'SELL',
+    amount: '10.000000',
+    status: 'PENDING',
+    mpesaNumber: '254700111222',
+    mpesaName: 'Alice Seller',
+    fiatCurrency: 'KES',
+    exchangeRate: '130.000000',
+    fiatTotal: '1300.00',
+    createdAt,
+  } as any;
+  const defaultDto = serializeOrder(sellOrder);
+  const adminDto = serializeOrder(sellOrder, { includePayoutDetails: true });
+  const buyDto = serializeOrder({
+    ...sellOrder,
+    type: 'BUY',
+    transactionCode: 'QWE123ABC',
+  } as any, { includePayoutDetails: true });
+
+  assert.equal(defaultDto.mpesaNumber, undefined);
+  assert.equal(defaultDto.mpesaName, undefined);
+  assert.equal(adminDto.mpesaNumber, '254700111222');
+  assert.equal(adminDto.mpesaName, 'Alice Seller');
+  assert.equal(buyDto.mpesaNumber, undefined);
+  assert.equal(buyDto.mpesaName, undefined);
+});

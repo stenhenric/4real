@@ -1,15 +1,16 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
+import { scrubSensitiveTokenFromCurrentUrl } from '../../features/auth/url-token';
 import { resetPassword } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token')?.trim() ?? '';
+  const [token] = useState(() => searchParams.get('token')?.trim() ?? '');
   const { success, error: showError } = useToast();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -19,6 +20,12 @@ export default function ResetPasswordPage() {
     () => confirmPassword.length === 0 || password === confirmPassword,
     [confirmPassword, password],
   );
+
+  useEffect(() => {
+    if (token) {
+      scrubSensitiveTokenFromCurrentUrl();
+    }
+  }, [token]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,7 +47,7 @@ export default function ResetPasswordPage() {
       success(response.message ?? 'Password updated.');
       navigate('/auth/login', { replace: true });
     } catch (error) {
-      showError(getApiErrorMessage(error, 'We could not reset your password right now. Please try again.'));
+      showError(getApiErrorMessage(error, 'Could not reset password. Please try again.'));
     } finally {
       setLoading(false);
     }

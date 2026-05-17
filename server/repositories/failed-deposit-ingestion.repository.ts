@@ -17,8 +17,10 @@ export interface FailedDepositIngestionDocument {
 }
 
 export class FailedDepositIngestionRepository {
+  static readonly collectionName = 'failed_deposit_ingestions';
+
   private static collection() {
-    return getMongoCollection<FailedDepositIngestionDocument>('failed_deposit_ingestions');
+    return getMongoCollection<FailedDepositIngestionDocument>(this.collectionName);
   }
 
   static async upsertFailure(params: {
@@ -147,6 +149,7 @@ export class FailedDepositIngestionRepository {
       { key: { txHash: 1 }, unique: true },
       { key: { status: 1, resolvedAt: 1, nextRetryAt: 1, failedAt: 1 } },
       { key: { 'transferData.transaction_now': 1, status: 1, resolvedAt: 1 } },
+      { key: { status: 1, resolvedAt: 1, 'transferData.transaction_now': 1 } },
     ]);
   }
 }

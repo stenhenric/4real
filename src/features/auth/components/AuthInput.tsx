@@ -6,8 +6,8 @@ export interface AuthInputProps extends Omit<ComponentProps<'input'>, 'className
   hint?: string | undefined;
   error?: string | undefined;
   success?: boolean;
-  containerClassName?: string;
-  inputClassName?: string;
+  containerClassName?: string | undefined;
+  inputClassName?: string | undefined;
   endAdornment?: React.ReactNode;
 }
 
@@ -19,7 +19,7 @@ export const AuthInput = forwardRef<HTMLInputElement, AuthInputProps>(
     return (
       <div className={cn('relative', containerClassName)}>
         <label className="block" htmlFor={fieldId}>
-          <span className="font-mono font-bold text-[10px] uppercase tracking-widest opacity-50">
+          <span className="font-mono font-bold text-[10px] uppercase tracking-widest opacity-60">
             {label}
           </span>
         </label>
@@ -32,7 +32,7 @@ export const AuthInput = forwardRef<HTMLInputElement, AuthInputProps>(
             className={cn(
               'w-full bg-transparent border-b-4 border-black font-bold text-lg outline-none p-2 focus:bg-white/50 transition-colors placeholder:opacity-30',
               error   && 'border-ink-red',
-              success && !error && 'border-green-700',
+              success && !error && 'border-success-border',
               props.disabled && 'opacity-40 cursor-not-allowed',
               inputClassName,
             )}

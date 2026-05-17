@@ -8,6 +8,9 @@ import {
   getDeviceCookieClearOptions,
   getDeviceCookieName,
   getDeviceCookieOptions,
+  getGoogleOAuthStateCookieClearOptions,
+  getGoogleOAuthStateCookieName,
+  getGoogleOAuthStateCookieOptions,
   getRefreshCookieName,
   getRefreshCookieClearOptions,
   getRefreshCookieOptions,
@@ -44,6 +47,8 @@ import type {
   PasswordResetRequest,
   RegisterRequest,
 } from '../validation/request-schemas.ts';
+
+const DUMMY_PASSWORD_HASH = 'argon2id$v=1$m=65536,t=3,p=1$eJYB4S783mlIXTG5Q6ppGQ$0OFAdBFpP9j0xgjajtEEzmCw26b8w4QmSBSkAtDefy8';
 
 function getRequestMetadata(req: Request) {
   return {
@@ -263,12 +268,9 @@ export class AuthController {
     await verifyTurnstileToken(body.turnstileToken, req.ip);
 
     const user = await findPasswordLoginUser(body.identifier);
-    if (!user || !user.passwordHash) {
-      throw unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
-    }
-
-    const passwordMatches = await verifyPassword(body.password, user.passwordHash);
-    if (!passwordMatches) {
+    const passwordHash = user?.passwordHash ?? DUMMY_PASSWORD_HASH;
+    const passwordMatches = await verifyPassword(body.password, passwordHash);
+    if (!user || !user.passwordHash || !passwordMatches) {
       throw unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
     }
 
@@ -439,9 +441,15 @@ export class AuthController {
     const redirectTo = sanitizeRedirectPath(
       typeof req.query.redirectTo === 'string' ? req.query.redirectTo : undefined,
     );
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest(redirectTo);
+    res.cookie(
+      getGoogleOAuthStateCookieName(),
+      authorizationRequest.browserState,
+      getGoogleOAuthStateCookieOptions(),
+    );
     res.json({
       status: 'success',
-      redirectTo: await GoogleOAuthService.createAuthorizationUrl(redirectTo),
+      redirectTo: authorizationRequest.authorizationUrl,
     });
   }
 
@@ -449,12 +457,17 @@ export class AuthController {
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     const code = typeof req.query.code === 'string' ? req.query.code : '';
     if (!state || !code) {
+      res.clearCookie(getGoogleOAuthStateCookieName(), getGoogleOAuthStateCookieClearOptions());
       res.redirect(302, '/auth/login?error=google');
       return;
     }
 
     try {
-      const googleProfile = await GoogleOAuthService.consumeCallback({ state, code });
+      const browserState = typeof req.cookies?.[getGoogleOAuthStateCookieName()] === 'string'
+        ? req.cookies[getGoogleOAuthStateCookieName()]
+        : null;
+      res.clearCookie(getGoogleOAuthStateCookieName(), getGoogleOAuthStateCookieClearOptions());
+      const googleProfile = await GoogleOAuthService.consumeCallback({ state, code, browserState });
       let user = await UserService.findByGoogleSubject(googleProfile.googleSubject);
 
       if (!user) {
@@ -484,6 +497,7 @@ export class AuthController {
         ?? buildPostAuthRedirect(user.username);
       res.redirect(302, redirectTarget);
     } catch (err) {
+      res.clearCookie(getGoogleOAuthStateCookieName(), getGoogleOAuthStateCookieClearOptions());
       const errorCode = typeof err === 'object'
         && err !== null
         && 'code' in err
@@ -629,8 +643,10 @@ export class AuthController {
       throw unauthorized('Session expired', 'SESSION_EXPIRED');
     }
 
-    const sessionList = await AuthSessionService.listSessions(req.user.id, req.user.sessionId);
-    const balance = await UserService.getDisplayBalance(req.user.id);
+    const [sessionList, balance] = await Promise.all([
+      AuthSessionService.listSessions(req.user.id, req.user.sessionId),
+      UserService.getDisplayBalance(req.user.id),
+    ]);
 
     res.json({
       ...serializeAuthState({
@@ -857,7 +873,7 @@ export class AuthController {
       throw unauthorized('Session expired', 'SESSION_EXPIRED');
     }
 
-    const recoveryCodes = await AuthMfaService.regenerateRecoveryCodes(user);
+    const recoveryCodes = await AuthMfaService.regenerateRecoveryCodes(user, { actorUserId: req.user.id });
     const updatedUser = await UserService.findAuthUserById(req.user.id);
     if (!updatedUser) {
       throw unauthorized('Session expired', 'SESSION_EXPIRED');

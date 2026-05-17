@@ -18,7 +18,7 @@ export const SketchyContainer = ({
   className,
   fill = 'transparent',
   fillStyle = 'hachure',
-  stroke = '#1a1a1a',
+  stroke = 'var(--color-ink-black)',
   strokeWidth = 2,
   roughness = 1.5
 }: SketchyContainerProps) => {

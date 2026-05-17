@@ -5,6 +5,7 @@ import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
+import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   disableMfa,
@@ -33,9 +34,9 @@ function formatSessionLabel(session: SessionListItemDTO) {
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[24px] border border-black/10 bg-black/5 px-4 py-3">
-      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/45">{label}</p>
-      <p className="mt-2 text-lg font-black">{value}</p>
+    <div className="rough-border bg-paper-soft px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.24em] opacity-55">{label}</p>
+      <p className="mt-2 text-lg font-bold italic">{value}</p>
     </div>
   );
 }
@@ -52,13 +53,13 @@ function SetupStep({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-[28px] border border-black/10 bg-paper/70 p-4 sm:p-5">
+    <div className="rough-border bg-paper-soft/80 p-4 sm:p-5">
       <div className="flex gap-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-ink-blue bg-white text-lg font-black text-ink-blue">
+        <div className="rough-border flex h-10 w-10 shrink-0 items-center justify-center bg-white text-lg font-bold text-ink-blue">
           {step}
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-xl font-black">{title}</h3>
+          <h3 className="text-xl font-bold italic">{title}</h3>
           <p className="mt-1 text-sm leading-6 text-black/65">{description}</p>
           {children ? <div className="mt-4">{children}</div> : null}
         </div>
@@ -115,7 +116,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(getApiErrorMessage(error, 'We could not load your active devices. Try refreshing the page.'));
+      showError(getApiErrorMessage(error, 'Could not load devices. Refresh the page.'));
     }
   }, [showError]);
 
@@ -249,7 +250,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(getApiErrorMessage(error, 'We could not regenerate your recovery codes. Please try again.'));
+      showError(getApiErrorMessage(error, 'Could not regenerate codes. Please try again.'));
     } finally {
       setRecoveryBusy(false);
     }
@@ -341,7 +342,7 @@ export default function SecuritySettingsPage() {
         return;
       }
 
-      showError(getApiErrorMessage(error, 'We could not sign out other devices. Please try again.'));
+      showError(getApiErrorMessage(error, 'Could not sign out devices. Please try again.'));
     } finally {
       setSessionAction(null);
     }
@@ -389,10 +390,10 @@ export default function SecuritySettingsPage() {
               </p>
             </div>
 
-            <span className="inline-flex items-center gap-2 self-start rounded-full border-2 border-black bg-[#fff9c4] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-black shadow-sm">
+            <StatusBadge className="self-start border-2 border-black bg-note-yellow px-4 py-2 tracking-[0.22em]" tone="warning">
               {mfaEnabled ? <ShieldCheck size={14} /> : <Smartphone size={14} />}
               {mfaBadgeLabel}
-            </span>
+            </StatusBadge>
           </div>
 
           {mfaErrorMessage ? (
@@ -497,7 +498,7 @@ export default function SecuritySettingsPage() {
                 title={SECURITY_PAGE_COPY.mfa.stepThreeTitle}
                 description={SECURITY_PAGE_COPY.mfa.stepThreeDescription}
               >
-                <div className="rounded-[22px] border border-black/10 bg-white px-4 py-3">
+                <div className="rough-border bg-white px-4 py-3">
                   <p className="text-sm leading-6 text-black/65">
                     Each recovery code can be used once. Save them somewhere offline before you close this page.
                   </p>
@@ -506,20 +507,20 @@ export default function SecuritySettingsPage() {
             </div>
           ) : (
             <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_1.1fr]">
-              <div className="rounded-[28px] border border-black/10 bg-paper/70 p-5">
-                <div className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-green-800">
+              <div className="rough-border bg-paper-soft/80 p-5">
+                <StatusBadge tone="success">
                   <ShieldCheck size={14} />
                   {SECURITY_PAGE_COPY.mfa.setupEnabled}
-                </div>
+                </StatusBadge>
                 <p className="mt-4 text-sm leading-6 text-black/65">
                   Recovery codes are your offline fallback. Generate a new set only when you are ready to replace the current one.
                 </p>
               </div>
 
-              <div className="rounded-[28px] border border-red-200 bg-red-50 p-5">
+              <div className="rough-border border-danger-border bg-danger-bg p-5">
                 <div className="flex items-center gap-3">
                   <KeyRound className="text-ink-red" size={20} />
-                  <h3 className="text-xl font-black">{SECURITY_PAGE_COPY.mfa.disableTitle}</h3>
+                  <h3 className="text-xl font-bold italic">{SECURITY_PAGE_COPY.mfa.disableTitle}</h3>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-black/65">
                   {SECURITY_PAGE_COPY.mfa.disableDescription}
@@ -555,7 +556,7 @@ export default function SecuritySettingsPage() {
           <section className="rough-border bg-white p-6 shadow-lg">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <h2 className="text-2xl font-black">{SECURITY_PAGE_COPY.recovery.title}</h2>
+                <h2 className="text-2xl font-bold italic">{SECURITY_PAGE_COPY.recovery.title}</h2>
                 <p className="mt-1 text-sm leading-6 text-black/65">
                   {SECURITY_PAGE_COPY.recovery.description}
                 </p>
@@ -594,14 +595,14 @@ export default function SecuritySettingsPage() {
                 {recoveryCodes.map((code) => (
                   <div
                     key={code}
-                    className="rounded-[20px] border border-black/10 bg-[#FBFAF7] px-4 py-3 font-mono text-sm font-semibold tracking-[0.2em]"
+                    className="rough-border bg-paper-soft px-4 py-3 font-mono text-sm font-semibold tracking-[0.2em]"
                   >
                     {code}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="mt-5 rounded-[24px] border border-black/10 bg-paper/70 px-4 py-4">
+              <div className="mt-5 rough-border bg-paper-soft/80 px-4 py-4">
                 <p className="text-sm leading-6 text-black/65">
                   {mfaEnabled ? SECURITY_PAGE_COPY.recovery.empty : SECURITY_PAGE_COPY.recovery.setupPending}
                 </p>
@@ -613,7 +614,7 @@ export default function SecuritySettingsPage() {
         <section className="space-y-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-2xl font-black">{SECURITY_PAGE_COPY.sessions.title}</h2>
+              <h2 className="text-2xl font-bold italic">{SECURITY_PAGE_COPY.sessions.title}</h2>
               <p className="mt-1 text-sm leading-6 text-black/65">
                 {SECURITY_PAGE_COPY.sessions.description}
               </p>
@@ -639,15 +640,15 @@ export default function SecuritySettingsPage() {
               {sessions.map((session) => (
                 <div
                   key={session.id}
-                  className="rounded-[28px] border border-black/10 bg-white px-5 py-5 shadow-sm"
+                  className="rough-border bg-white px-5 py-5 shadow-sm"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-ink-blue/10 px-3 py-1 text-xs font-bold uppercase text-ink-blue">
+                        <StatusBadge tone="info">
                           <Laptop2 size={14} />
                           {session.current ? 'Current browser' : 'Tracked device'}
-                        </span>
+                        </StatusBadge>
                         <span className="truncate text-xs font-mono text-black/45">{session.deviceId}</span>
                       </div>
                       <p className="mt-3 text-base font-semibold text-black">{formatSessionLabel(session)}</p>

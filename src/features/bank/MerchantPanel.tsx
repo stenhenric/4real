@@ -5,6 +5,8 @@ import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import {
   createOrder,
@@ -195,7 +197,7 @@ const MerchantPanel = () => {
       resetTradeForm();
       await refreshUser();
     } catch (error) {
-      showError(getApiErrorMessage(error, 'We could not process that transaction. Please try again.'));
+      showError(getApiErrorMessage(error, 'Transaction failed. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -248,14 +250,14 @@ const MerchantPanel = () => {
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-white/40 border-l-4 border-green-600">
+                  <div className="p-3 bg-white/40 border-l-4 border-success-border">
                     <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Buy Rate</p>
                     <p className="font-bold text-lg tracking-tight">
                       {merchantConfig ? `${formatMoney(merchantConfig.buyRateKesPerUsdt)} ${fiatCurrency}` : 'Loading...'}
                     </p>
                     <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
                   </div>
-                  <div className="p-3 bg-white/40 border-l-4 border-red-600">
+                  <div className="p-3 bg-white/40 border-l-4 border-danger-border">
                     <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Sell Rate</p>
                     <p className="font-bold text-lg tracking-tight">
                       {merchantConfig ? `${formatMoney(merchantConfig.sellRateKesPerUsdt)} ${fiatCurrency}` : 'Loading...'}
@@ -272,8 +274,8 @@ const MerchantPanel = () => {
             <div className="flex-1">
               <div className="relative min-h-[240px]">
                 {activeTab === 'buy' && paymentConfirmed ? (
-                  <div className="absolute -top-12 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center text-green-700 animate-bounce">
-                    <span className="rounded-full border-2 border-green-700 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-center whitespace-nowrap">
+                  <div className="absolute -top-12 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center text-success-text animate-bounce">
+                    <span className="rounded-full border-2 border-success-border bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-center whitespace-nowrap">
                       Upload your payment screenshot here
                     </span>
                     <ArrowDown className="mt-1" size={28} />
@@ -381,7 +383,7 @@ const MerchantPanel = () => {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-black/10 bg-black/5 p-5">
+              <div className="rough-border bg-paper-soft/80 p-5">
                 {activeTab === 'buy' ? (
                   <div className="space-y-4">
                     <div>
@@ -395,14 +397,14 @@ const MerchantPanel = () => {
                     </div>
 
                     {hasValidAmount && rateConfigured ? (
-                      <div className="rounded-3xl border border-yellow-400 bg-yellow-50 px-4 py-4">
-                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-800">
+                      <div className="rough-border border-warning-border bg-warning-bg px-4 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-warning-text">
                           Payment summary
                         </p>
-                        <p className="mt-3 text-3xl font-bold italic text-yellow-900">
+                        <p className="mt-3 text-3xl font-bold italic text-warning-text">
                           {formatMoney(fiatTotal)} {fiatCurrency}
                         </p>
-                        <p className="mt-2 text-sm font-mono text-yellow-900/70">
+                        <p className="mt-2 text-sm font-mono text-warning-text/80">
                           Send this exact amount to {merchantConfig?.mpesaNumber ?? 'the merchant'} before you confirm payment.
                         </p>
                       </div>
@@ -422,11 +424,11 @@ const MerchantPanel = () => {
                         Confirm Payment
                       </SketchyButton>
                     ) : (
-                      <div className="rounded-3xl border border-green-500 bg-green-50 px-4 py-4">
-                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-green-800">
+                      <div className="rough-border border-success-border bg-success-bg px-4 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-success-text">
                           Step 2: Share proof
                         </p>
-                        <p className="mt-2 text-sm font-mono text-green-900/80">
+                        <p className="mt-2 text-sm font-mono text-success-text/80">
                           Paste your M-Pesa transaction code and upload your screenshot using the proof box.
                         </p>
                       </div>
@@ -446,8 +448,8 @@ const MerchantPanel = () => {
 
                     {!paymentConfirmed ? (
                       <div className="space-y-4 pt-4 border-t-2 border-black/10">
-                        <div className="rounded-3xl border border-blue-500 bg-blue-50 px-4 py-4 mb-4">
-                          <p className="text-xs font-bold uppercase tracking-[0.25em] text-blue-800">
+                        <div className="rough-border border-info-border bg-info-bg px-4 py-4 mb-4">
+                          <p className="text-xs font-bold uppercase tracking-[0.25em] text-info-text">
                             Where should the merchant send KES?
                           </p>
                         </div>
@@ -488,20 +490,20 @@ const MerchantPanel = () => {
                         </SketchyButton>
                       </div>
                     ) : (
-                      <div className="rounded-3xl border border-green-500 bg-green-50 px-4 py-4 space-y-2">
-                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-green-800 border-b border-green-200 pb-2 mb-2">
+                      <div className="rough-border border-success-border bg-success-bg px-4 py-4 space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-success-text border-b border-success-border/30 pb-2 mb-2">
                           Order Summary
                         </p>
-                        <p className="text-sm font-mono text-green-900/80">
+                        <p className="text-sm font-mono text-success-text/80">
                           <strong>Selling:</strong> {amount} USDT
                         </p>
-                        <p className="text-sm font-mono text-green-900/80">
+                        <p className="text-sm font-mono text-success-text/80">
                           <strong>Receiving:</strong> {hasValidAmount && rateConfigured ? `${formatMoney(fiatTotal)} ${fiatCurrency}` : `0.00 ${fiatCurrency}`}
                         </p>
-                        <p className="text-sm font-mono text-green-900/80 pt-2">
+                        <p className="text-sm font-mono text-success-text/80 pt-2">
                           <strong>To M-Pesa:</strong> {mpesaNumber}
                         </p>
-                        <p className="text-sm font-mono text-green-900/80 uppercase">
+                        <p className="text-sm font-mono text-success-text/80 uppercase">
                           <strong>Name:</strong> {mpesaName}
                         </p>
                       </div>
@@ -557,9 +559,7 @@ const MerchantPanel = () => {
 
             <div className="space-y-4 flex-1 overflow-y-auto pr-2">
               {orders.length === 0 ? (
-                <div className="py-24 text-center opacity-20 italic font-bold text-lg uppercase tracking-widest">
-                  History is clean of ink.
-                </div>
+                <EmptyState className="my-8">History is clean of ink.</EmptyState>
               ) : (
                 orders.map((order) => (
                   <div key={order._id} className="group relative">
@@ -567,8 +567,8 @@ const MerchantPanel = () => {
                       <div className="flex items-center gap-4">
                         <div
                           className={cn(
-                            'w-10 h-10 rounded-full flex items-center justify-center font-bold text-white',
-                            order.type === 'BUY' ? 'bg-green-700' : 'bg-red-700',
+                            'rough-border flex h-10 w-10 items-center justify-center font-bold',
+                            order.type === 'BUY' ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text',
                           )}
                         >
                           {order.type === 'BUY' ? '↓' : '↑'}
@@ -593,34 +593,25 @@ const MerchantPanel = () => {
                         </div>
                       </div>
                       <div className="text-right">
-                        <span
-                          className={cn(
-                            'text-[10px] font-bold px-3 py-1 rounded-full border-2 uppercase',
-                            order.status === 'PENDING'
-                              ? 'border-yellow-600 text-yellow-600 bg-yellow-50'
-                              : order.status === 'DONE'
-                                ? 'border-green-600 text-green-600 bg-green-50'
-                                : 'border-red-600 text-red-600 bg-red-50',
-                          )}
-                        >
+                        <StatusBadge tone={statusToneFromStatus(order.status)}>
                           {order.status}
-                        </span>
+                        </StatusBadge>
 
                         {isAdmin && order.status === 'PENDING' && (
                           <div className="flex gap-2 mt-3 justify-end">
                             <SketchyButton
-                              className="text-[11px] font-bold text-green-700 hover:scale-110 transition-transform bg-green-100 px-2 rounded"
-                              fill="#dcfce7"
-                              stroke="#15803d"
+                              className="text-[11px] font-bold text-success-text hover:scale-110 transition-transform px-2"
+                              fill="var(--color-success-bg)"
+                              stroke="var(--color-success-border)"
                               onClick={() => void handleStatusUpdate(order._id, 'DONE')}
                               type="button"
                             >
                               DONE
                             </SketchyButton>
                             <SketchyButton
-                              className="text-[11px] font-bold text-red-700 hover:scale-110 transition-transform bg-red-100 px-2 rounded"
-                              fill="#fee2e2"
-                              stroke="#b91c1c"
+                              className="text-[11px] font-bold text-danger-text hover:scale-110 transition-transform px-2"
+                              fill="var(--color-danger-bg)"
+                              stroke="var(--color-danger-border)"
                               onClick={() => void handleStatusUpdate(order._id, 'REJECTED')}
                               type="button"
                             >
@@ -647,7 +638,7 @@ const MerchantPanel = () => {
 
             {isAdmin && (
               <div className="mt-8 p-4 bg-orange-100 border-2 border-orange-300 rounded italic text-sm text-orange-900 flex items-center gap-3">
-                <span className="text-2xl">⚠️</span>
+                <span aria-hidden="true" className="text-2xl">⚠️</span>
                 <span className="font-bold">
                   ADMIN NODE ACTIVE: ENSURE BUY PROOFS AND SELL PAYOUTS ARE VERIFIED BEFORE RELEASE.
                 </span>

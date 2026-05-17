@@ -8,10 +8,38 @@ export function applyNoStoreHeaders(res: Response): void {
 
 export function applyPublicCacheHeaders(res: Response, maxAgeSeconds: number): void {
   res.setHeader('Cache-Control', `public, max-age=${maxAgeSeconds}, must-revalidate`);
+  res.vary('Accept-Encoding');
+}
+
+export function applyPublicSharedCacheHeaders(
+  res: Response,
+  maxAgeSeconds: number,
+  options: {
+    staleWhileRevalidateSeconds?: number;
+    staleIfErrorSeconds?: number;
+  } = {},
+): void {
+  const directives = [
+    'public',
+    `max-age=${maxAgeSeconds}`,
+    `s-maxage=${maxAgeSeconds}`,
+  ];
+
+  if (options.staleWhileRevalidateSeconds !== undefined) {
+    directives.push(`stale-while-revalidate=${options.staleWhileRevalidateSeconds}`);
+  }
+
+  if (options.staleIfErrorSeconds !== undefined) {
+    directives.push(`stale-if-error=${options.staleIfErrorSeconds}`);
+  }
+
+  res.setHeader('Cache-Control', directives.join(', '));
+  res.vary('Accept-Encoding');
 }
 
 export function applyImmutableAssetCacheHeaders(res: Response): void {
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.vary('Accept-Encoding');
 }
 
 export function applyClearSiteDataHeaders(res: Response): void {

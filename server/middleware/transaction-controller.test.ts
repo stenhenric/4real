@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 
 import { getAllTransactions, getUserTransactions } from '../controllers/transaction.controller.ts';
+import { Transaction } from '../models/Transaction.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 
 function createResponseMock() {
@@ -65,4 +66,13 @@ test('getAllTransactions bounds limit and offset before fetching admin transacti
 
   assert.deepEqual(capturedArgs, [500, 10_000]);
   assert.deepEqual(res.payload, []);
+});
+
+test('transaction schema declares createdAt index for admin chronological listing', () => {
+  const indexes = Transaction.schema.indexes().map(([fields]) => fields);
+
+  assert.ok(indexes.some((fields) => (
+    fields.createdAt === -1
+    && fields._id === -1
+  )));
 });

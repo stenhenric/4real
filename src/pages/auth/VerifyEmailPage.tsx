@@ -5,6 +5,7 @@ import { useToast } from '../../app/ToastProvider';
 import { useAuth } from '../../app/AuthProvider';
 import { AuthField, AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { getPostAuthRedirectPath } from '../../features/auth/auth-routing';
+import { scrubSensitiveTokenFromCurrentUrl } from '../../features/auth/url-token';
 import { consumeVerificationEmail, resendVerificationEmail } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
 
@@ -26,7 +27,7 @@ export default function VerifyEmailPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { info, success, error: showError } = useToast();
-  const token = searchParams.get('token')?.trim() ?? '';
+  const [token] = useState(() => searchParams.get('token')?.trim() ?? '');
   const initialEmail = searchParams.get('email')?.trim() || userData?.email || '';
   const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
@@ -48,6 +49,7 @@ export default function VerifyEmailPage() {
     }
 
     startedRef.current = true;
+    scrubSensitiveTokenFromCurrentUrl();
     setConsuming(true);
     setConsumeError(null);
 
@@ -59,7 +61,7 @@ export default function VerifyEmailPage() {
       })
       .catch((error) => {
         setConsumeError('That verification link is invalid or expired. Request a fresh one below.');
-        showError(getApiErrorMessage(error, 'Unable to verify your email. Please request a fresh link.'));
+        showError(getApiErrorMessage(error, 'Could not verify email. Request a fresh link.'));
         setConsuming(false);
       });
   }, [navigate, setAuthStateFromResponse, showError, success, token]);
@@ -73,7 +75,7 @@ export default function VerifyEmailPage() {
       setPreviewUrl(response.previewUrl ?? null);
       info(response.message ?? 'If it exists, a verification email is on the way.');
     } catch (error) {
-      showError(getApiErrorMessage(error, 'We could not resend the verification email. Please try again.'));
+      showError(getApiErrorMessage(error, 'Could not resend email. Please try again.'));
     } finally {
       setLoading(false);
     }

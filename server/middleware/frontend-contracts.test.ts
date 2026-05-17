@@ -11,12 +11,15 @@ import {
   type ToastQueueItem,
 } from '../../src/app/toast-rules.ts';
 import { getTransactionAccentClass, isCreditTransaction } from '../../src/features/bank/transactionPresentation.ts';
+import { isAbortError } from '../../src/utils/isAbortError.ts';
 import {
   consumeMagicLink,
   consumeSuspiciousLogin,
   consumeVerificationEmail,
   loginPassword,
+  logout,
 } from '../../src/services/auth.service.ts';
+import { shouldClearAuthAfterRefreshError } from '../../src/features/auth/refresh-error.ts';
 import request, { ApiClientError } from '../../src/services/api/apiClient.ts';
 import { getMatch, joinMatch } from '../../src/services/matches.service.ts';
 
@@ -121,12 +124,57 @@ test('frontend styles load and apply Cabin Sketch globally', () => {
 
   assert.match(stylesheet, /font-family:\s*["']Cabin Sketch["'];[^}]*font-weight:\s*400;[^}]*url\(["']\/fonts\/cabin-sketch-400\.woff2["']\)[^}]*format\(["']woff2["']\)/s);
   assert.match(stylesheet, /font-family:\s*["']Cabin Sketch["'];[^}]*font-weight:\s*700;[^}]*url\(["']\/fonts\/cabin-sketch-700\.woff2["']\)[^}]*format\(["']woff2["']\)/s);
+  assert.match(stylesheet, /font-display:\s*swap/);
   assert.match(
     stylesheet,
     /html,\s*body,\s*#root\s*{[^}]*font-family:\s*["']Cabin Sketch["'],\s*system-ui,\s*sans-serif;/s,
   );
   assert.match(stylesheet, /--font-sans:\s*["']Cabin Sketch["'],\s*system-ui,\s*sans-serif;/);
   assert.equal(/fonts\.(?:googleapis|gstatic)\.com/i.test(stylesheet), false);
+});
+
+test('index preloads only the critical Cabin Sketch font weight', () => {
+  const indexHtml = readFileSync('index.html', 'utf8');
+
+  assert.match(indexHtml, /rel="preload"[^>]+href="\/fonts\/cabin-sketch-700\.woff2"[^>]+as="font"[^>]+type="font\/woff2"[^>]+crossorigin/s);
+  assert.doesNotMatch(indexHtml, /rel="preload"[^>]+href="\/fonts\/cabin-sketch-400\.woff2"/s);
+});
+
+test('TonConnect code is scoped away from the global app shell', () => {
+  const appProviderSource = readFileSync(join('src', 'app', 'AppProviders.tsx'), 'utf8');
+  const navbarSource = readFileSync(join('src', 'components', 'Navbar.tsx'), 'utf8');
+  const appSource = readFileSync(join('src', 'app', 'App.tsx'), 'utf8');
+
+  assert.doesNotMatch(appProviderSource, /@tonconnect\/ui-react|TonConnectUIProvider/);
+  assert.doesNotMatch(navbarSource, /@tonconnect\/ui-react|TonConnectButton/);
+  assert.match(appSource, /TonConnectRouteProvider/);
+});
+
+test('dashboard page defers leaderboard fetch until the leaderboard tab is active', () => {
+  const pageSource = readFileSync(join('src', 'pages', 'DashboardPage.tsx'), 'utf8');
+
+  assert.doesNotMatch(pageSource, /Promise\.all\(\[\s*refreshActiveMatches/);
+  assert.match(pageSource, /activeTab !== 'leaderboard'/);
+  assert.match(pageSource, /setLeaderboardLoaded\(true\)/);
+});
+
+test('game board surface masks the rough container border behind the canvas', () => {
+  const gamePageSource = readFileSync(join('src', 'pages', 'GamePage.tsx'), 'utf8');
+
+  assert.match(
+    gamePageSource,
+    /className="[^"]*relative group[^"]*bg-white[^"]*"/,
+  );
+});
+
+test('merchant layout coalesces dashboard polls and pauses background-tab polling', () => {
+  const layoutSource = readFileSync(join('src', 'components', 'merchant', 'MerchantLayout.tsx'), 'utf8');
+
+  assert.match(layoutSource, /dashboardRequestRef/);
+  assert.match(layoutSource, /document\.visibilityState === 'hidden'/);
+  assert.match(layoutSource, /!activeRequest\.signal\?\.aborted/);
+  assert.match(layoutSource, /useMemo/);
+  assert.match(layoutSource, /refreshDashboard/);
 });
 
 test('ApiClientError preserves status, code, and details from backend responses', async (t) => {
@@ -249,6 +297,89 @@ test('frontend auth service sends password login identifiers', async (t) => {
       },
     ],
   );
+});
+
+test('frontend abort helper treats WebKit aborted fetch errors as aborts only when the signal is aborted', () => {
+  const controller = new AbortController();
+  const webKitAbort = new TypeError('Load failed');
+
+  assert.equal(isAbortError(webKitAbort, controller.signal), false);
+  controller.abort();
+  assert.equal(isAbortError(webKitAbort, controller.signal), true);
+  assert.equal(isAbortError(new TypeError('Load failed')), false);
+  assert.equal(isAbortError(new TypeError('Load failed'), undefined, { pageUnloading: true }), true);
+});
+
+test('frontend auth helper removes only sensitive token query parameters from the current URL', async () => {
+  const helperPath = join(process.cwd(), 'src', 'features', 'auth', 'url-token.ts');
+  const { scrubSensitiveTokenFromCurrentUrl } = await import(pathToFileURL(helperPath).href);
+  const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+  const replaceCalls: Array<{ state: unknown; title: string; url?: string | URL | null }> = [];
+
+  (globalThis as typeof globalThis & { window?: unknown }).window = {
+    location: {
+      href: 'https://app.example.com/auth/reset-password?token=secret-token&email=alice%40example.com#form',
+    },
+    history: {
+      state: { from: 'test' },
+      replaceState(state: unknown, title: string, url?: string | URL | null) {
+        replaceCalls.push({ state, title, url });
+      },
+    },
+  };
+
+  try {
+    scrubSensitiveTokenFromCurrentUrl();
+  } finally {
+    if (previousWindow === undefined) {
+      delete (globalThis as typeof globalThis & { window?: unknown }).window;
+    } else {
+      (globalThis as typeof globalThis & { window?: unknown }).window = previousWindow;
+    }
+  }
+
+  assert.deepEqual(replaceCalls, [
+    {
+      state: { from: 'test' },
+      title: '',
+      url: '/auth/reset-password?email=alice%40example.com#form',
+    },
+  ]);
+});
+
+test('frontend logout bypasses automatic session refresh on 401', async (t) => {
+  const calls: Array<{ input: unknown; init?: RequestInit }> = [];
+  const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
+    calls.push({ input, init });
+    return createJsonResponse({
+      code: 'UNAUTHENTICATED',
+      message: 'Unauthenticated',
+    }, 401);
+  });
+  t.after(() => fetchMock.mock.restore());
+
+  await assert.rejects(
+    logout(),
+    (error: unknown) => error instanceof ApiClientError && error.status === 401,
+  );
+
+  assert.deepEqual(calls.map((entry) => entry.input), ['/api/auth/logout']);
+});
+
+test('frontend auth refresh clears state only after explicit unauthenticated responses', () => {
+  assert.equal(shouldClearAuthAfterRefreshError(new ApiClientError({
+    status: 401,
+    message: 'Access token required',
+    code: 'UNAUTHENTICATED',
+  })), true);
+
+  assert.equal(shouldClearAuthAfterRefreshError(new ApiClientError({
+    status: 503,
+    message: 'Service unavailable',
+    code: 'SERVICE_UNAVAILABLE',
+  })), false);
+
+  assert.equal(shouldClearAuthAfterRefreshError(new TypeError('Failed to fetch')), false);
 });
 
 test('security page copy uses settings-oriented MFA guidance', () => {

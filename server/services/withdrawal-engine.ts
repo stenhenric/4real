@@ -7,7 +7,34 @@ import { parseExternalResponse } from '../schemas/external/parse-external-respon
 import { toncenterJettonWalletBalanceSchema } from '../schemas/external/toncenter-balance.schema.ts';
 import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
 import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
+import { recordExternalProviderOperation } from './metrics.service.ts';
 import { logger } from '../utils/logger.ts';
+
+async function recordProviderCall<T>(
+  provider: string,
+  operation: string,
+  call: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now();
+  try {
+    const result = await call();
+    recordExternalProviderOperation({
+      provider,
+      operation,
+      outcome: 'success',
+      durationMs: performance.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    recordExternalProviderOperation({
+      provider,
+      operation,
+      outcome: error && typeof error === 'object' && 'status' in error && error.status === 429 ? 'rate_limited' : 'failure',
+      durationMs: performance.now() - startedAt,
+    });
+    throw error;
+  }
+}
 
 export function buildJettonTransferBody(amountRaw: string, destination: string, responseAddress: Address, comment: string) {
   const forwardPayload = beginCell()
@@ -41,52 +68,54 @@ export class SeqnoTimeoutError extends Error {
 }
 
 export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, hotJettonWallet }: { toAddress: string, amountRaw: string, withdrawalId: string, hotJettonWallet: string }) {
-  return runProtectedDependencyCall({
-    dependency: 'ton_wallet_rpc',
-    operation: async () => {
-      const { wallet, keyPair } = await getHotWallet();
-      const client = createTonClient();
-      const contract = client.open(wallet);
+  return recordProviderCall('ton_wallet_rpc', 'send_usdt_withdrawal', () => (
+    runProtectedDependencyCall({
+      dependency: 'ton_wallet_rpc',
+      operation: async () => {
+        const { wallet, keyPair } = await getHotWallet();
+        const client = createTonClient();
+        const contract = client.open(wallet);
 
-      const body = buildJettonTransferBody(
-        amountRaw,
-        toAddress,
-        wallet.address,
-        `wd-${withdrawalId}`,
-      );
+        const body = buildJettonTransferBody(
+          amountRaw,
+          toAddress,
+          wallet.address,
+          `wd-${withdrawalId}`,
+        );
 
-      const seqno = await contract.getSeqno();
-      const validUntil = Math.floor(Date.now() / 1000) + 300; // 5 minutes expiration
+        const seqno = await contract.getSeqno();
+        const validUntil = Math.floor(Date.now() / 1000) + 300; // 5 minutes expiration
 
-      await contract.sendTransfer({
-        seqno,
-        secretKey: keyPair.secretKey,
-        sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
-        timeout: validUntil,
-        messages: [
-          internal({
-            to: Address.parse(hotJettonWallet),
-            value: toNano('0.07'),
-            bounce: true,
-            body,
-          }),
-        ],
-      });
+        await contract.sendTransfer({
+          seqno,
+          secretKey: keyPair.secretKey,
+          sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+          timeout: validUntil,
+          messages: [
+            internal({
+              to: Address.parse(hotJettonWallet),
+              value: toNano('0.07'),
+              bounce: true,
+              body,
+            }),
+          ],
+        });
 
-      const sentAt = new Date();
+        const sentAt = new Date();
 
-      try {
-        await pollUntilSeqnoChanges(contract, seqno, 90_000);
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('Seqno stuck')) {
-          throw new SeqnoTimeoutError(seqno, 90_000, sentAt);
+        try {
+          await pollUntilSeqnoChanges(contract, seqno, 90_000);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('Seqno stuck')) {
+            throw new SeqnoTimeoutError(seqno, 90_000, sentAt);
+          }
+          throw error;
         }
-        throw error;
-      }
 
-      return { seqno, sentAt };
-    },
-  });
+        return { seqno, sentAt };
+      },
+    })
+  ));
 }
 
 interface ToncenterJettonTransfer {
@@ -124,7 +153,7 @@ async function fetchJettonTransfers({
 
     let response: Response;
     try {
-      response = await runProtectedDependencyCall({
+      response = await recordProviderCall('toncenter', 'withdrawal_transfers', () => runProtectedDependencyCall({
         dependency: 'toncenter',
         retries: getEnv().TONCENTER_MAX_RETRIES,
         baseDelayMs: getEnv().TONCENTER_RETRY_BASE_DELAY_MS,
@@ -140,7 +169,7 @@ async function fetchJettonTransfers({
 
           return nextResponse;
         },
-      });
+      }));
     } catch (error) {
       if (error && typeof error === 'object' && 'status' in error && error.status === 429) {
         logger.warn('withdrawal.confirmation_rate_limited');
@@ -208,14 +237,16 @@ export async function findWithdrawalTransferOnChain({
 }
 
 export async function getHotWalletTonBalance(address: string): Promise<bigint> {
-  return runProtectedDependencyCall({
-    dependency: 'ton_wallet_rpc',
-    retries: 1,
-    operation: async () => {
-      const client = createTonClient();
-      return client.getBalance(Address.parse(address));
-    },
-  });
+  return recordProviderCall('ton_wallet_rpc', 'get_balance', () => (
+    runProtectedDependencyCall({
+      dependency: 'ton_wallet_rpc',
+      retries: 1,
+      operation: async () => {
+        const client = createTonClient();
+        return client.getBalance(Address.parse(address));
+      },
+    })
+  ));
 }
 
 export async function getHotWalletUsdtBalanceRaw(ownerAddress: string): Promise<bigint | null> {
@@ -225,7 +256,7 @@ export async function getHotWalletUsdtBalanceRaw(ownerAddress: string): Promise<
 
   let response: Response;
   try {
-    response = await runProtectedDependencyCall({
+    response = await recordProviderCall('toncenter', 'jetton_wallets', () => runProtectedDependencyCall({
       dependency: 'toncenter',
       retries: getEnv().TONCENTER_MAX_RETRIES,
       baseDelayMs: getEnv().TONCENTER_RETRY_BASE_DELAY_MS,
@@ -241,7 +272,7 @@ export async function getHotWalletUsdtBalanceRaw(ownerAddress: string): Promise<
 
         return nextResponse;
       },
-    });
+    }));
   } catch (error) {
     if (error && typeof error === 'object' && 'status' in error && error.status === 429) {
       logger.warn('wallet_monitor.rate_limited');

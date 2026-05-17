@@ -38,7 +38,7 @@ const UserSchema: Schema = new Schema({
   username: { type: String, default: undefined, trim: true },
   usernameNormalized: { type: String, default: undefined, unique: true, sparse: true },
   email: { type: String, required: true, unique: true, trim: true, lowercase: true },
-  passwordHash: { type: String, default: undefined },
+  passwordHash: { type: String, default: undefined, select: false },
   emailVerifiedAt: { type: Date, default: undefined, index: true },
   googleSubject: { type: String, default: undefined, unique: true, sparse: true },
   balance: { type: String, default: '0.000000', match: /^\d+\.\d{6}$/ },

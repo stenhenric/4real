@@ -19,7 +19,12 @@ import { AuditService } from './audit.service.ts';
 import { CacheKeys, invalidateCacheKeys } from './cache.service.ts';
 import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
 import { getHotWalletRuntime } from './hot-wallet-runtime.service.ts';
-import { recordDepositIngestionDecision, registerMetricsCollector, setUnmatchedDepositsOpen } from './metrics.service.ts';
+import {
+  recordDepositIngestionDecision,
+  recordExternalProviderOperation,
+  registerMetricsCollector,
+  setUnmatchedDepositsOpen,
+} from './metrics.service.ts';
 import { ProductEmailNotificationService } from './product-email-notification.service.ts';
 import { parseExternalResponse } from '../schemas/external/parse-external-response.ts';
 import { toncenterTransferListSchema } from '../schemas/external/toncenter-transfer.schema.ts';
@@ -333,6 +338,7 @@ function buildTransferPreview(
   const amountRaw = String(tx.amount);
   const comment = extractJettonTransferComment(tx);
   const txTimeIso = new Date(tx.transaction_now * 1000).toISOString();
+  const txTime = new Date(tx.transaction_now * 1000);
   const senderJettonWallet = getSenderJettonWallet(tx);
   const senderOwnerAddress = getSenderOwnerAddress(tx);
 
@@ -366,7 +372,7 @@ function buildTransferPreview(
     };
   }
 
-  const memoResolution = resolveMemoStatus(memoDoc, new Date());
+  const memoResolution = resolveMemoStatus(memoDoc, txTime);
 
   if (options.processed) {
     return {
@@ -457,6 +463,7 @@ export async function fetchIncomingUsdtTransfers(params: {
     try {
       const env = getEnv();
       let res: Response;
+      const providerStartedAt = performance.now();
       try {
         res = await runProtectedDependencyCall({
           dependency: 'toncenter',
@@ -475,7 +482,19 @@ export async function fetchIncomingUsdtTransfers(params: {
             return nextResponse;
           },
         });
+        recordExternalProviderOperation({
+          provider: 'toncenter',
+          operation: 'jetton_transfers',
+          outcome: 'success',
+          durationMs: performance.now() - providerStartedAt,
+        });
       } catch (error) {
+        recordExternalProviderOperation({
+          provider: 'toncenter',
+          operation: 'jetton_transfers',
+          outcome: error && typeof error === 'object' && 'status' in error && error.status === 429 ? 'rate_limited' : 'failure',
+          durationMs: performance.now() - providerStartedAt,
+        });
         if (error && typeof error === 'object' && 'status' in error && error.status === 429) {
           if (allTransfers.length === 0) {
             throw new Error('Toncenter rate limited deposit polling before any transfers were fetched');
@@ -623,7 +642,11 @@ async function ingestIncomingTransferWithContext(
         return;
       }
 
-      const claimedMemo = await DepositMemoRepository.claimActiveMemo(resolvedPreview.comment, session);
+      const claimedMemo = await DepositMemoRepository.claimActiveMemo(
+        resolvedPreview.comment,
+        session,
+        new Date(tx.transaction_now * 1000),
+      );
       if (!claimedMemo?.userId) {
         outcome = {
           ...resolvedPreview,

@@ -106,10 +106,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={toast.id}
             className={cn(
               'pointer-events-auto flex items-start justify-between gap-3 p-4 shadow-xl rough-border animate-in slide-in-from-right-8 fade-in duration-300',
-              toast.type === 'success' && 'bg-[#dcfce7] border-green-800 text-green-900',
-              toast.type === 'error' && 'bg-[#fee2e2] border-red-800 text-red-900',
-              toast.type === 'warning' && 'bg-[#fef3c7] border-yellow-800 text-yellow-900',
-              toast.type === 'info' && 'bg-[#e0f2fe] border-blue-800 text-blue-900',
+              toast.type === 'success' && 'bg-success-bg border-success-border text-success-text',
+              toast.type === 'error' && 'bg-danger-bg border-danger-border text-danger-text',
+              toast.type === 'warning' && 'bg-warning-bg border-warning-border text-warning-text',
+              toast.type === 'info' && 'bg-info-bg border-info-border text-info-text',
             )}
             role={toast.type === 'error' || toast.type === 'warning' ? 'alert' : 'status'}
             style={{ transform: `rotate(${toast.rotation}deg)` }}

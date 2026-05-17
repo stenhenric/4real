@@ -235,6 +235,24 @@ test('merchant order controller bounds deep pagination', async (t) => {
   });
 });
 
+test('order schema declares sort indexes used by merchant order desk filters', () => {
+  const indexes = Order.schema.indexes().map(([fields]) => fields);
+
+  assert.ok(indexes.some((fields) => (
+    fields.createdAt === -1
+    && Object.keys(fields).length === 1
+  )));
+  assert.ok(indexes.some((fields) => (
+    fields.type === 1
+    && fields.createdAt === -1
+  )));
+  assert.ok(indexes.some((fields) => (
+    fields.status === 1
+    && fields.type === 1
+    && fields.createdAt === -1
+  )));
+});
+
 test('getOrderDesk applies pagination metadata and derives risk flags for admin review', async (t) => {
   registerEnvCleanup(t);
 
@@ -356,6 +374,73 @@ test('getOrderDesk keeps established small-ticket traders in the low-risk bucket
   assert.equal(result.pagination.totalPages, 2);
   assert.equal(result.orders[0].riskLevel, 'low');
   assert.equal(result.orders[0].riskFlags.length, 0);
+});
+
+test('getOrderDesk selects and returns SELL payout details for merchant review', async (t) => {
+  registerEnvCleanup(t);
+
+  const userId = new mongoose.Types.ObjectId();
+  const orderId = new mongoose.Types.ObjectId();
+  let selectedFields = '';
+  const findMock = mock.method(Order, 'find', (() => ({
+    sort() {
+      return this;
+    },
+    populate() {
+      return this;
+    },
+    select(fields: string) {
+      selectedFields = fields;
+      return this;
+    },
+    skip() {
+      return this;
+    },
+    limit() {
+      return this;
+    },
+    async lean() {
+      return [
+        {
+          _id: orderId,
+          userId: {
+            _id: userId,
+            username: 'seller',
+            createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
+          },
+          type: 'SELL',
+          amount: '25.000000',
+          status: 'PENDING',
+          mpesaNumber: '254700111222',
+          mpesaName: 'Alice Seller',
+          fiatCurrency: 'KES',
+          exchangeRate: '130.000000',
+          fiatTotal: '3250.00',
+          createdAt: new Date(Date.now() - 5 * 60 * 1000),
+        },
+      ];
+    },
+  })) as any);
+  const countMock = mock.method(Order, 'countDocuments', async () => 1);
+  const aggregateMock = mock.method(Order, 'aggregate', async () => [
+    { _id: userId, doneCount: 2, doneVolume: 50 },
+  ]);
+
+  t.after(() => findMock.mock.restore());
+  t.after(() => countMock.mock.restore());
+  t.after(() => aggregateMock.mock.restore());
+
+  const result = await MerchantDashboardService.getOrderDesk({
+    page: 1,
+    pageSize: 25,
+    status: 'PENDING',
+    type: 'SELL',
+  });
+
+  assert.match(selectedFields, /mpesaNumber/);
+  assert.match(selectedFields, /mpesaName/);
+  assert.equal(result.orders[0].mpesaNumber, '254700111222');
+  assert.equal(result.orders[0].mpesaName, 'Alice Seller');
 });
 
 test('getDashboard resolves merchant config, exposes stale-match job status, and trusts the completed-orders date filter', async (t) => {
@@ -506,6 +591,7 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
   });
 
   const dashboard = await MerchantDashboardService.getDashboard(null);
+  const secondDashboard = await MerchantDashboardService.getDashboard(null);
   const doneFilter = orderFilters.find((filter) => filter.status === 'DONE');
 
   assert.ok(doneFilter);
@@ -515,5 +601,9 @@ test('getDashboard resolves merchant config, exposes stale-match job status, and
     excludeUserIds: [SYSTEM_COMMISSION_ACCOUNT_ID],
   });
   assert.deepEqual(dashboard.liquidity.merchantConfig, expectedConfig);
+  assert.equal(secondDashboard.liquidity.tonBalanceTon, dashboard.liquidity.tonBalanceTon);
+  assert.equal(secondDashboard.liquidity.onChainUsdtBalanceUsdt, dashboard.liquidity.onChainUsdtBalanceUsdt);
+  assert.equal(tonBalanceMock.mock.calls.length, 2);
+  assert.equal(fetchMock.mock.calls.length, 2);
   assert.ok(dashboard.liquidity.jobs.some((job) => job.key === 'staleMatchExpiry'));
 });

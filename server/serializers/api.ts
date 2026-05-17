@@ -179,9 +179,10 @@ export function serializeMatch(match: IMatch, options?: { inviteUrl?: string }):
   };
 }
 
-export function serializeOrder(order: IOrder): OrderDTO {
+export function serializeOrder(order: IOrder, options?: { includePayoutDetails?: boolean }): OrderDTO {
   const exchangeRate = readLegacyRate(order.exchangeRate);
   const fiatTotal = readLegacyKesAmount(order.fiatTotal);
+  const includePayoutDetails = options?.includePayoutDetails === true && order.type === 'SELL';
 
   return {
     _id: serializeId(order._id),
@@ -202,6 +203,8 @@ export function serializeOrder(order: IOrder): OrderDTO {
     ...(order.fiatCurrency ? { fiatCurrency: order.fiatCurrency } : {}),
     ...(exchangeRate ? { exchangeRate } : {}),
     ...(fiatTotal ? { fiatTotal } : {}),
+    ...(includePayoutDetails && order.mpesaNumber ? { mpesaNumber: order.mpesaNumber } : {}),
+    ...(includePayoutDetails && order.mpesaName ? { mpesaName: order.mpesaName } : {}),
   };
 }
 

@@ -3,7 +3,11 @@ import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller.ts';
 import { asyncHandler } from '../utils/async-handler.ts';
 import { authenticateToken, requireMfaStepUp, requireMfaStepUpIfEnabled } from '../middleware/auth.middleware.ts';
-import { createAuthEmailRateLimiter, createAuthRateLimiter } from '../middleware/rate-limit.middleware.ts';
+import {
+  createAuthEmailRateLimiter,
+  createAuthRateLimiter,
+  createPasswordLoginIdentifierRateLimiter,
+} from '../middleware/rate-limit.middleware.ts';
 import { validateBody } from '../middleware/validate.middleware.ts';
 import {
   completeProfileRequestSchema,
@@ -31,7 +35,13 @@ router.use((_req, res, next) => {
 });
 
 router.post('/register', createAuthRateLimiter(), validateBody(registerRequestSchema), asyncHandler(AuthController.register));
-router.post('/login/password', createAuthRateLimiter(), validateBody(loginPasswordRequestSchema), asyncHandler(AuthController.loginPassword));
+router.post(
+  '/login/password',
+  createAuthRateLimiter(),
+  validateBody(loginPasswordRequestSchema),
+  createPasswordLoginIdentifierRateLimiter(),
+  asyncHandler(AuthController.loginPassword),
+);
 router.post('/login/magic-link/request', createAuthEmailRateLimiter(), validateBody(magicLinkRequestSchema), asyncHandler(AuthController.requestMagicLink));
 router.post('/login/magic-link/consume', createAuthRateLimiter(), validateBody(consumeMagicLinkRequestSchema), asyncHandler(AuthController.consumeMagicLink));
 router.post('/login/suspicious/consume', createAuthRateLimiter(), validateBody(consumeSuspiciousLoginRequestSchema), asyncHandler(AuthController.consumeSuspiciousLogin));
