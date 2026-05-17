@@ -18,6 +18,7 @@ export interface IAuthSession extends Document {
 }
 
 const REFRESH_TOKEN_INDEX_NAME = 'currentRefreshTokenHash_1';
+const ABSOLUTE_EXPIRES_AT_INDEX_NAME = 'absoluteExpiresAt_1';
 const REFRESH_TOKEN_PARTIAL_FILTER = {
   currentRefreshTokenHash: { $type: 'string' },
 } as const;
@@ -26,6 +27,7 @@ type MongoIndexDescription = {
   name?: string;
   unique?: boolean;
   sparse?: boolean;
+  expireAfterSeconds?: number;
   partialFilterExpression?: {
     currentRefreshTokenHash?: {
       $type?: unknown;
@@ -37,6 +39,10 @@ function hasExpectedRefreshTokenIndex(index: MongoIndexDescription): boolean {
   return index.unique === true
     && index.sparse !== true
     && index.partialFilterExpression?.currentRefreshTokenHash?.$type === 'string';
+}
+
+function hasExpectedAbsoluteExpiresAtIndex(index: MongoIndexDescription): boolean {
+  return index.expireAfterSeconds === 0;
 }
 
 function hasMongoErrorCode(error: unknown, code: number): boolean {
@@ -57,9 +63,9 @@ async function readAuthSessionIndexes(): Promise<MongoIndexDescription[]> {
   }
 }
 
-async function dropLegacyRefreshTokenIndex(): Promise<void> {
+async function dropLegacyIndex(indexName: string): Promise<void> {
   try {
-    await AuthSession.collection.dropIndex(REFRESH_TOKEN_INDEX_NAME);
+    await AuthSession.collection.dropIndex(indexName);
   } catch (error) {
     if (hasMongoErrorCode(error, 27)) {
       return;
@@ -98,7 +104,12 @@ export async function ensureAuthSessionIndexes(): Promise<void> {
   const existingIndexes = await readAuthSessionIndexes();
   const refreshTokenIndex = existingIndexes.find((index) => index.name === REFRESH_TOKEN_INDEX_NAME);
   if (refreshTokenIndex && !hasExpectedRefreshTokenIndex(refreshTokenIndex)) {
-    await dropLegacyRefreshTokenIndex();
+    await dropLegacyIndex(REFRESH_TOKEN_INDEX_NAME);
+  }
+
+  const absoluteExpiresAtIndex = existingIndexes.find((index) => index.name === ABSOLUTE_EXPIRES_AT_INDEX_NAME);
+  if (absoluteExpiresAtIndex && !hasExpectedAbsoluteExpiresAtIndex(absoluteExpiresAtIndex)) {
+    await dropLegacyIndex(ABSOLUTE_EXPIRES_AT_INDEX_NAME);
   }
 
   await AuthSession.createIndexes();

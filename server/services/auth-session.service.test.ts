@@ -356,7 +356,7 @@ test('refreshSession revokes sessions when the atomic refresh update loses the r
   ]);
 });
 
-test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index', async (t) => {
+test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index and legacy absoluteExpiresAt index', async (t) => {
   const calls: string[] = [];
 
   t.mock.method(AuthSession.collection, 'indexes', async () => [
@@ -366,6 +366,10 @@ test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index', 
       key: { currentRefreshTokenHash: 1 },
       unique: true,
       sparse: true,
+    },
+    {
+      name: 'absoluteExpiresAt_1',
+      key: { absoluteExpiresAt: 1 },
     },
   ] as any);
   t.mock.method(AuthSession.collection, 'dropIndex', async (name: string) => {
@@ -380,6 +384,7 @@ test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index', 
 
   assert.deepEqual(calls, [
     'drop:currentRefreshTokenHash_1',
+    'drop:absoluteExpiresAt_1',
     'create',
   ]);
 });
