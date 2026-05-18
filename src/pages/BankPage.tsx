@@ -165,7 +165,7 @@ const BankPage = () => {
               >
                 <div className="flex items-center gap-4 mb-2 sm:mb-0">
                   <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg ${getTransactionAccentClass(transaction)}`}
+                    className={`w-12 h-12 flex items-center justify-center font-bold text-white text-lg ${getTransactionAccentClass(transaction)}`}
                   >
                     {isCreditTransaction(transaction) ? '+' : ''}
                     {isCreditTransaction(transaction) ? '↑' : '↓'}

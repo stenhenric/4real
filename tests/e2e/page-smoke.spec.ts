@@ -11,7 +11,7 @@ type RouteExpectation = {
 const MOCK_TON_WALLETS = [{
   app_name: 'mock-wallet',
   name: 'Mock Wallet',
-  image: 'http://127.0.0.1:4317/tonconnect-icon.svg',
+  image: 'http://127.0.0.1:4317/tonconnect-icon.jpg',
   about_url: 'https://example.com/mock-wallet',
   universal_url: 'https://example.com/mock-wallet/connect',
   bridge: [{ type: 'sse', url: 'https://example.com/mock-wallet/bridge' }],

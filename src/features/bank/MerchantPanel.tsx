@@ -4,7 +4,6 @@ import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
-import { SketchyContainer } from '../../components/SketchyContainer';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
@@ -275,7 +274,7 @@ const MerchantPanel = () => {
               <div className="relative min-h-[240px]">
                 {activeTab === 'buy' && paymentConfirmed ? (
                   <div className="absolute -top-12 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center text-success-text animate-bounce">
-                    <span className="rounded-full border-2 border-success-border bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-center whitespace-nowrap">
+                    <span className="border-2 border-success-border bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-center whitespace-nowrap">
                       Upload your payment screenshot here
                     </span>
                     <ArrowDown className="mt-1" size={28} />
@@ -319,7 +318,7 @@ const MerchantPanel = () => {
             </div>
           </div>
 
-          <SketchyContainer className="bg-white/80 shadow-xl" roughness={0.5}>
+          <div className="bg-white/80 p-4 shadow-xl">
             <div className="flex gap-4 mb-8" role="tablist" aria-label="Merchant trade types">
               <SketchyButton
                 aria-controls="merchant-buy-panel"
@@ -540,7 +539,7 @@ const MerchantPanel = () => {
                     : 'Place Sell Order'}
               </SketchyButton>
             </form>
-          </SketchyContainer>
+          </div>
         </div>
 
         <div className="lg:col-span-5">
@@ -622,7 +621,7 @@ const MerchantPanel = () => {
                                 href={order.proof.url}
                                 rel="noopener noreferrer"
                                 target="_blank"
-                                className="text-[11px] font-bold text-blue-700 hover:scale-110 transition-transform bg-blue-100 px-2 rounded"
+                                className="text-[11px] font-bold text-blue-700 hover:scale-110 transition-transform bg-blue-100 px-2"
                               >
                                 PROOF
                               </a>
@@ -637,10 +636,10 @@ const MerchantPanel = () => {
             </div>
 
             {isAdmin && (
-              <div className="mt-8 p-4 bg-orange-100 border-2 border-orange-300 rounded italic text-sm text-orange-900 flex items-center gap-3">
+              <div className="mt-8 p-4 bg-orange-100 border-2 border-orange-300 italic text-sm text-orange-900 flex items-center gap-3">
                 <span aria-hidden="true" className="text-2xl">⚠️</span>
                 <span className="font-bold">
-                  ADMIN NODE ACTIVE: ENSURE BUY PROOFS AND SELL PAYOUTS ARE VERIFIED BEFORE RELEASE.
+                  ENSURE TO SUBMIT MPESA SCREENSHOT
                 </span>
               </div>
             )}

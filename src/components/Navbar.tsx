@@ -58,19 +58,19 @@ const Navbar = () => {
             {userData?.isAdmin && (
               <Link
                 to="/merchant"
-                className="hidden md:flex items-center gap-2 rounded-full border-2 border-ink-blue px-3 py-1 text-sm font-bold text-ink-blue transition-colors hover:bg-ink-blue/10"
+                className="hidden md:flex items-center gap-2 border-2 border-ink-blue px-3 py-1 text-sm font-bold text-ink-blue transition-colors hover:bg-ink-blue/10"
               >
                 <ShieldCheck size={18} />
                 Ops
               </Link>
             )}
             
-            <Link to="/auth/security" className="p-2 hover:bg-black/5 rounded-full" aria-label="Open security settings">
+            <Link to="/auth/security" className="p-2 hover:bg-black/5" aria-label="Open security settings">
               <ShieldCheck size={24} />
             </Link>
 
             {/* Profile & Logout — desktop only (on mobile, use bottom nav) */}
-            <Link to={`/profile/${user?.id}`} className="hidden md:block p-2 hover:bg-black/5 rounded-full" aria-label="Open profile">
+            <Link to={`/profile/${user?.id}`} className="hidden md:block p-2 hover:bg-black/5" aria-label="Open profile">
               <User size={24} />
             </Link>
             

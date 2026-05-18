@@ -56,19 +56,19 @@ export default function AlertsPage() {
 
         <div className="mt-4 space-y-4">
           {dashboard.alerts.length === 0 ? (
-            <div className="rounded-3xl border-2 border-dashed border-black/10 px-6 py-10 text-center text-sm font-mono opacity-50">
+            <div className="border-2 border-dashed border-black/10 px-6 py-10 text-center text-sm font-mono opacity-50">
               No active alerts. All monitored systems are within expected bounds.
             </div>
           ) : (
             dashboard.alerts.map((alert) => (
-              <div key={alert.id} className="rounded-3xl border border-black/10 bg-black/5 px-5 py-5">
+              <div key={alert.id} className="border border-black/10 bg-black/5 px-5 py-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="max-w-3xl">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${alert.severity === 'critical' ? 'bg-red-100 text-ink-red' : alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-ink-blue'}`}>
+                      <span className={`px-3 py-1 text-xs font-bold uppercase ${alert.severity === 'critical' ? 'bg-red-100 text-ink-red' : alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-ink-blue'}`}>
                         {alert.severity}
                       </span>
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-bold uppercase opacity-70">
+                      <span className="bg-white px-3 py-1 text-xs font-bold uppercase opacity-70">
                         {alert.category}
                       </span>
                     </div>
@@ -82,7 +82,7 @@ export default function AlertsPage() {
 
                   {alert.targetPath ? (
                     <Link
-                      className="inline-flex items-center gap-2 self-start rounded-full border-2 border-ink-blue px-4 py-2 text-sm font-bold text-ink-blue transition-colors hover:bg-ink-blue/10"
+                      className="inline-flex items-center gap-2 self-start border-2 border-ink-blue px-4 py-2 text-sm font-bold text-ink-blue transition-colors hover:bg-ink-blue/10"
                       to={alert.targetPath}
                     >
                       Open target

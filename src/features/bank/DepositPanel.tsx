@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useTonAddress, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
+import { TonConnectButton, useTonAddress, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowDownRight, CheckCircle } from 'lucide-react';
 import { SketchyButton } from '../../components/SketchyButton';
-import { SketchyContainer } from '../../components/SketchyContainer';
 import { CopyField } from '../../components/ui/CopyField';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { useToast } from '../../app/ToastProvider';
@@ -79,14 +78,19 @@ const DepositPanel = () => {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <SketchyContainer roughness={1} className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
-        <div className="flex items-center gap-4 mb-8">
-          <div className="rough-border flex h-16 w-16 items-center justify-center bg-success-bg">
-            <ArrowDownRight size={32} className="text-success-text" />
+      <div className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="rough-border flex h-16 w-16 items-center justify-center bg-success-bg">
+              <ArrowDownRight size={32} className="text-success-text" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Deposit USDT</h2>
+              <p className="text-sm font-mono opacity-60">Use TonConnect or a wallet that supports USDT jetton comments</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Deposit USDT</h2>
-            <p className="text-sm font-mono opacity-60">Use TonConnect or a wallet that supports USDT jetton comments</p>
+          <div className="shrink-0 sm:pt-1">
+            <TonConnectButton />
           </div>
         </div>
 
@@ -140,7 +144,7 @@ const DepositPanel = () => {
             </div>
 
             <div className="mt-6 flex flex-col gap-4">
-              <div className="bg-white p-4 rounded border-2 border-black/10 shadow-sm">
+              <div className="bg-white p-4 border-2 border-black/10 shadow-sm">
                 <h4 className="font-bold uppercase tracking-widest text-xs opacity-60 mb-2">
                   TonConnect Deposit
                 </h4>
@@ -150,7 +154,7 @@ const DepositPanel = () => {
                 <div className="flex gap-2 mb-4">
                   <input
                     aria-label="USDT Amount"
-                    className="flex-1 bg-black/5 border border-black/10 rounded p-2 focus:outline-none font-mono"
+                    className="flex-1 bg-black/5 border border-black/10 p-2 focus:outline-none font-mono"
                     id={TONCONNECT_AMOUNT_ID}
                     inputMode="decimal"
                     onChange={(event) => setDepositAmount(event.target.value)}
@@ -161,7 +165,7 @@ const DepositPanel = () => {
                 </div>
                 <SketchyButton
                   aria-describedby={!wallet ? 'wallet-connect-required' : undefined}
-                  className={`w-full font-bold py-3 px-4 rounded text-center transition-colors shadow-md border-2 border-black ${
+                  className={`w-full font-bold py-3 px-4 text-center transition-colors shadow-md border-2 border-black ${
                     !wallet || sendingTransaction
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       : 'bg-ink-blue hover:opacity-90 text-white'
@@ -182,7 +186,7 @@ const DepositPanel = () => {
             </div>
           </div>
         )}
-      </SketchyContainer>
+      </div>
     </div>
   );
 };

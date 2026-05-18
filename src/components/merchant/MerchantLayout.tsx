@@ -229,7 +229,7 @@ export function MerchantLayout() {
                   to={item.to}
                   end={item.to === '/merchant'}
                   className={({ isActive }) => cn(
-                    'mb-2 flex items-center justify-between rounded-2xl px-4 py-3 text-lg font-bold transition-colors last:mb-0',
+                    'mb-2 flex items-center justify-between px-4 py-3 text-lg font-bold transition-colors last:mb-0',
                     isActive
                       ? 'bg-ink-blue/10 text-ink-blue'
                       : 'text-ink-black/70 hover:bg-black/5 hover:text-ink-black',
@@ -240,7 +240,7 @@ export function MerchantLayout() {
                     {item.label}
                   </span>
                   {badge && badge > 0 ? (
-                    <span className="rounded-full bg-ink-red px-2 py-0.5 text-xs font-mono font-bold text-white">
+                    <span className="bg-ink-red px-2 py-0.5 text-xs font-mono font-bold text-white">
                       {badge}
                     </span>
                   ) : null}
@@ -283,7 +283,7 @@ export function MerchantLayout() {
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-3">
                   <span className={cn(
-                    'inline-flex items-center rounded-full border px-3 py-1 text-sm font-bold',
+                    'inline-flex items-center border px-3 py-1 text-sm font-bold',
                     statusBadge.tone,
                   )}>
                     {statusBadge.label}
@@ -295,7 +295,7 @@ export function MerchantLayout() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <div className="rounded-full border border-black/10 bg-black/5 px-4 py-2 text-sm font-mono">
+                <div className="border border-black/10 bg-black/5 px-4 py-2 text-sm font-mono">
                   TON gas {formatMoney(dashboard?.liquidity.tonBalanceTon)}
                 </div>
                 <SketchyButton
@@ -316,7 +316,7 @@ export function MerchantLayout() {
             </div>
 
             {error ? (
-              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-mono text-ink-red">
+              <div className="mt-4 border border-red-200 bg-red-50 px-4 py-3 text-sm font-mono text-ink-red">
                 {error}
               </div>
             ) : null}
@@ -333,7 +333,7 @@ export function MerchantLayout() {
                         to={item.to}
                         end={item.to === '/merchant'}
                         className={({ isActive }) => cn(
-                          'inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-bold whitespace-nowrap transition-colors',
+                          'inline-flex items-center gap-2 border-2 px-4 py-2 text-sm font-bold whitespace-nowrap transition-colors',
                           isActive
                             ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                             : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5 hover:text-ink-black',
@@ -342,7 +342,7 @@ export function MerchantLayout() {
                         <item.icon size={16} />
                         <span>{item.label}</span>
                         {badge && badge > 0 ? (
-                          <span className="rounded-full bg-ink-red px-2 py-0.5 text-[11px] font-mono font-bold text-white">
+                          <span className="bg-ink-red px-2 py-0.5 text-[11px] font-mono font-bold text-white">
                             {badge}
                           </span>
                         ) : null}

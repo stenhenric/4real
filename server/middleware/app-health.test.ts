@@ -463,7 +463,7 @@ test('/tonconnect-manifest.json has an explicit short public cache policy', asyn
     );
     assert.match(response.headers.get('vary') ?? '', /(?:^|,\s*)Accept-Encoding(?:,|$)/);
     assert.equal(payload.url, 'https://app.example.com');
-    assert.equal(payload.iconUrl, 'https://app.example.com/tonconnect-icon.svg');
+    assert.equal(payload.iconUrl, 'https://app.example.com/tonconnect-icon.jpg');
   }, {
     env: {
       PUBLIC_APP_ORIGIN: 'https://app.example.com',

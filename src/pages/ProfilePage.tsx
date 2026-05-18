@@ -78,7 +78,7 @@ const ProfilePage = () => {
         <div className="md:col-span-1">
           <div className="rough-border bg-white text-center py-10 relative shadow-lg">
             <div aria-hidden="true" className="absolute -top-3 -left-3 text-3xl z-10 drop-shadow-md">📎</div>
-            <div className="w-32 h-32 mx-auto sketchy-border rounded-full flex items-center justify-center bg-black/5 mb-6 overflow-hidden relative">
+            <div className="w-32 h-32 mx-auto sketchy-border flex items-center justify-center bg-black/5 mb-6 overflow-hidden relative">
               <div className="tape w-12 h-4 -top-1 left-1/2 -ml-6 z-20"></div>
               <svg viewBox="0 0 100 100" className="w-20 h-20 opacity-30">
                 <circle
@@ -107,7 +107,7 @@ const ProfilePage = () => {
               <div className="text-center relative">
                 <p className="text-[10px] uppercase font-bold opacity-40 tracking-tighter mb-1">ELO RATING</p>
                 <p className="text-3xl font-bold italic">{profile.elo}</p>
-                <div className="absolute -bottom-1 left-0 w-full h-1 bg-black/5 rounded"></div>
+                <div className="absolute -bottom-1 left-0 w-full h-1 bg-black/5"></div>
               </div>
               <div className="w-px h-12 bg-black/10"></div>
               <div className="text-center">
@@ -117,7 +117,7 @@ const ProfilePage = () => {
                 <p className="text-3xl font-bold italic">
                   {profile.stats?.wins || 0}-{profile.stats?.losses || 0}-{profile.stats?.draws || 0}
                 </p>
-                <div className="absolute -bottom-1 left-0 w-full h-1 bg-black/5 rounded"></div>
+                <div className="absolute -bottom-1 left-0 w-full h-1 bg-black/5"></div>
               </div>
             </div>
 
@@ -143,11 +143,11 @@ const ProfilePage = () => {
                   key={feature}
                   className="p-4 bg-white sketchy-border text-center grayscale opacity-20 hover:opacity-100 transition-all cursor-help relative group"
                 >
-                  <div aria-hidden="true" className="w-12 h-12 mx-auto rounded-full bg-black/5 mb-3 flex items-center justify-center">
+                  <div aria-hidden="true" className="w-12 h-12 mx-auto bg-black/5 mb-3 flex items-center justify-center">
                     🏆
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-tight">{feature}</p>
-                  <div className="hidden group-hover:block absolute top-full left-1/2 -ml-20 w-40 p-2 bg-black text-white text-[10px] rounded z-20 mt-2">
+                  <div className="hidden group-hover:block absolute top-full left-1/2 -ml-20 w-40 p-2 bg-black text-white text-[10px] z-20 mt-2">
                     Condition not met in this timeline.
                   </div>
                 </div>

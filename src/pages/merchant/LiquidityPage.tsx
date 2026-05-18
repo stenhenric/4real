@@ -127,7 +127,7 @@ export default function LiquidityPage() {
       </div>
 
       {criticalLiquidityAlerts.length > 0 ? (
-        <div className="rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-mono text-ink-red">
+        <div className="border border-red-200 bg-red-50 px-5 py-4 text-sm font-mono text-ink-red">
           {criticalLiquidityAlerts.length} critical liquidity issue{criticalLiquidityAlerts.length === 1 ? '' : 's'} require action.
         </div>
       ) : null}
@@ -176,11 +176,11 @@ export default function LiquidityPage() {
               </div>
             </div>
             <div className="mt-4 space-y-4 font-mono text-sm">
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 px-4 py-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Hot wallet</p>
                 <p className="mt-2 break-all">{dashboard.liquidity.hotWalletAddress}</p>
               </div>
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 px-4 py-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Hot USDT jetton wallet</p>
                 <p className="mt-2 break-all">{dashboard.liquidity.hotJettonWallet}</p>
               </div>
@@ -196,7 +196,7 @@ export default function LiquidityPage() {
               </div>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl border border-black/10 bg-green-50 px-4 py-4">
+              <div className="border border-black/10 bg-green-50 px-4 py-4">
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-green-800">
                   <ArrowDownToLine size={16} />
                   Deposits 24h
@@ -205,7 +205,7 @@ export default function LiquidityPage() {
                   {formatMoney(dashboard.liquidity.depositFlow24hUsdt)} USDT
                 </p>
               </div>
-              <div className="rounded-3xl border border-black/10 bg-red-50 px-4 py-4">
+              <div className="border border-black/10 bg-red-50 px-4 py-4">
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-ink-red">
                   <ArrowUpFromLine size={16} />
                   Withdrawals 24h
@@ -216,11 +216,11 @@ export default function LiquidityPage() {
               </div>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 px-4 py-4">
                 <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Queued withdrawals</p>
                 <p className="mt-3 text-3xl font-bold italic">{dashboard.liquidity.queuedWithdrawalCount}</p>
               </div>
-              <div className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 px-4 py-4">
                 <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Unmatched deposits</p>
                 <p className="mt-3 text-3xl font-bold italic">{dashboard.liquidity.unresolvedDepositCount}</p>
               </div>
@@ -239,7 +239,7 @@ export default function LiquidityPage() {
             </div>
             <div className="mt-4 space-y-3">
               {dashboard.liquidity.jobs.map((job) => (
-                <div key={job.key} className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+                <div key={job.key} className="border border-black/10 bg-black/5 px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-bold">{job.label}</p>
@@ -247,7 +247,7 @@ export default function LiquidityPage() {
                         Last success {formatDateTime(job.lastSucceededAt)}
                       </p>
                     </div>
-                    <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${job.state === 'critical' ? 'bg-red-100 text-ink-red' : job.state === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-700'}`}>
+                    <span className={`px-3 py-1 text-xs font-bold uppercase ${job.state === 'critical' ? 'bg-red-100 text-ink-red' : job.state === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-700'}`}>
                       {job.state}
                     </span>
                   </div>

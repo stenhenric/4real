@@ -31,7 +31,7 @@ export function PasswordStrengthMeter({ password, onValidationChange }: Password
       <div className="mt-3 space-y-2">
         <div className="flex gap-1 h-1.5 w-full">
           {[1, 2, 3].map((_, i) => (
-            <div key={i} className="h-full flex-1 rounded-full bg-black/5" />
+            <div key={i} className="h-full flex-1 bg-black/5" />
           ))}
         </div>
         <ul className="space-y-1 mt-2">
@@ -59,7 +59,7 @@ export function PasswordStrengthMeter({ password, onValidationChange }: Password
         {[0, 1, 2].map((index) => (
           <div
             key={index}
-            className={cn('h-full flex-1 rounded-full transition-colors duration-300', getBarColor(index))}
+            className={cn('h-full flex-1 transition-colors duration-300', getBarColor(index))}
           />
         ))}
       </div>

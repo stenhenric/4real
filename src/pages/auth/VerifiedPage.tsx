@@ -51,7 +51,7 @@ export default function VerifiedPage() {
             Open app
           </SketchyButton>
           <Link
-            className="inline-flex flex-1 items-center justify-center rounded-full border border-black/12 bg-white px-4 py-3 text-base font-semibold text-black transition-colors hover:bg-black/5"
+            className="inline-flex flex-1 items-center justify-center border border-black/12 bg-white px-4 py-3 text-base font-semibold text-black transition-colors hover:bg-black/5"
             to="/auth/security"
           >
             Review security settings

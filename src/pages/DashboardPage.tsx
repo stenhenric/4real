@@ -367,7 +367,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 {/* Free Matches Column */}
                 <div>
                   <h3 className="font-bold text-xl uppercase tracking-tighter mb-4 opacity-50 flex items-center gap-2">
-                    Free Public <span className="text-xs bg-black text-white px-2 py-0.5 rounded-full">{freeMatches.length}</span>
+                    Free Public <span className="text-xs bg-black text-white px-2 py-0.5">{freeMatches.length}</span>
                   </h3>
                   <div className="space-y-4">
                     {freeMatches.length === 0 ? (
@@ -399,7 +399,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 {/* Paid Matches Column */}
                 <div>
                   <h3 className="font-bold text-xl uppercase tracking-tighter mb-4 flex items-center gap-2 text-warning-text">
-                    Paid Public <span className="text-xs bg-note-yellow text-black px-2 py-0.5 rounded-full">{paidMatches.length}</span>
+                    Paid Public <span className="text-xs bg-note-yellow text-black px-2 py-0.5">{paidMatches.length}</span>
                   </h3>
                   <div className="space-y-4">
                     {paidMatches.length === 0 ? (
@@ -445,7 +445,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
             <h2 className="text-3xl font-bold flex items-center gap-3 italic mb-8 opacity-40">
               <Clock size={28} /> Archives
             </h2>
-            <div className="py-12 border-2 border-dashed border-black/5 rounded-xl text-center">
+            <div className="py-12 border-2 border-dashed border-black/5 text-center">
               <p className="italic opacity-20 font-bold uppercase tracking-widest text-sm">
                 Historical records pending match completion...
               </p>
@@ -471,7 +471,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                   className="flex items-center justify-between border-b-2 border-black/5 pb-2 hover:bg-black/5 transition-colors px-2"
                 >
                   <div className="flex items-center gap-4">
-                    <span className="font-mono text-xs font-bold bg-black text-white px-2 py-0.5 rounded">
+                    <span className="font-mono text-xs font-bold bg-black text-white px-2 py-0.5">
                       0{index + 1}
                     </span>
                     <Link
@@ -507,7 +507,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
             id="dashboard-panel-stats"
             role="tabpanel"
           >
-            <div className="absolute -top-10 -right-10 w-32 h-32 bg-black/5 rounded-full blur-3xl"></div>
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-black/5 blur-3xl"></div>
             <h2 className="text-3xl font-bold flex items-center gap-3 mb-8 italic tracking-tight">
               <UserIcon size={28} /> Your Stats
             </h2>

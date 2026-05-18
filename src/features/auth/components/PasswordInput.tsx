@@ -26,7 +26,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
             <SketchyButton
               type="button"
               onClick={toggleShowPassword}
-              className="p-1 text-black/40 hover:text-ink-blue transition-colors rounded-full focus-visible:outline-2 focus-visible:outline-ink-blue"
+              className="p-1 text-black/40 hover:text-ink-blue transition-colors focus-visible:outline-2 focus-visible:outline-ink-blue"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}

@@ -111,7 +111,7 @@ export default function OrderDeskPage() {
             <SketchyButton
               key={filter}
               className={cn(
-                'rounded-full border-2 px-4 py-2 text-sm font-bold transition-colors',
+                'border-2 px-4 py-2 text-sm font-bold transition-colors',
                 typeFilter === filter
                   ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
@@ -131,7 +131,7 @@ export default function OrderDeskPage() {
             <SketchyButton
               key={filter}
               className={cn(
-                'rounded-full border-2 px-4 py-2 text-sm font-bold transition-colors',
+                'border-2 px-4 py-2 text-sm font-bold transition-colors',
                 statusFilter === filter
                   ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
@@ -381,13 +381,13 @@ export default function OrderDeskPage() {
       </SketchyContainer>
 
       {deskData ? (
-        <div className="flex flex-col gap-3 rounded-3xl border border-black/10 bg-white/80 px-4 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 border border-black/10 bg-white/80 px-4 py-4 md:flex-row md:items-center md:justify-between">
           <p className="text-sm font-mono opacity-60">
             Showing page {deskData.pagination.page} of {deskData.pagination.totalPages} • {deskData.pagination.total} total orders
           </p>
           <div className="flex items-center gap-2">
             <SketchyButton
-              className="rounded-full border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
+              className="border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
               disabled={deskData.pagination.page <= 1}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               type="button"
@@ -395,7 +395,7 @@ export default function OrderDeskPage() {
               Previous
             </SketchyButton>
             <SketchyButton
-              className="rounded-full border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
+              className="border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
               disabled={deskData.pagination.page >= deskData.pagination.totalPages}
               onClick={() => setPage((current) => Math.min(deskData.pagination.totalPages, current + 1))}
               type="button"

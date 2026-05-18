@@ -25,7 +25,7 @@ async function withFrontendServer(run: (baseUrl: string) => Promise<void>): Prom
     await writeFile(path.join(distPath, 'index.html'), '<!doctype html><title>4real test shell</title>');
     await writeFile(path.join(distPath, 'assets', 'app.js'), 'console.log("asset");');
     await writeFile(path.join(distPath, 'fonts', 'cabin-sketch-700.woff2'), 'font bytes');
-    await writeFile(path.join(distPath, 'tonconnect-icon.svg'), '<svg></svg>');
+    await writeFile(path.join(distPath, 'tonconnect-icon.jpg'), 'jpg bytes');
     await writeFile(path.join(distPath, 'phpinfo.php'), 'sensitive phpinfo output');
     process.chdir(tempRoot);
 
@@ -125,7 +125,7 @@ test('frontend static files carry explicit asset cache policies', async () => {
     );
     assert.match(font.headers.get('vary') ?? '', /(?:^|,\s*)Accept-Encoding(?:,|$)/);
 
-    const icon = await fetch(`${baseUrl}/tonconnect-icon.svg`);
+    const icon = await fetch(`${baseUrl}/tonconnect-icon.jpg`);
     assert.equal(icon.status, 200);
     assert.equal(
       icon.headers.get('cache-control'),

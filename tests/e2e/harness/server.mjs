@@ -851,7 +851,7 @@ function createApp() {
     res.json({
       url: origin,
       name: '4real',
-      iconUrl: `${origin}/tonconnect-icon.svg`,
+      iconUrl: `${origin}/tonconnect-icon.jpg`,
     });
   });
 

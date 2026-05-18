@@ -282,19 +282,19 @@ const GamePage = () => {
           <div className="flex justify-between mb-4 px-2">
             <div
               className={cn(
-                'flex flex-col p-2 rounded transform -rotate-1 transition-all',
+                'flex flex-col p-2 transform -rotate-1 transition-all',
                 room.currentTurn === user?.id ? 'active-player-highlight' : 'opacity-50',
               )}
             >
               <span className="text-[10px] uppercase font-bold opacity-60 text-ink-black">You</span>
               <span className="font-bold flex items-center gap-2 text-lg text-ink-black">
-                <div className={cn('w-4 h-4 rounded-full border-2 border-black', myColorClass)} />{' '}
+                <div className={cn('w-4 h-4 border-2 border-black', myColorClass)} />{' '}
                 {userData?.username}
               </span>
               <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold text-ink-black">
-                <span className="bg-black/5 px-2 py-0.5 rounded">ELO {userData?.elo || 1000}</span>
+                <span className="bg-black/5 px-2 py-0.5">ELO {userData?.elo || 1000}</span>
                 {moneyToNumber(room.wager) > 0 && (
-                  <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded border border-yellow-300">
+                  <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 border border-yellow-300">
                     Wager: ${formatMoneyValue(room.wager)}
                   </span>
                 )}
@@ -303,7 +303,7 @@ const GamePage = () => {
 
             <div className="flex flex-col items-center justify-center">
               {room.status === 'waiting' ? (
-                <span className="animate-pulse text-xs font-bold uppercase py-1 px-3 bg-yellow-100 border border-yellow-300 rounded shadow-sm text-ink-black">
+                <span className="animate-pulse text-xs font-bold uppercase py-1 px-3 bg-yellow-100 border border-yellow-300 shadow-sm text-ink-black">
                   Waiting for P2...
                 </span>
               ) : room.status === 'completed' ? (
@@ -319,23 +319,23 @@ const GamePage = () => {
 
             <div
               className={cn(
-                'flex flex-col items-end p-2 rounded transform rotate-1 transition-all text-ink-black',
+                'flex flex-col items-end p-2 transform rotate-1 transition-all text-ink-black',
                 opponent && room.currentTurn === opponent.userId ? 'active-player-highlight' : 'opacity-50',
               )}
             >
               <span className="text-[10px] uppercase font-bold opacity-60">Opponent</span>
               <span className="font-bold flex items-center gap-2 text-lg">
                 {opponent?.username || 'Waiting...'}{' '}
-                <div className={cn('w-4 h-4 rounded-full border-2 border-black', opponentColorClass)} />
+                <div className={cn('w-4 h-4 border-2 border-black', opponentColorClass)} />
               </span>
               {opponent ? (
                 <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold">
                   {moneyToNumber(room.wager) > 0 && (
-                    <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded border border-yellow-300">
+                    <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 border border-yellow-300">
                       Wager: ${formatMoneyValue(room.wager)}
                     </span>
                   )}
-                  <span className="bg-black/5 px-2 py-0.5 rounded">ELO {opponent.elo || 1000}</span>
+                  <span className="bg-black/5 px-2 py-0.5">ELO {opponent.elo || 1000}</span>
                 </div>
               ) : (
                 <span className="font-mono text-[10px] opacity-40 mt-1 uppercase tracking-widest text-ink-black">
@@ -349,7 +349,7 @@ const GamePage = () => {
             <canvas
               aria-describedby="game-board-help"
               aria-label="Connect board. Use the mouse or number keys 1 through 7 to drop a disc."
-              className="h-auto w-full cursor-pointer rounded-sm focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ink-blue"
+              className="h-auto w-full cursor-pointer focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-ink-blue"
               height={480}
               onClick={handleBoardClick}
               onKeyDown={handleBoardKeyDown}

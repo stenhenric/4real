@@ -357,7 +357,7 @@ export async function createApp(
     res.json({
       url: publicAppOrigin,
       name: '4real',
-      iconUrl: `${publicAppOrigin}/tonconnect-icon.svg`,
+      iconUrl: `${publicAppOrigin}/tonconnect-icon.jpg`,
       privacyPolicyUrl: `${publicAppOrigin}/privacy-policy.html`,
       termsOfUseUrl: `${publicAppOrigin}/terms-of-use.html`,
     });

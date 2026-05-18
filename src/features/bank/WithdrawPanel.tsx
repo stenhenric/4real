@@ -1,11 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useTonAddress, useTonWallet } from '@tonconnect/ui-react';
+import { TonConnectButton, useTonAddress, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowUpRight } from 'lucide-react';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
-import { SketchyContainer } from '../../components/SketchyContainer';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { createWithdrawal } from '../../services/transactions.service';
 import { formatMoneyValue } from '../../utils/exact-money.ts';
@@ -63,18 +62,23 @@ const WithdrawPanel = () => {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <SketchyContainer roughness={1} className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
-        <div className="flex items-center gap-4 mb-8">
-          <div className="rough-border flex h-16 w-16 items-center justify-center bg-danger-bg">
-            <ArrowUpRight size={32} className="text-danger-text" />
+      <div className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="rough-border flex h-16 w-16 items-center justify-center bg-danger-bg">
+              <ArrowUpRight size={32} className="text-danger-text" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Withdraw USDT</h2>
+              <p className="text-sm font-mono opacity-60">Send USDT from your balance to a TON wallet address</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Withdraw USDT</h2>
-            <p className="text-sm font-mono opacity-60">Send USDT from your balance to a TON wallet address</p>
+          <div className="shrink-0 sm:pt-1">
+            <TonConnectButton />
           </div>
         </div>
 
-        <div className="mb-8 p-4 bg-black/5 rounded border border-black/10 flex justify-between items-center">
+        <div className="mb-8 p-4 bg-black/5 border border-black/10 flex justify-between items-center">
           <span className="font-bold uppercase tracking-widest text-sm opacity-60">Available Balance:</span>
           <span className="text-2xl font-bold font-mono text-ink-blue">
             {formatMoneyValue(userData?.balance)} USDT
@@ -139,7 +143,7 @@ const WithdrawPanel = () => {
             {loading ? 'Processing...' : 'Request Withdrawal'}
           </SketchyButton>
         </form>
-      </SketchyContainer>
+      </div>
     </div>
   );
 };

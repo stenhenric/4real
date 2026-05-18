@@ -243,6 +243,107 @@ test('frontend bank presentation treats refund credits as positive incoming fund
   }), 'bg-green-600');
 });
 
+test('bank merchant panel keeps the trade form off SketchyContainer and uses screenshot guidance', () => {
+  const panelSource = readFileSync(join('src', 'features', 'bank', 'MerchantPanel.tsx'), 'utf8');
+
+  assert.doesNotMatch(
+    panelSource,
+    /<SketchyContainer[^>]*className="bg-white\/80 shadow-xl"[^>]*>/,
+  );
+  assert.match(panelSource, /ENSURE TO SUBMIT MPESA SCREENSHOT/);
+  assert.doesNotMatch(
+    panelSource,
+    /ADMIN NODE ACTIVE: ENSURE BUY PROOFS AND SELL PAYOUTS ARE VERIFIED BEFORE RELEASE\./,
+  );
+});
+
+test('bank deposit and withdraw panels keep form surfaces off SketchyContainer', () => {
+  const depositSource = readFileSync(join('src', 'features', 'bank', 'DepositPanel.tsx'), 'utf8');
+  const withdrawSource = readFileSync(join('src', 'features', 'bank', 'WithdrawPanel.tsx'), 'utf8');
+
+  for (const source of [depositSource, withdrawSource]) {
+    assert.doesNotMatch(
+      source,
+      /<SketchyContainer[^>]*className="bg-white\/90 p-8 shadow-2xl relative overflow-hidden"[^>]*>/,
+    );
+    assert.match(source, /<div className="bg-white\/90 p-8 shadow-2xl relative overflow-hidden">/);
+  }
+});
+
+test('bank deposit panel renders the TonConnect wallet button inside the provider route', () => {
+  const depositSource = readFileSync(join('src', 'features', 'bank', 'DepositPanel.tsx'), 'utf8');
+  const appSource = readFileSync(join('src', 'app', 'App.tsx'), 'utf8');
+
+  assert.match(appSource, /<TonConnectRouteProvider>\s*<BankPage \/>/s);
+  assert.match(depositSource, /import \{[^}]*TonConnectButton[^}]*\} from '@tonconnect\/ui-react';/s);
+  assert.match(depositSource, /<TonConnectButton\b/);
+});
+
+test('bank withdraw panel renders the TonConnect wallet button for connected-wallet autofill', () => {
+  const withdrawSource = readFileSync(join('src', 'features', 'bank', 'WithdrawPanel.tsx'), 'utf8');
+
+  assert.match(withdrawSource, /import \{[^}]*TonConnectButton[^}]*\} from '@tonconnect\/ui-react';/s);
+  assert.match(withdrawSource, /<TonConnectButton\b/);
+});
+
+test('element size hook measures the border box so SketchyContainer borders fit padded cards', () => {
+  const hookSource = readFileSync(join('src', 'hooks', 'useElementSize.ts'), 'utf8');
+
+  assert.match(hookSource, /borderBoxSize|getBoundingClientRect/);
+  assert.doesNotMatch(hookSource, /entry\.contentRect\.(?:width|height)/);
+});
+
+test('frontend UI avoids rounded card badge input and button corners', () => {
+  const allowedRoundedSources = [
+    join('src', 'canvas', 'drawConnectFourBoard.ts'),
+    join('src', 'components', 'ui', 'MiniMatchCard.tsx'),
+    join('src', 'pages', 'LandingPage.tsx'),
+  ];
+  const allowedRoundedLinePatterns = [
+    /border-radius:\s*255px/,
+    /border-radius:\s*15px/,
+    /border-radius:\s*225px/,
+    /border-radius:\s*50%/,
+    /w-4 h-4 rounded-full/,
+    /h-2 w-2 rounded-full/,
+    /w-3 h-3 rounded-full/,
+  ];
+  const sourceFiles: string[] = [];
+  const collectSourceFiles = (directory: string) => {
+    for (const entry of readdirSync(directory)) {
+      const fullPath = join(directory, entry);
+      const stats = statSync(fullPath);
+      if (stats.isDirectory()) {
+        collectSourceFiles(fullPath);
+      } else if (/\.(?:tsx|ts|css)$/.test(entry)) {
+        sourceFiles.push(fullPath);
+      }
+    }
+  };
+  collectSourceFiles('src');
+
+  const roundedFindings = sourceFiles.flatMap((filePath) => {
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    if (allowedRoundedSources.some((allowedPath) => normalizedPath.endsWith(allowedPath.replace(/\\/g, '/')))) {
+      return [];
+    }
+
+    return readFileSync(filePath, 'utf8')
+      .split('\n')
+      .flatMap((line, index) => {
+        if (!/(?:\brounded(?:-[a-z0-9/[\]._-]+)?\b|border-radius)/.test(line)) {
+          return [];
+        }
+        if (allowedRoundedLinePatterns.some((pattern) => pattern.test(line))) {
+          return [];
+        }
+        return [`${normalizedPath}:${index + 1}: ${line.trim()}`];
+      });
+  });
+
+  assert.deepEqual(roundedFindings, []);
+});
+
 test('frontend auth service consumes emailed auth tokens with POST requests', async (t) => {
   const calls: Array<{ input: unknown; init?: RequestInit }> = [];
   const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {

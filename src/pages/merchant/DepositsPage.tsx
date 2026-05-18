@@ -184,7 +184,7 @@ export default function DepositsPage() {
             <SketchyButton
               key={filter}
               className={cn(
-                'rounded-full border-2 px-4 py-2 text-sm font-bold transition-colors',
+                'border-2 px-4 py-2 text-sm font-bold transition-colors',
                 statusFilter === filter
                   ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
@@ -224,7 +224,7 @@ export default function DepositsPage() {
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+          <label className="border border-black/10 bg-black/5 px-4 py-4">
             <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Start</p>
             <input
               className="mt-2 w-full bg-transparent text-sm font-mono focus:outline-none"
@@ -233,7 +233,7 @@ export default function DepositsPage() {
               value={windowStart}
             />
           </label>
-          <label className="rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+          <label className="border border-black/10 bg-black/5 px-4 py-4">
             <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">End</p>
             <input
               className="mt-2 w-full bg-transparent text-sm font-mono focus:outline-none"
@@ -245,7 +245,7 @@ export default function DepositsPage() {
         </div>
 
         {replayResult ? (
-          <div className="mt-4 rounded-3xl border border-black/10 bg-black/5 px-4 py-4">
+          <div className="mt-4 border border-black/10 bg-black/5 px-4 py-4">
             <div className="flex flex-wrap items-center gap-4 text-sm font-mono">
               <span>{replayResult.dryRun ? 'Dry run' : 'Applied'}</span>
               <span>{replayResult.transfers.length} transfer{replayResult.transfers.length === 1 ? '' : 's'}</span>
@@ -293,7 +293,7 @@ export default function DepositsPage() {
               Review memo mismatches, expired memos, and manual operator decisions.
             </p>
           </div>
-          <span className="rounded-full border border-black/10 bg-black/5 px-3 py-1 text-xs font-bold uppercase">
+          <span className="border border-black/10 bg-black/5 px-3 py-1 text-xs font-bold uppercase">
             {deposits.length} item{deposits.length === 1 ? '' : 's'}
           </span>
         </div>
@@ -491,7 +491,7 @@ export default function DepositsPage() {
                         <div className="flex flex-col items-end gap-3">
                           <input
                             aria-label={`Target user ID for deposit ${deposit.txHash}`}
-                            className="w-72 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-mono"
+                            className="w-72 border border-black/10 bg-white px-4 py-2 text-sm font-mono"
                             onChange={(event) => {
                               const nextValue = event.target.value;
                               setUserOverrides((current) => ({
@@ -505,7 +505,7 @@ export default function DepositsPage() {
                           />
                           <input
                             aria-label={`Operator note for deposit ${deposit.txHash}`}
-                            className="w-72 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-mono"
+                            className="w-72 border border-black/10 bg-white px-4 py-2 text-sm font-mono"
                             onChange={(event) => {
                               const nextValue = event.target.value;
                               setNotes((current) => ({
