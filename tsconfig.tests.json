@@ -4,7 +4,10 @@
     "types": ["node"]
   },
   "include": [
-    "server/middleware/idempotency-key.repository.test.ts"
+    "src/vite-env.d.ts",
+    "server/middleware/frontend-contracts.test.ts",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
   ],
   "exclude": []
 }

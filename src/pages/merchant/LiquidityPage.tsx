@@ -10,7 +10,7 @@ import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { updateMerchantAdminConfig } from '../../services/merchant-config.service';
 import type { MerchantConfigDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
-import { moneyToNumber } from '../../utils/exact-money.ts';
+import { moneyToNumber, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 
 interface MerchantConfigFormState {
@@ -78,16 +78,21 @@ export default function LiquidityPage() {
       return;
     }
 
-    const buyRateKesPerUsdt = moneyToNumber(formState.buyRateKesPerUsdt);
-    const sellRateKesPerUsdt = moneyToNumber(formState.sellRateKesPerUsdt);
-
-    if (!Number.isFinite(buyRateKesPerUsdt) || buyRateKesPerUsdt <= 0) {
-      showError('Buy rate must be greater than 0.');
-      return;
-    }
-
-    if (!Number.isFinite(sellRateKesPerUsdt) || sellRateKesPerUsdt <= 0) {
-      showError('Sell rate must be greater than 0.');
+    let buyRateKesPerUsdt: string;
+    let sellRateKesPerUsdt: string;
+    try {
+      buyRateKesPerUsdt = normalizeFixedScaleAmount(formState.buyRateKesPerUsdt, {
+        allowZero: false,
+        label: 'Buy rate',
+        scale: 6,
+      });
+      sellRateKesPerUsdt = normalizeFixedScaleAmount(formState.sellRateKesPerUsdt, {
+        allowZero: false,
+        label: 'Sell rate',
+        scale: 6,
+      });
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Merchant rates must be valid decimal amounts.');
       return;
     }
 
@@ -98,8 +103,8 @@ export default function LiquidityPage() {
         mpesaNumber: formState.mpesaNumber.trim(),
         walletAddress: formState.walletAddress.trim(),
         instructions: formState.instructions.trim(),
-        buyRateKesPerUsdt: buyRateKesPerUsdt.toFixed(6),
-        sellRateKesPerUsdt: sellRateKesPerUsdt.toFixed(6),
+        buyRateKesPerUsdt,
+        sellRateKesPerUsdt,
       });
 
       setFormState(toFormState(updatedConfig));
@@ -120,7 +125,7 @@ export default function LiquidityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-4xl font-bold italic tracking-tight">Liquidity & Wallets</h2>
+        <h2 className="text-4xl font-semibold italic tracking-tight">Liquidity & Wallets</h2>
         <p className="text-sm font-mono opacity-60">
           Monitor reserves, hot-wallet health, worker status, and unresolved treasury flow.
         </p>
@@ -171,16 +176,16 @@ export default function LiquidityPage() {
             <div className="flex items-center gap-3 border-b border-black/10 pb-3">
               <Wallet className="text-ink-blue" size={22} />
               <div>
-                <h3 className="text-2xl font-bold italic">Wallet Addresses</h3>
+                <h3 className="text-2xl font-semibold italic">Wallet Addresses</h3>
                 <p className="text-sm font-mono opacity-60">Primary operational addresses used by the treasury stack.</p>
               </div>
             </div>
             <div className="mt-4 space-y-4 font-mono text-sm">
-              <div className="border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 p-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Hot wallet</p>
                 <p className="mt-2 break-all">{dashboard.liquidity.hotWalletAddress}</p>
               </div>
-              <div className="border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 p-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Hot USDT jetton wallet</p>
                 <p className="mt-2 break-all">{dashboard.liquidity.hotJettonWallet}</p>
               </div>
@@ -191,12 +196,12 @@ export default function LiquidityPage() {
             <div className="flex items-center gap-3 border-b border-black/10 pb-3">
               <Activity className="text-ink-blue" size={22} />
               <div>
-                <h3 className="text-2xl font-bold italic">Flow Summary</h3>
+                <h3 className="text-2xl font-semibold italic">Flow Summary</h3>
                 <p className="text-sm font-mono opacity-60">Confirmed deposit and withdrawal movement over the last 24 hours.</p>
               </div>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="border border-black/10 bg-green-50 px-4 py-4">
+              <div className="border border-black/10 bg-green-50 p-4">
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-green-800">
                   <ArrowDownToLine size={16} />
                   Deposits 24h
@@ -205,7 +210,7 @@ export default function LiquidityPage() {
                   {formatMoney(dashboard.liquidity.depositFlow24hUsdt)} USDT
                 </p>
               </div>
-              <div className="border border-black/10 bg-red-50 px-4 py-4">
+              <div className="border border-black/10 bg-red-50 p-4">
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-ink-red">
                   <ArrowUpFromLine size={16} />
                   Withdrawals 24h
@@ -216,11 +221,11 @@ export default function LiquidityPage() {
               </div>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Queued withdrawals</p>
                 <p className="mt-3 text-3xl font-bold italic">{dashboard.liquidity.queuedWithdrawalCount}</p>
               </div>
-              <div className="border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Unmatched deposits</p>
                 <p className="mt-3 text-3xl font-bold italic">{dashboard.liquidity.unresolvedDepositCount}</p>
               </div>
@@ -233,13 +238,13 @@ export default function LiquidityPage() {
             <div className="flex items-center gap-3 border-b border-black/10 pb-3">
               <Server className="text-ink-blue" size={22} />
               <div>
-                <h3 className="text-2xl font-bold italic">Background Workers</h3>
+                <h3 className="text-2xl font-semibold italic">Background Workers</h3>
                 <p className="text-sm font-mono opacity-60">Runtime state reported by the server process.</p>
               </div>
             </div>
             <div className="mt-4 space-y-3">
               {dashboard.liquidity.jobs.map((job) => (
-                <div key={job.key} className="border border-black/10 bg-black/5 px-4 py-4">
+                <div key={job.key} className="border border-black/10 bg-black/5 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-bold">{job.label}</p>
@@ -268,7 +273,7 @@ export default function LiquidityPage() {
             </div>
 
             <form className="mt-4 space-y-4" onSubmit={handleSave}>
-              <div className="rough-border bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 p-4">
                 <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-mpesa-number">
                   M-Pesa number
                 </label>
@@ -281,7 +286,7 @@ export default function LiquidityPage() {
                 />
               </div>
 
-              <div className="rough-border bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 p-4">
                 <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-wallet-address">
                   Wallet address
                 </label>
@@ -295,7 +300,7 @@ export default function LiquidityPage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rough-border bg-black/5 px-4 py-4">
+                <div className="rough-border bg-black/5 p-4">
                   <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-buy-rate">
                     Buy rate ({dashboard.liquidity.merchantConfig.fiatCurrency}/USDT)
                   </label>
@@ -310,7 +315,7 @@ export default function LiquidityPage() {
                     value={formState?.buyRateKesPerUsdt ?? ''}
                   />
                 </div>
-                <div className="rough-border bg-black/5 px-4 py-4">
+                <div className="rough-border bg-black/5 p-4">
                   <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-sell-rate">
                     Sell rate ({dashboard.liquidity.merchantConfig.fiatCurrency}/USDT)
                   </label>
@@ -327,12 +332,12 @@ export default function LiquidityPage() {
                 </div>
               </div>
 
-              <div className="rough-border bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 p-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Fiat currency</p>
                 <p className="mt-2 text-sm font-mono">{dashboard.liquidity.merchantConfig.fiatCurrency}</p>
               </div>
 
-              <div className="rough-border bg-black/5 px-4 py-4">
+              <div className="rough-border bg-black/5 p-4">
                 <label className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50" htmlFor="merchant-instructions">
                   Instructions
                 </label>
@@ -349,7 +354,7 @@ export default function LiquidityPage() {
                   {dirty ? 'Unsaved changes' : 'Config saved'}
                 </p>
                 <SketchyButton disabled={!dirty || saving} type="submit">
-                  {saving ? 'Saving...' : 'Save Merchant Config'}
+                  {saving ? 'Saving…' : 'Save Merchant Config'}
                 </SketchyButton>
               </div>
             </form>

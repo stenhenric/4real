@@ -179,14 +179,14 @@ const GamePage = () => {
   }
 
   if (previewLoading) {
-    return <div className="text-center py-20 italic">Inspecting the match ledger...</div>;
+    return <div className="text-center py-20 italic">Inspecting the match ledger…</div>;
   }
 
   if (!roomAccessReady && canJoinMatch && matchPreview) {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <SketchyContainer className="bg-white">
-          <h2 className="text-3xl font-bold italic tracking-tight mb-4">Match Preview</h2>
+          <h2 className="text-3xl font-semibold italic tracking-tight mb-4">Match Preview</h2>
           <p className="text-sm font-mono opacity-60 mb-6">
             Room {matchPreview.roomId.toUpperCase()} • Host {matchPreview.p1Username}
           </p>
@@ -200,7 +200,7 @@ const GamePage = () => {
           </p>
           <div className="mt-8 flex gap-3">
             <SketchyButton className="flex-1" disabled={joining} onClick={() => void handleJoinMatch()}>
-              {joining ? 'Joining...' : 'Join Match'}
+              {joining ? 'Joining…' : 'Join Match'}
             </SketchyButton>
             <SketchyButton className="flex-1" onClick={() => navigate('/play')}>
               Cancel
@@ -216,7 +216,7 @@ const GamePage = () => {
   }
 
   if (!room) {
-    return <div className="text-center py-20 italic">Finding the table...</div>;
+    return <div className="text-center py-20 italic">Finding the table…</div>;
   }
 
   const isMyTurn = room.currentTurn === user?.id;
@@ -288,7 +288,7 @@ const GamePage = () => {
             >
               <span className="text-[10px] uppercase font-bold opacity-60 text-ink-black">You</span>
               <span className="font-bold flex items-center gap-2 text-lg text-ink-black">
-                <div className={cn('w-4 h-4 border-2 border-black', myColorClass)} />{' '}
+                <div className={cn('size-4 border-2 border-black', myColorClass)} />{' '}
                 {userData?.username}
               </span>
               <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold text-ink-black">
@@ -304,7 +304,7 @@ const GamePage = () => {
             <div className="flex flex-col items-center justify-center">
               {room.status === 'waiting' ? (
                 <span className="animate-pulse text-xs font-bold uppercase py-1 px-3 bg-yellow-100 border border-yellow-300 shadow-sm text-ink-black">
-                  Waiting for P2...
+                  Waiting for P2…
                 </span>
               ) : room.status === 'completed' ? (
                 <span className="text-xl font-bold uppercase text-ink-red underline decoration-wavy decoration-2">
@@ -325,8 +325,8 @@ const GamePage = () => {
             >
               <span className="text-[10px] uppercase font-bold opacity-60">Opponent</span>
               <span className="font-bold flex items-center gap-2 text-lg">
-                {opponent?.username || 'Waiting...'}{' '}
-                <div className={cn('w-4 h-4 border-2 border-black', opponentColorClass)} />
+                {opponent?.username || 'Waiting…'}{' '}
+                <div className={cn('size-4 border-2 border-black', opponentColorClass)} />
               </span>
               {opponent ? (
                 <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold">
@@ -339,7 +339,7 @@ const GamePage = () => {
                 </div>
               ) : (
                 <span className="font-mono text-[10px] opacity-40 mt-1 uppercase tracking-widest text-ink-black">
-                  Awaiting rival...
+                  Awaiting rival…
                 </span>
               )}
             </div>
@@ -358,7 +358,7 @@ const GamePage = () => {
               width={560}
             />
             {isMyTurn && !gameOver && (
-              <div className="absolute top-0 left-0 w-full h-full pointer-events-none flex opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-0 left-0 size-full pointer-events-none flex opacity-0 group-hover:opacity-100 transition-opacity">
                 {BOARD_COLUMNS.map((column) => (
                   <div key={column} className="flex-1 hover:bg-black/5" />
                 ))}
@@ -378,9 +378,9 @@ const GamePage = () => {
 
       <div className="w-full md:w-64 space-y-6">
         {room.status === 'waiting' && !opponent && (
-          <div className="sticky-note p-6 rough-border animate-bounce-subtle">
+          <div className="sticky-note p-6 rough-border">
             <div className="tape"></div>
-            <h3 className="font-bold text-lg mb-2 uppercase tracking-tighter">Invite Rival</h3>
+            <h3 className="font-semibold text-lg mb-2 uppercase tracking-tighter">Invite Rival</h3>
             <p className="text-xs mb-4 opacity-70 italic">Link is ready for the ink. Send it to a friend!</p>
             <SketchyButton className="w-full text-xs py-2 bg-white" onClick={() => void copyInviteLink()}>
               Copy Draft Link
@@ -394,7 +394,7 @@ const GamePage = () => {
               <Medal size={48} />
             </div>
             <p className="text-[10px] uppercase font-bold tracking-widest opacity-60 mb-1">Total Room Pot</p>
-            <h3 className="text-4xl font-bold tracking-tighter italic">
+            <h3 className="text-4xl font-semibold tracking-tighter italic">
               ${formatMoneyValue(room.projectedWinnerAmount)}
             </h3>
             <p className="text-[10px] italic mt-2 opacity-60">
@@ -404,13 +404,13 @@ const GamePage = () => {
         )}
 
         <SketchyContainer fill="#fff9c4">
-          <h2 className="text-xl font-bold flex items-center gap-2 mb-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
             <Trophy size={18} /> Match Log
           </h2>
           <div className="space-y-2 h-48 overflow-y-auto font-mono text-xs">
-            {room.moves.length === 0 && <p className="opacity-40 italic">Waiting for first strike...</p>}
+            {room.moves.length === 0 && <p className="opacity-40 italic">Waiting for first strike…</p>}
             {room.moves.map((move, index) => (
-              <div key={`${move.userId}-${move.col}-${move.row}-${index}`} className="border-b border-black/5 flex justify-between py-1">
+              <div key={`${move.userId}-${move.col}-${move.row}`} className="border-b border-black/5 flex justify-between py-1">
                 <span>Move {index + 1}</span>
                 <span className="font-bold">
                   {move.userId === user?.id ? 'You' : 'Opp'} dropped @ col {move.col + 1}
@@ -421,12 +421,12 @@ const GamePage = () => {
         </SketchyContainer>
 
         <SketchyButton activeColor="#fee2e2" className="w-full" onClick={() => void handleResignMatch()}>
-          {resigning ? 'Resigning...' : 'Resign Match'}
+          {resigning ? 'Resigning…' : 'Resign Match'}
         </SketchyButton>
 
         {gameOver && (
           <SketchyContainer fill="#dcfce7" roughness={2}>
-            <h3 className="font-bold text-center text-xl mb-4 uppercase">Verdict</h3>
+            <h3 className="font-semibold text-center text-xl mb-4 uppercase">Verdict</h3>
             <p className="text-center font-bold mb-4">
               {gameOver.winnerId === 'draw'
                 ? 'Match is a DRAW!'

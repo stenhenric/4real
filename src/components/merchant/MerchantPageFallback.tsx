@@ -20,7 +20,7 @@ export function MerchantPageFallback({ title, description }: MerchantPageFallbac
             <AlertTriangle size={22} />
             <p className="text-xs font-bold uppercase tracking-[0.25em]">Live Merchant Data Unavailable</p>
           </div>
-          <h2 className="mt-4 text-4xl font-bold italic tracking-tight">{title}</h2>
+          <h2 className="mt-4 text-4xl font-semibold italic tracking-tight">{title}</h2>
           <p className="mt-3 text-sm font-mono opacity-70">{description}</p>
           <div className="mt-4 border border-red-200 bg-red-50 px-4 py-3 text-sm font-mono text-ink-red">
             {error ?? 'The shared merchant dashboard request is still unavailable.'}

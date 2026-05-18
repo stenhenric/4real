@@ -26,6 +26,7 @@ import {
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { SECURITY_PAGE_COPY, shouldAutoStartTotpSetup } from './security-page-content';
 import { getApiErrorMessage } from '../../utils/errors';
+import { formatDateTime } from '../../features/merchant/format';
 
 function formatSessionLabel(session: SessionListItemDTO) {
   const seen = new Date(session.lastSeenAt).toLocaleString();
@@ -55,11 +56,11 @@ function SetupStep({
   return (
     <div className="rough-border bg-paper-soft/80 p-4 sm:p-5">
       <div className="flex gap-4">
-        <div className="rough-border flex h-10 w-10 shrink-0 items-center justify-center bg-white text-lg font-bold text-ink-blue">
+        <div className="rough-border flex size-10 shrink-0 items-center justify-center bg-white text-lg font-bold text-ink-blue">
           {step}
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-xl font-bold italic">{title}</h3>
+          <h3 className="text-xl font-semibold italic">{title}</h3>
           <p className="mt-1 text-sm leading-6 text-black/65">{description}</p>
           {children ? <div className="mt-4">{children}</div> : null}
         </div>
@@ -309,14 +310,15 @@ export default function SecuritySettingsPage() {
     setSessionAction(session.id);
 
     try {
-      const response = await revokeSession(session.id);
       if (session.current) {
+        await revokeSession(session.id);
         clearAuth();
         info('This browser was signed out. Sign in again.');
         navigate('/auth/login', { replace: true });
         return;
       }
 
+      const response = await revokeSession(session.id);
       setSessions(response.sessions ?? []);
       success('Device removed.');
     } catch (error) {
@@ -378,7 +380,7 @@ export default function SecuritySettingsPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
               <div className="relative inline-block">
-                <h2 className="text-3xl font-bold italic tracking-tight">
+                <h2 className="text-3xl font-semibold italic tracking-tight">
                   {SECURITY_PAGE_COPY.mfa.title}
                 </h2>
                 <div className="highlighter bottom-1 left-0 h-3 w-full" />
@@ -458,7 +460,7 @@ export default function SecuritySettingsPage() {
                       onClick={() => void handleStartSetup()}
                       type="button"
                     >
-                      {setupBusy ? 'Preparing setup...' : SECURITY_PAGE_COPY.mfa.startAction}
+                      {setupBusy ? 'Preparing setup…' : SECURITY_PAGE_COPY.mfa.startAction}
                     </SketchyButton>
                   </div>
                 )}
@@ -488,7 +490,7 @@ export default function SecuritySettingsPage() {
                     disabled={verifyBusy || !setup}
                     type="submit"
                   >
-                    {verifyBusy ? 'Verifying setup...' : SECURITY_PAGE_COPY.mfa.enableAction}
+                    {verifyBusy ? 'Verifying setup…' : SECURITY_PAGE_COPY.mfa.enableAction}
                   </SketchyButton>
                 </form>
               </SetupStep>
@@ -520,7 +522,7 @@ export default function SecuritySettingsPage() {
               <div className="rough-border border-danger-border bg-danger-bg p-5">
                 <div className="flex items-center gap-3">
                   <KeyRound className="text-ink-red" size={20} />
-                  <h3 className="text-xl font-bold italic">{SECURITY_PAGE_COPY.mfa.disableTitle}</h3>
+                  <h3 className="text-xl font-semibold italic">{SECURITY_PAGE_COPY.mfa.disableTitle}</h3>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-black/65">
                   {SECURITY_PAGE_COPY.mfa.disableDescription}
@@ -544,7 +546,7 @@ export default function SecuritySettingsPage() {
                     value={disableRecoveryCode}
                   />
                   <SketchyButton className="w-full px-5 py-3 text-base" disabled={disableBusy} type="submit">
-                    {disableBusy ? 'Turning off MFA...' : SECURITY_PAGE_COPY.mfa.disableTitle}
+                    {disableBusy ? 'Turning off MFA…' : SECURITY_PAGE_COPY.mfa.disableTitle}
                   </SketchyButton>
                 </form>
               </div>
@@ -556,7 +558,7 @@ export default function SecuritySettingsPage() {
           <section className="rough-border bg-white p-6 shadow-lg">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <h2 className="text-2xl font-bold italic">{SECURITY_PAGE_COPY.recovery.title}</h2>
+                <h2 className="text-2xl font-semibold italic">{SECURITY_PAGE_COPY.recovery.title}</h2>
                 <p className="mt-1 text-sm leading-6 text-black/65">
                   {SECURITY_PAGE_COPY.recovery.description}
                 </p>
@@ -584,7 +586,7 @@ export default function SecuritySettingsPage() {
                     type="button"
                   >
                     <RefreshCcw size={16} />
-                    {recoveryBusy ? 'Generating...' : SECURITY_PAGE_COPY.mfa.refreshRecoveryAction}
+                    {recoveryBusy ? 'Generating…' : SECURITY_PAGE_COPY.mfa.refreshRecoveryAction}
                   </SketchyButton>
                 ) : null}
               </div>
@@ -602,7 +604,7 @@ export default function SecuritySettingsPage() {
                 ))}
               </div>
             ) : (
-              <div className="mt-5 rough-border bg-paper-soft/80 px-4 py-4">
+              <div className="mt-5 rough-border bg-paper-soft/80 p-4">
                 <p className="text-sm leading-6 text-black/65">
                   {mfaEnabled ? SECURITY_PAGE_COPY.recovery.empty : SECURITY_PAGE_COPY.recovery.setupPending}
                 </p>
@@ -614,7 +616,7 @@ export default function SecuritySettingsPage() {
         <section className="space-y-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-2xl font-bold italic">{SECURITY_PAGE_COPY.sessions.title}</h2>
+              <h2 className="text-2xl font-semibold italic">{SECURITY_PAGE_COPY.sessions.title}</h2>
               <p className="mt-1 text-sm leading-6 text-black/65">
                 {SECURITY_PAGE_COPY.sessions.description}
               </p>
@@ -633,14 +635,14 @@ export default function SecuritySettingsPage() {
 
           {sessionsLoading ? (
             <div className="rough-border bg-white/90 px-5 py-8 text-center text-sm text-black/55">
-              Loading your active devices...
+              Loading your active devices…
             </div>
           ) : (
             <div className="space-y-3">
               {sessions.map((session) => (
                 <div
                   key={session.id}
-                  className="rough-border bg-white px-5 py-5 shadow-sm"
+                  className="rough-border bg-white p-5 shadow-sm"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="min-w-0">
@@ -653,7 +655,7 @@ export default function SecuritySettingsPage() {
                       </div>
                       <p className="mt-3 text-base font-semibold text-black">{formatSessionLabel(session)}</p>
                       <p className="mt-2 text-sm text-black/60">
-                        Idle expiry {new Date(session.idleExpiresAt).toLocaleString()} • Absolute expiry {new Date(session.absoluteExpiresAt).toLocaleString()}
+                        Idle expiry {formatDateTime(session.idleExpiresAt)} • Absolute expiry {formatDateTime(session.absoluteExpiresAt)}
                       </p>
                       {session.ipAddress ? (
                         <p className="mt-1 text-xs font-mono text-black/45">IP {session.ipAddress}</p>

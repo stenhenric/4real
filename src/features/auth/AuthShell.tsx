@@ -32,7 +32,7 @@ export function AuthShell({
         </p>
 
         <div className="relative inline-block mb-2">
-          <h1 className="font-display text-4xl font-bold italic tracking-tighter">
+          <h1 className="font-display text-4xl font-semibold italic tracking-tighter">
             {title}
           </h1>
           <div className="highlighter w-full bottom-1 left-0 h-4 scale-x-105" />

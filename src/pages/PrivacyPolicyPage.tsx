@@ -11,7 +11,7 @@ const PrivacyPolicyPage = () => {
       </Link>
       <div className="rough-border bg-white p-10 shadow-xl relative">
         <div className="tape w-24 h-8 -top-3 left-1/2 -ml-12"></div>
-        <h1 className="text-5xl font-display font-bold italic tracking-tighter mb-8">Privacy Policy</h1>
+        <h1 className="text-5xl font-display font-semibold italic tracking-tighter mb-8">Privacy Policy</h1>
 
         <div className="space-y-6 font-bold text-base opacity-80 leading-relaxed">
           <section>

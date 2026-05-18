@@ -1,4 +1,4 @@
-import { forwardRef, useState } from 'react';
+import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { SketchyButton } from '../../../components/SketchyButton';
 import { AuthInput, type AuthInputProps } from './AuthInput';
@@ -6,42 +6,36 @@ import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
 export interface PasswordInputProps extends AuthInputProps {
   showStrengthMeter?: boolean;
-  onValidationChange?: (isValid: boolean) => void;
 }
 
-export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
-  ({ showStrengthMeter, onValidationChange, value, ...props }, ref) => {
-    const [showPassword, setShowPassword] = useState(false);
+export function PasswordInput({ showStrengthMeter, value, ref, ...props }: PasswordInputProps) {
+  const [showPassword, setShowPassword] = useState(false);
 
-    const toggleShowPassword = () => setShowPassword(!showPassword);
+  const toggleShowPassword = () => setShowPassword(!showPassword);
 
-    return (
-      <div className="w-full">
-        <AuthInput
-          {...props}
-          ref={ref}
-          type={showPassword ? 'text' : 'password'}
-          value={value}
-          endAdornment={
-            <SketchyButton
-              type="button"
-              onClick={toggleShowPassword}
-              className="p-1 text-black/40 hover:text-ink-blue transition-colors focus-visible:outline-2 focus-visible:outline-ink-blue"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </SketchyButton>
-          }
+  return (
+    <div className="w-full">
+      <AuthInput
+        {...props}
+        ref={ref}
+        type={showPassword ? 'text' : 'password'}
+        value={value}
+        endAdornment={
+          <SketchyButton
+            type="button"
+            onClick={toggleShowPassword}
+            className="p-1 text-black/40 hover:text-ink-blue transition-colors focus-visible:outline-2 focus-visible:outline-ink-blue"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+          </SketchyButton>
+        }
+      />
+      {showStrengthMeter && (
+        <PasswordStrengthMeter
+          password={value as string ?? ''}
         />
-        {showStrengthMeter && (
-          <PasswordStrengthMeter 
-            password={value as string ?? ''} 
-            onValidationChange={onValidationChange} 
-          />
-        )}
-      </div>
-    );
-  }
-);
-
-PasswordInput.displayName = 'PasswordInput';
+      )}
+    </div>
+  );
+}

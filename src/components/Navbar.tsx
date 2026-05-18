@@ -70,9 +70,11 @@ const Navbar = () => {
             </Link>
 
             {/* Profile & Logout — desktop only (on mobile, use bottom nav) */}
-            <Link to={`/profile/${user?.id}`} className="hidden md:block p-2 hover:bg-black/5" aria-label="Open profile">
-              <User size={24} />
-            </Link>
+            {user ? (
+              <Link to={`/profile/${user.id}`} className="hidden md:block p-2 hover:bg-black/5" aria-label="Open profile">
+                <User size={24} />
+              </Link>
+            ) : null}
             
             <SketchyButton
               aria-label="Log out"
@@ -111,15 +113,17 @@ const Navbar = () => {
             <Landmark size={22} />
             Bank
           </NavLink>
-          <NavLink
-            to={`/profile/${user?.id}`}
-            className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
-            }
-          >
-            <User size={22} />
-            Profile
-          </NavLink>
+          {user ? (
+            <NavLink
+              to={`/profile/${user.id}`}
+              className={({ isActive }) =>
+                `flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
+              }
+            >
+              <User size={22} />
+              Profile
+            </NavLink>
+          ) : null}
           <SketchyButton
             type="button"
             onClick={handleLogout}

@@ -98,7 +98,12 @@ export function MerchantLayout() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dashboardRequestRef = useRef<{ promise: Promise<void>; signal?: AbortSignal } | null>(null);
+  const dashboardRequestRef = useRef<{
+    controller: AbortController;
+    mode: 'initial' | 'manual' | 'poll';
+    promise: Promise<void>;
+    signal: AbortSignal;
+  } | null>(null);
 
   const loadDashboard = useCallback(async (mode: 'initial' | 'manual' | 'poll', signal?: AbortSignal) => {
     if (mode === 'poll' && document.visibilityState === 'hidden') {
@@ -106,8 +111,30 @@ export function MerchantLayout() {
     }
 
     const activeRequest = dashboardRequestRef.current;
-    if (activeRequest && !activeRequest.signal?.aborted) {
-      await activeRequest.promise;
+    if (activeRequest && !activeRequest.signal.aborted) {
+      if (mode === 'manual' && activeRequest.mode === 'poll') {
+        activeRequest.controller.abort();
+      } else {
+        if (mode === 'manual') {
+          setIsRefreshing(true);
+        }
+
+        await activeRequest.promise;
+        return;
+      }
+    }
+
+    const controller = new AbortController();
+    if (signal) {
+      if (signal.aborted) {
+        controller.abort();
+      } else {
+        signal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+    }
+
+    const requestSignal = controller.signal;
+    if (requestSignal.aborted) {
       return;
     }
 
@@ -120,7 +147,7 @@ export function MerchantLayout() {
 
     const request = (async () => {
       try {
-        const nextDashboard = await getMerchantDashboard(signal);
+        const nextDashboard = await getMerchantDashboard(requestSignal);
         dashboardRef.current = nextDashboard;
         startTransition(() => {
           setDashboard(nextDashboard);
@@ -129,7 +156,8 @@ export function MerchantLayout() {
           setIsRefreshing(false);
         });
       } catch (loadError) {
-        if (isAbortError(loadError, signal)) {
+        if (isAbortError(loadError, requestSignal)) {
+          setIsRefreshing(false);
           return;
         }
 
@@ -150,9 +178,12 @@ export function MerchantLayout() {
       }
     })();
 
-    const trackedRequest: { promise: Promise<void>; signal?: AbortSignal } = signal
-      ? { promise: request, signal }
-      : { promise: request };
+    const trackedRequest = {
+      controller,
+      mode,
+      promise: request,
+      signal: requestSignal,
+    };
     dashboardRequestRef.current = trackedRequest;
 
     try {
@@ -174,6 +205,7 @@ export function MerchantLayout() {
 
     return () => {
       controller.abort();
+      dashboardRequestRef.current?.controller.abort();
       window.clearInterval(interval);
     };
   }, [loadDashboard]);
@@ -211,7 +243,7 @@ export function MerchantLayout() {
             <p className="text-[11px] font-mono font-bold uppercase tracking-[0.35em] opacity-50">
               Merchant Ops
             </p>
-            <h1 className="mt-2 text-4xl font-bold italic tracking-tight text-ink-blue">
+            <h1 className="mt-2 text-4xl font-semibold italic tracking-tight text-ink-blue">
               Treasury Desk
             </h1>
             <p className="mt-3 text-sm font-mono opacity-70">
@@ -352,7 +384,7 @@ export function MerchantLayout() {
                 </div>
               </nav>
 
-              <div className="border border-black/10 bg-black/5 px-4 py-4">
+              <div className="border border-black/10 bg-black/5 p-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Pocket Snapshot</p>
                 <div className="mt-3 grid grid-cols-2 gap-3 font-mono text-sm">
                   <div>
@@ -381,7 +413,7 @@ export function MerchantLayout() {
           </header>
 
           {status === 'loading' && !dashboard ? (
-            <RouteLoading message="Loading treasury ops..." />
+            <RouteLoading message="Loading treasury ops…" />
           ) : (
             <Outlet context={routeContext} />
           )}

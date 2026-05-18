@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { drawConnectFourBoard } from '../canvas/drawConnectFourBoard';
-import { SketchyButton } from '../components/SketchyButton';
 import { useAuth } from '../app/AuthProvider';
 import { useElementSize } from '../hooks/useElementSize';
 import { BarChart2, Trophy, Play, Clock, Wallet, Shield, Users } from 'lucide-react';
 
-// ─── Animated Connect 4 board ─────────────────────────────────────────────────
+// Animated Connect 4 board
 
 type Cell = 'R' | 'B' | null;
 
@@ -76,18 +75,26 @@ function ConnectFourPreview() {
   );
 }
 
-// ─── Sketch bar chart ─────────────────────────────────────────────────────────
+// Sketch bar chart
 
 function SketchBarChart() {
-  const bars = [28, 45, 38, 62, 55, 75, 68];
+  const bars = [
+    { id: 'mon', height: 28 },
+    { id: 'tue', height: 45 },
+    { id: 'wed', height: 38 },
+    { id: 'thu', height: 62 },
+    { id: 'fri', height: 55 },
+    { id: 'sat', height: 75 },
+    { id: 'sun', height: 68 },
+  ];
   return (
-    <svg viewBox="0 0 140 60" className="w-full h-full" aria-hidden="true">
+    <svg viewBox="0 0 140 60" className="size-full" aria-hidden="true">
       <line x1="8" y1="4" x2="8" y2="54" stroke="#1A1A1A" strokeWidth="1.5" strokeLinecap="round" />
       <line x1="8" y1="54" x2="138" y2="54" stroke="#1A1A1A" strokeWidth="1.5" strokeLinecap="round" />
-      {bars.map((h, i) => {
-        const x = 14 + i * 18; const y = 54 - h * 0.62; const bh = h * 0.62;
+      {bars.map((bar, i) => {
+        const x = 14 + i * 18; const y = 54 - bar.height * 0.62; const bh = bar.height * 0.62;
         return (
-          <g key={i}>
+          <g key={bar.id}>
             <rect x={x} y={y} width={11} height={bh} fill="rgba(26,54,93,0.10)" stroke="#1A365D" strokeWidth="1.2" />
             {Array.from({ length: Math.floor(bh / 4) }).map((_, li) => (
               <line key={li} x1={x + 1} y1={y + li * 4 + 2} x2={x + 10} y2={y + li * 4 + 2} stroke="rgba(26,54,93,0.3)" strokeWidth="0.8" />
@@ -99,7 +106,7 @@ function SketchBarChart() {
   );
 }
 
-// ─── Top players ──────────────────────────────────────────────────────────────
+// Top players
 
 const TOP_PLAYERS = [
   { rank: 1, name: 'Navername', node: 'NODE: [ID]' },
@@ -110,7 +117,7 @@ const TOP_PLAYERS = [
   { rank: 6, name: 'Magin',   node: 'NODE: [ID]' },
 ];
 
-// ─── Landing Page ─────────────────────────────────────────────────────────────
+// Landing Page
 
 const STEPS = [
   { n: '01', title: 'Fund your balance',   body: 'Deposit USDT via TON wallet. Balance is always visible in-app.' },
@@ -142,7 +149,7 @@ export default function LandingPage() {
       >
         <div className="grid gap-8 md:grid-cols-[1fr_1.1fr] md:items-start">
 
-          {/* Left — Board preview */}
+          {/* Left: Board preview */}
           <div className="rough-border bg-white p-5 relative shadow-xl">
             <div className="tape w-20 h-6 -top-2 left-8 rotate-1" />
             <div className="tape w-16 h-5 -top-2 right-12 -rotate-2 opacity-70" />
@@ -155,21 +162,21 @@ export default function LandingPage() {
 
             <div className="mt-4 flex items-center gap-2">
               <span
-                className="inline-block w-3 h-3 rounded-full bg-ink-red"
+                className="inline-block size-3 rounded-full bg-ink-red"
                 aria-hidden="true"
               />
               <p className="text-xs font-bold text-ink-red uppercase tracking-wide">
-                Red connects 4 — winner!
+                Red connects 4: winner!
               </p>
             </div>
           </div>
 
-          {/* Right — Headline + cards */}
+          {/* Right: Headline + cards */}
           <div className="space-y-6">
 
             {/* Live badge */}
             <div className="inline-flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-green-600 animate-pulse" aria-hidden="true" />
+              <span className="size-2 rounded-full bg-green-600 animate-pulse" aria-hidden="true" />
               <span className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-50">
                 Real-money Connect 4
               </span>
@@ -179,7 +186,7 @@ export default function LandingPage() {
             <div className="relative inline-block">
               <h1
                 id="hero-heading"
-                className="font-display text-5xl lg:text-6xl font-bold italic tracking-tighter text-ink-black leading-none"
+                className="font-display text-5xl lg:text-6xl font-semibold italic tracking-tighter text-ink-black leading-none"
               >
                 "Get Real.<br />Connect&nbsp;4."
               </h1>
@@ -194,7 +201,7 @@ export default function LandingPage() {
             {/* Info cards row */}
             <div className="grid grid-cols-2 gap-4">
 
-              {/* Real-time Stats — blue sticky */}
+              {/* Real-time Stats: blue sticky */}
               <div className="rough-border bg-[#E8F0FB] p-4 relative shadow-md">
                 <div className="tape w-14 h-5 -top-2 right-3 rotate-2 opacity-60" />
                 <div className="flex items-center gap-2 mb-2">
@@ -206,7 +213,7 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              {/* Top Sketchers — yellow sticky note */}
+              {/* Top Sketchers: yellow sticky note */}
               <div className="sticky-note rough-border p-4 relative shadow-md">
                 <div className="tape w-14 h-5 -top-2 left-3 -rotate-1 opacity-60" />
                 <div className="flex items-center gap-2 mb-2">
@@ -226,13 +233,12 @@ export default function LandingPage() {
 
             {/* CTA buttons */}
             <div className="flex flex-col sm:flex-row items-start gap-3">
-              <Link to={primaryHref}>
-                <SketchyButton
-                  className="px-8 py-3 text-base font-bold"
-                  activeColor="#fff9c4"
-                >
-                  {primaryLabel}
-                </SketchyButton>
+              <Link
+                to={primaryHref}
+                className="sketchy-border relative inline-flex min-w-0 items-center justify-center px-8 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
+                style={{ backgroundColor: '#fff9c4' }}
+              >
+                {primaryLabel}
               </Link>
               {!user && (
                 <Link
@@ -281,11 +287,11 @@ export default function LandingPage() {
       </section>
 
       {/* ══ HOW IT WORKS ══════════════════════════════════════════════ */}
-      <section aria-labelledby="how-it-works-heading" className="py-8 space-y-8">
+      <section id="how-it-works" aria-labelledby="how-it-works-heading" className="py-8 space-y-8">
         <header>
           <p className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-50">How it works</p>
           <div className="relative inline-block mt-2">
-            <h2 id="how-it-works-heading" className="font-display text-4xl font-bold italic tracking-tighter">
+            <h2 id="how-it-works-heading" className="font-display text-4xl font-semibold italic tracking-tighter">
               Three moves to the table.
             </h2>
             <div className="highlighter w-full bottom-1 left-0 h-4 scale-x-105" />
@@ -302,7 +308,7 @@ export default function LandingPage() {
               <p className="font-bold text-5xl italic tracking-tighter opacity-15 leading-none select-none">
                 {step.n}
               </p>
-              <h3 className="font-display mt-2 font-bold text-xl italic tracking-tight">{step.title}</h3>
+              <h3 className="font-display mt-2 font-semibold text-xl italic tracking-tight">{step.title}</h3>
               <p className="mt-2 text-sm font-bold opacity-60 leading-6">{step.body}</p>
             </div>
           ))}
@@ -314,7 +320,7 @@ export default function LandingPage() {
         <header>
           <p className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-50">Features</p>
           <div className="relative inline-block mt-2">
-            <h2 id="features-heading" className="font-display text-4xl font-bold italic tracking-tighter">
+            <h2 id="features-heading" className="font-display text-4xl font-semibold italic tracking-tighter">
               Built for real play.
             </h2>
             <div className="highlighter w-full bottom-1 left-0 h-4 scale-x-105" />
@@ -326,7 +332,7 @@ export default function LandingPage() {
             <div key={title} className="rough-border bg-white p-5 shadow-md hover:-translate-y-1 hover:shadow-xl transition-all duration-300">
               <div className="flex items-center gap-3 mb-3">
                 <Icon size={20} className="text-ink-blue opacity-80" aria-hidden="true" />
-                <h3 className="font-display font-bold text-lg uppercase tracking-tight">{title}</h3>
+                <h3 className="font-display font-semibold text-lg uppercase tracking-tight">{title}</h3>
               </div>
               <p className="text-sm font-bold opacity-60 leading-6">{body}</p>
             </div>
@@ -342,25 +348,24 @@ export default function LandingPage() {
           <p className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-40">Ready?</p>
 
           <div className="relative inline-block mt-3">
-            <h2 id="final-cta-heading" className="font-display text-4xl sm:text-5xl font-bold italic tracking-tighter">
+            <h2 id="final-cta-heading" className="font-display text-4xl sm:text-5xl font-semibold italic tracking-tighter">
               One match. Real stakes.
             </h2>
             <div className="highlighter w-full bottom-1 left-0 h-4 scale-x-105" />
           </div>
 
           <p className="mt-4 text-sm font-bold opacity-60 leading-7 max-w-md mx-auto">
-            Start with a verified account and your first deposit. Everything else —
-            match creation, settlement, and history — is handled for you.
+            Start with a verified account and your first deposit. Everything else:
+            match creation, settlement, and history, is handled for you.
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link to={primaryHref}>
-              <SketchyButton
-                className="px-10 py-3 text-base font-bold"
-                activeColor="#fff9c4"
-              >
-                {primaryLabel}
-              </SketchyButton>
+            <Link
+              to={primaryHref}
+              className="sketchy-border relative inline-flex min-w-0 items-center justify-center px-10 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
+              style={{ backgroundColor: '#fff9c4' }}
+            >
+              {primaryLabel}
             </Link>
             {!user && (
               <Link
@@ -383,7 +388,6 @@ export default function LandingPage() {
                 { label: 'how it works', href: '#how-it-works' },
                 { label: 'privacy policy', href: '/privacy' },
                 { label: 'terms of use', href: '/terms' },
-                { label: 'community', href: '#community' },
               ].map((link, i, arr) => (
                 <li key={link.label} className="flex items-center gap-1">
                   {link.href.startsWith('#') ? (

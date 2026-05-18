@@ -7,7 +7,7 @@ import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { createWithdrawal } from '../../services/transactions.service';
-import { formatMoneyValue } from '../../utils/exact-money.ts';
+import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
@@ -31,8 +31,15 @@ const WithdrawPanel = () => {
   const handleWithdraw = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
-      addToast('Enter a valid amount.', 'error');
+    let normalizedAmount: string;
+    try {
+      normalizedAmount = normalizeFixedScaleAmount(amount, {
+        scale: 6,
+        allowZero: false,
+        label: 'Withdrawal amount',
+      });
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Enter a valid amount.', 'error');
       return;
     }
 
@@ -44,7 +51,7 @@ const WithdrawPanel = () => {
     setLoading(true);
 
     try {
-      await createWithdrawal({ amountUsdt: Number(amount).toFixed(6), toAddress });
+      await createWithdrawal({ amountUsdt: normalizedAmount, toAddress });
       addToast('Withdrawal queued.', 'success');
       setAmount('');
       setToAddress(connectedWalletAddress || '');
@@ -65,11 +72,11 @@ const WithdrawPanel = () => {
       <div className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
-            <div className="rough-border flex h-16 w-16 items-center justify-center bg-danger-bg">
+            <div className="rough-border flex size-16 items-center justify-center bg-danger-bg">
               <ArrowUpRight size={32} className="text-danger-text" />
             </div>
             <div>
-              <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Withdraw USDT</h2>
+              <h2 className="text-3xl font-semibold italic tracking-tighter uppercase">Withdraw USDT</h2>
               <p className="text-sm font-mono opacity-60">Send USDT from your balance to a TON wallet address</p>
             </div>
           </div>
@@ -132,7 +139,7 @@ const WithdrawPanel = () => {
               className="w-full text-lg font-mono bg-transparent border-b-2 border-black/20 focus:border-black p-2 transition-colors"
               id={WITHDRAW_ADDRESS_ID}
               onChange={(event) => setToAddress(event.target.value)}
-              placeholder="EQ..."
+              placeholder="EQ…"
               required
               type="text"
               value={toAddress}
@@ -140,7 +147,7 @@ const WithdrawPanel = () => {
           </div>
 
           <SketchyButton className="w-full text-xl py-4 mt-4" disabled={loading} type="submit">
-            {loading ? 'Processing...' : 'Request Withdrawal'}
+            {loading ? 'Processing…' : 'Request Withdrawal'}
           </SketchyButton>
         </form>
       </div>

@@ -82,6 +82,7 @@ export default function LoginPage() {
       const response = await loginPassword({
         identifier: loginIdentifier,
         password,
+        redirectTo,
         ...(turnstileToken && { turnstileToken }),
       });
 

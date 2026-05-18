@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { mock } from 'node:test';
 
 import {
@@ -10,7 +9,9 @@ import {
   compactToastQueue,
   type ToastQueueItem,
 } from '../../src/app/toast-rules.ts';
+import { scrubSensitiveTokenFromCurrentUrl } from '../../src/features/auth/url-token.ts';
 import { getTransactionAccentClass, isCreditTransaction } from '../../src/features/bank/transactionPresentation.ts';
+import { formatDateTime, formatMoney } from '../../src/features/merchant/format.ts';
 import { isAbortError } from '../../src/utils/isAbortError.ts';
 import {
   consumeMagicLink,
@@ -21,7 +22,11 @@ import {
 } from '../../src/services/auth.service.ts';
 import { shouldClearAuthAfterRefreshError } from '../../src/features/auth/refresh-error.ts';
 import request, { ApiClientError } from '../../src/services/api/apiClient.ts';
-import { getMatch, joinMatch } from '../../src/services/matches.service.ts';
+import { getMatch, getUserMatches, joinMatch } from '../../src/services/matches.service.ts';
+import { updateOrderStatus } from '../../src/services/orders.service.ts';
+import { getUserProfile } from '../../src/services/users.service.ts';
+import { shouldAutoStartTotpSetup } from '../../src/pages/auth/security-page-content.ts';
+import { normalizeFixedScaleAmount } from '../../src/utils/exact-money.ts';
 
 function createJsonResponse(data: unknown, status = 200) {
   return {
@@ -105,16 +110,20 @@ test('frontend toast timing follows the auto-dismiss guideline', () => {
 });
 
 test('frontend buttons render through SketchyButton', () => {
-  const rawButtons = collectSourceFiles('src')
-    .filter((filePath) => filePath.endsWith('.tsx') && !filePath.endsWith(join('components', 'SketchyButton.tsx')))
-    .flatMap((filePath) => {
-      const source = readFileSync(filePath, 'utf8');
-      return source
-        .split(/\r?\n/)
-        .map((line, index) => ({ line, lineNumber: index + 1 }))
-        .filter(({ line }) => /<button\b/.test(line))
-        .map(({ lineNumber }) => `${filePath}:${lineNumber}`);
+  const rawButtons: string[] = [];
+
+  for (const filePath of collectSourceFiles('src')) {
+    if (!filePath.endsWith('.tsx') || filePath.endsWith(join('components', 'SketchyButton.tsx'))) {
+      continue;
+    }
+
+    const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (/<button\b/.test(line)) {
+        rawButtons.push(`${filePath}:${index + 1}`);
+      }
     });
+  }
 
   assert.deepEqual(rawButtons, []);
 });
@@ -172,9 +181,24 @@ test('merchant layout coalesces dashboard polls and pauses background-tab pollin
 
   assert.match(layoutSource, /dashboardRequestRef/);
   assert.match(layoutSource, /document\.visibilityState === 'hidden'/);
-  assert.match(layoutSource, /!activeRequest\.signal\?\.aborted/);
+  assert.match(layoutSource, /!activeRequest\.signal\.aborted/);
+  assert.match(layoutSource, /mode === 'manual' && activeRequest\.mode === 'poll'/);
+  assert.match(layoutSource, /activeRequest\.controller\.abort\(\)/);
   assert.match(layoutSource, /useMemo/);
   assert.match(layoutSource, /refreshDashboard/);
+});
+
+test('merchant order and deposit reloads ignore stale filter responses', () => {
+  const orderDeskSource = readFileSync(join('src', 'pages', 'merchant', 'OrderDeskPage.tsx'), 'utf8');
+  const depositsSource = readFileSync(join('src', 'pages', 'merchant', 'DepositsPage.tsx'), 'utf8');
+
+  assert.match(orderDeskSource, /ordersRequestRef/);
+  assert.match(orderDeskSource, /ordersQueryRef/);
+  assert.match(orderDeskSource, /rowActions/);
+  assert.match(orderDeskSource, /getRowActionKey/);
+  assert.match(depositsSource, /depositsRequestRef/);
+  assert.match(depositsSource, /depositsFilterRef/);
+  assert.match(depositsSource, /requestedStatus/);
 });
 
 test('ApiClientError preserves status, code, and details from backend responses', async (t) => {
@@ -198,12 +222,12 @@ test('ApiClientError preserves status, code, and details from backend responses'
   );
 });
 
-test('frontend match service forwards invite tokens into preview and join requests', async (t) => {
-  const calls: Array<{ input: unknown; init?: RequestInit }> = [];
+test('frontend match service encodes route params and forwards invite tokens', async (t) => {
+  const calls: Array<{ input: unknown; init: RequestInit | undefined }> = [];
   const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
     calls.push({ input, init });
     return createJsonResponse({
-      roomId: 'room-1',
+      roomId: 'room/1',
       p1Username: 'host',
       player1Id: 'p1',
       status: 'waiting',
@@ -214,12 +238,18 @@ test('frontend match service forwards invite tokens into preview and join reques
   });
   t.after(() => fetchMock.mock.restore());
 
-  await getMatch('room-1', undefined, 'invite token');
-  await joinMatch('room-1', 'invite token');
+  await getUserMatches('user/id?x=1');
+  await getUserProfile('profile/id?x=1');
+  await getMatch('room/1', undefined, 'invite token');
+  await joinMatch('room/1', 'invite token');
+  await updateOrderStatus('order/id?x=1', 'DONE');
 
-  assert.equal(calls[0]?.input, '/api/matches/room-1?invite=invite%20token');
-  assert.equal(calls[1]?.input, '/api/matches/room-1/join');
-  const joinHeaders = new Headers(calls[1]?.init?.headers);
+  assert.equal(calls[0]?.input, '/api/matches/user/user%2Fid%3Fx%3D1');
+  assert.equal(calls[1]?.input, '/api/users/profile%2Fid%3Fx%3D1');
+  assert.equal(calls[2]?.input, '/api/matches/room%2F1?invite=invite%20token');
+  assert.equal(calls[3]?.input, '/api/matches/room%2F1/join');
+  assert.equal(calls[4]?.input, '/api/orders/order%2Fid%3Fx%3D1');
+  const joinHeaders = new Headers(calls[3]?.init?.headers);
   assert.equal(joinHeaders.get('X-Match-Invite'), 'invite token');
   assert.ok(joinHeaders.get('Idempotency-Key'));
 });
@@ -227,20 +257,29 @@ test('frontend match service forwards invite tokens into preview and join reques
 test('frontend bank presentation treats refund credits as positive incoming funds', () => {
   assert.equal(isCreditTransaction({
     type: 'WITHDRAW_REFUND',
-    amount: 12,
+    amount: '12.000000',
   }), true);
   assert.equal(isCreditTransaction({
     type: 'SELL_P2P_REFUND',
-    amount: 7,
+    amount: '7.000000',
   }), true);
   assert.equal(getTransactionAccentClass({
     type: 'WITHDRAW_REFUND',
-    amount: 12,
+    amount: '12.000000',
   }), 'bg-green-600');
   assert.equal(getTransactionAccentClass({
     type: 'SELL_P2P_REFUND',
-    amount: 7,
+    amount: '7.000000',
   }), 'bg-green-600');
+});
+
+test('merchant formatters use unavailable fallback for missing money and invalid dates', () => {
+  assert.equal(formatMoney(null), 'Unavailable');
+  assert.equal(formatMoney(undefined), 'Unavailable');
+  assert.equal(formatMoney('not-a-number'), 'Unavailable');
+  assert.equal(formatDateTime(undefined), 'Unavailable');
+  assert.equal(formatDateTime(''), 'Unavailable');
+  assert.equal(formatDateTime('not-a-date'), 'Unavailable');
 });
 
 test('bank merchant panel keeps the trade form off SketchyContainer and uses screenshot guidance', () => {
@@ -322,30 +361,31 @@ test('frontend UI avoids rounded card badge input and button corners', () => {
   };
   collectSourceFiles('src');
 
-  const roundedFindings = sourceFiles.flatMap((filePath) => {
+  const roundedFindings: string[] = [];
+
+  for (const filePath of sourceFiles) {
     const normalizedPath = filePath.replace(/\\/g, '/');
     if (allowedRoundedSources.some((allowedPath) => normalizedPath.endsWith(allowedPath.replace(/\\/g, '/')))) {
-      return [];
+      continue;
     }
 
-    return readFileSync(filePath, 'utf8')
+    readFileSync(filePath, 'utf8')
       .split('\n')
-      .flatMap((line, index) => {
-        if (!/(?:\brounded(?:-[a-z0-9/[\]._-]+)?\b|border-radius)/.test(line)) {
-          return [];
+      .forEach((line, index) => {
+        if (
+          /(?:\brounded(?:-[a-z0-9/[\]._-]+)?\b|border-radius)/.test(line)
+          && !allowedRoundedLinePatterns.some((pattern) => pattern.test(line))
+        ) {
+          roundedFindings.push(`${normalizedPath}:${index + 1}: ${line.trim()}`);
         }
-        if (allowedRoundedLinePatterns.some((pattern) => pattern.test(line))) {
-          return [];
-        }
-        return [`${normalizedPath}:${index + 1}: ${line.trim()}`];
       });
-  });
+  }
 
   assert.deepEqual(roundedFindings, []);
 });
 
 test('frontend auth service consumes emailed auth tokens with POST requests', async (t) => {
-  const calls: Array<{ input: unknown; init?: RequestInit }> = [];
+  const calls: Array<{ input: unknown; init: RequestInit | undefined }> = [];
   const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
     calls.push({ input, init });
     return createJsonResponse({ status: 'authenticated', redirectTo: '/play' });
@@ -378,15 +418,19 @@ test('frontend auth service consumes emailed auth tokens with POST requests', as
   );
 });
 
-test('frontend auth service sends password login identifiers', async (t) => {
-  const calls: Array<{ input: unknown; init?: RequestInit }> = [];
+test('frontend auth service sends password login identifiers with sanitized redirects', async (t) => {
+  const calls: Array<{ input: unknown; init: RequestInit | undefined }> = [];
   const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
     calls.push({ input, init });
     return createJsonResponse({ status: 'authenticated' });
   });
   t.after(() => fetchMock.mock.restore());
 
-  await loginPassword({ identifier: 'SketchMaster', password: 'paper-lobby-stakes-2026' });
+  await loginPassword({
+    identifier: 'SketchMaster',
+    password: 'paper-lobby-stakes-2026',
+    redirectTo: '/merchant/orders?status=PENDING',
+  });
 
   assert.deepEqual(
     calls.map((entry) => ({ input: entry.input, method: entry.init?.method, body: entry.init?.body })),
@@ -394,9 +438,66 @@ test('frontend auth service sends password login identifiers', async (t) => {
       {
         input: '/api/auth/login/password',
         method: 'POST',
-        body: JSON.stringify({ identifier: 'SketchMaster', password: 'paper-lobby-stakes-2026' }),
+        body: JSON.stringify({
+          identifier: 'SketchMaster',
+          password: 'paper-lobby-stakes-2026',
+          redirectTo: '/merchant/orders?status=PENDING',
+        }),
       },
     ],
+  );
+});
+
+test('frontend public auth token endpoints do not refresh or dispatch session-expired events', async (t) => {
+  const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+  const dispatchedEvents: string[] = [];
+  (globalThis as typeof globalThis & { window?: unknown }).window = {
+    dispatchEvent(event: Event) {
+      dispatchedEvents.push(event.type);
+      return true;
+    },
+  } as Partial<Window> as Window & typeof globalThis;
+
+  const calls: Array<{ input: unknown; init: RequestInit | undefined }> = [];
+  const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
+    calls.push({ input, init });
+    return createJsonResponse({
+      code: 'TOKEN_INVALID',
+      message: 'Invalid token',
+    }, 401);
+  });
+  t.after(() => {
+    fetchMock.mock.restore();
+    if (previousWindow === undefined) {
+      delete (globalThis as typeof globalThis & { window?: unknown }).window;
+    } else {
+      (globalThis as typeof globalThis & { window?: unknown }).window = previousWindow;
+    }
+  });
+
+  await assert.rejects(consumeMagicLink({ token: 'bad' }), ApiClientError);
+  await assert.rejects(consumeVerificationEmail({ token: 'bad' }), ApiClientError);
+  await assert.rejects(consumeSuspiciousLogin({ token: 'bad' }), ApiClientError);
+
+  assert.deepEqual(calls.map((entry) => entry.input), [
+    '/api/auth/login/magic-link/consume',
+    '/api/auth/email/verify/consume',
+    '/api/auth/login/suspicious/consume',
+  ]);
+  assert.deepEqual(dispatchedEvents, []);
+});
+
+test('frontend money normalization rejects unsupported precision without number rounding', () => {
+  assert.equal(normalizeFixedScaleAmount('10', { scale: 6 }), '10.000000');
+  assert.equal(normalizeFixedScaleAmount('10.25', { scale: 6 }), '10.250000');
+  assert.equal(normalizeFixedScaleAmount('00010.250000', { scale: 6 }), '10.250000');
+  assert.throws(
+    () => normalizeFixedScaleAmount('0.0000009', { scale: 6 }),
+    /at most 6 decimal places/,
+  );
+  assert.throws(
+    () => normalizeFixedScaleAmount('1e-7', { scale: 6 }),
+    /plain decimal/,
   );
 });
 
@@ -411,23 +512,21 @@ test('frontend abort helper treats WebKit aborted fetch errors as aborts only wh
   assert.equal(isAbortError(new TypeError('Load failed'), undefined, { pageUnloading: true }), true);
 });
 
-test('frontend auth helper removes only sensitive token query parameters from the current URL', async () => {
-  const helperPath = join(process.cwd(), 'src', 'features', 'auth', 'url-token.ts');
-  const { scrubSensitiveTokenFromCurrentUrl } = await import(pathToFileURL(helperPath).href);
+test('frontend auth helper removes only sensitive token query parameters from the current URL', () => {
   const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
-  const replaceCalls: Array<{ state: unknown; title: string; url?: string | URL | null }> = [];
+  const replaceCalls: Array<{ state: unknown; title: string; url: string | URL | null | undefined }> = [];
 
   (globalThis as typeof globalThis & { window?: unknown }).window = {
     location: {
       href: 'https://app.example.com/auth/reset-password?token=secret-token&email=alice%40example.com#form',
-    },
+    } as Location,
     history: {
       state: { from: 'test' },
       replaceState(state: unknown, title: string, url?: string | URL | null) {
         replaceCalls.push({ state, title, url });
       },
-    },
-  };
+    } as History,
+  } as Partial<Window> as Window & typeof globalThis;
 
   try {
     scrubSensitiveTokenFromCurrentUrl();
@@ -449,7 +548,7 @@ test('frontend auth helper removes only sensitive token query parameters from th
 });
 
 test('frontend logout bypasses automatic session refresh on 401', async (t) => {
-  const calls: Array<{ input: unknown; init?: RequestInit }> = [];
+  const calls: Array<{ input: unknown; init: RequestInit | undefined }> = [];
   const fetchMock = mock.method(globalThis, 'fetch', async (input: unknown, init?: RequestInit) => {
     calls.push({ input, init });
     return createJsonResponse({
@@ -483,6 +582,15 @@ test('frontend auth refresh clears state only after explicit unauthenticated res
   assert.equal(shouldClearAuthAfterRefreshError(new TypeError('Failed to fetch')), false);
 });
 
+test('auth provider ignores stale refreshes after newer auth state changes', () => {
+  const authProviderSource = readFileSync(join('src', 'app', 'AuthProvider.tsx'), 'utf8');
+
+  assert.match(authProviderSource, /authGenerationRef/);
+  assert.match(authProviderSource, /requestGeneration/);
+  assert.match(authProviderSource, /authGenerationRef\.current !== requestGeneration/);
+  assert.match(authProviderSource, /authStatus === 'authenticated'/);
+});
+
 test('security page copy uses settings-oriented MFA guidance', () => {
   const pageSource = readFileSync(join('src', 'pages', 'auth', 'SecuritySettingsPage.tsx'), 'utf8');
   const contentSource = readFileSync(join('src', 'pages', 'auth', 'security-page-content.ts'), 'utf8');
@@ -497,12 +605,10 @@ test('security page copy uses settings-oriented MFA guidance', () => {
   assert.match(pageSource, /SECURITY_PAGE_COPY/);
 });
 
-test('security page auto-start helper only runs when setup is required and idle', async () => {
+test('security page auto-start helper only runs when setup is required and idle', () => {
   const helperPath = join(process.cwd(), 'src', 'pages', 'auth', 'security-page-content.ts');
 
   assert.equal(existsSync(helperPath), true, 'Expected security page helper module to exist');
-
-  const { shouldAutoStartTotpSetup } = await import(pathToFileURL(helperPath).href);
 
   assert.equal(shouldAutoStartTotpSetup({
     setupRequested: true,

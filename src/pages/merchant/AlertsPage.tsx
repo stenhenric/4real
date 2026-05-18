@@ -24,7 +24,7 @@ export default function AlertsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-4xl font-bold italic tracking-tight">Alerts & Risk</h2>
+        <h2 className="text-4xl font-semibold italic tracking-tight">Alerts & Risk</h2>
         <p className="text-sm font-mono opacity-60">
           Consolidated operational signals from the order queue, balance checks, deposits, withdrawals, and worker runtime.
         </p>
@@ -49,7 +49,7 @@ export default function AlertsPage() {
         <div className="flex items-center gap-3 border-b border-black/10 pb-3">
           <ShieldAlert className="text-ink-red" size={22} />
           <div>
-            <h3 className="text-2xl font-bold italic">Active Alert Feed</h3>
+            <h3 className="text-2xl font-semibold italic">Active Alert Feed</h3>
             <p className="text-sm font-mono opacity-60">Most severe issues are shown first. Use the target links to jump into the relevant workflow.</p>
           </div>
         </div>
@@ -61,7 +61,7 @@ export default function AlertsPage() {
             </div>
           ) : (
             dashboard.alerts.map((alert) => (
-              <div key={alert.id} className="border border-black/10 bg-black/5 px-5 py-5">
+              <div key={alert.id} className="border border-black/10 bg-black/5 p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="max-w-3xl">
                     <div className="flex flex-wrap items-center gap-2">
@@ -72,7 +72,7 @@ export default function AlertsPage() {
                         {alert.category}
                       </span>
                     </div>
-                    <h4 className="mt-3 text-2xl font-bold italic">{alert.title}</h4>
+                    <h4 className="mt-3 text-2xl font-semibold italic">{alert.title}</h4>
                     <p className="mt-2 text-sm font-mono opacity-70">{alert.description}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-mono opacity-60">
                       {alert.metric ? <span>Metric {alert.metric}</span> : null}

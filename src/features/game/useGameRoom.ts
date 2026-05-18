@@ -55,6 +55,7 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
     socketRef.current = socket;
 
     const syncRoom = (nextRoom: RoomState) => {
+      roomRef.current = nextRoom;
       setRoom(nextRoom);
 
       if (nextRoom.status === 'completed' && nextRoom.winnerId) {
@@ -71,11 +72,13 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
     };
 
     const handleGameStarted = (nextRoom: RoomState) => {
+      roomRef.current = nextRoom;
       setGameOver(null);
       setRoom(nextRoom);
     };
 
     const handleMoveMade = (nextRoom: RoomState) => {
+      roomRef.current = nextRoom;
       setRoom(nextRoom);
     };
 
@@ -84,6 +87,7 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
         winnerId,
         ...(winningLine ? { winningLine } : {}),
       };
+      roomRef.current = nextRoom;
       setRoom(nextRoom);
       setGameOver(nextGameOver);
       await handleGameOver(nextGameOver, nextRoom);

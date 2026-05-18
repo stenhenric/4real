@@ -1,5 +1,6 @@
-import { forwardRef, useImperativeHandle, useRef, useEffect, useCallback } from 'react';
+import { useImperativeHandle, useRef, useEffect, useCallback, type Ref } from 'react';
 import { getTurnstileSiteKey } from './turnstile-config';
+import { ensureScript } from './auth-turnstile-script';
 
 export interface AuthTurnstileRef {
   reset: () => void;
@@ -9,87 +10,7 @@ interface AuthTurnstileProps {
   onSuccess: (token: string) => void;
   onError?: () => void;
   onExpire?: () => void;
-}
-
-declare global {
-  interface Window {
-    turnstile: {
-      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
-      reset: (id: string) => void;
-      remove: (id: string) => void;
-    };
-  }
-}
-
-const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-const SCRIPT_ID = 'cf-turnstile-script';
-let scriptLoadPromise: Promise<void> | null = null;
-
-function ensureScript(): Promise<void> {
-  if (window.turnstile) {
-    return Promise.resolve();
-  }
-
-  if (scriptLoadPromise) {
-    return scriptLoadPromise;
-  }
-
-  scriptLoadPromise = new Promise((resolve, reject) => {
-    let script = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
-
-    if (!script) {
-      script = document.createElement('script');
-      script.id = SCRIPT_ID;
-      script.src = SCRIPT_SRC;
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    }
-
-    const activeScript = script;
-    let settled = false;
-    let poll: number;
-    let timeout: number;
-    function cleanup() {
-      window.clearInterval(poll);
-      window.clearTimeout(timeout);
-      activeScript.removeEventListener('error', onError);
-    }
-    function succeed() {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve();
-    }
-    function fail(error: Error) {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      scriptLoadPromise = null;
-      reject(error);
-    }
-    function onError() {
-      fail(new Error('Failed to load Turnstile script'));
-    }
-
-    // Script already in DOM but turnstile not ready yet — poll for it
-    poll = window.setInterval(() => {
-      if (window.turnstile) {
-        succeed();
-      }
-    }, 50);
-
-    activeScript.addEventListener('error', onError, { once: true });
-
-    // Hard timeout safety valve
-    timeout = window.setTimeout(() => {
-      if (!window.turnstile) {
-        fail(new Error('Turnstile script timed out'));
-      }
-    }, 10_000);
-  });
-
-  return scriptLoadPromise;
+  ref?: Ref<AuthTurnstileRef>;
 }
 
 const generateSecureId = () => {
@@ -105,8 +26,7 @@ const generateSecureId = () => {
   return Date.now().toString(36);
 };
 
-export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
-  ({ onSuccess, onError, onExpire }, ref) => {
+export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnstileProps) {
     const siteKey = getTurnstileSiteKey();
 
     const containerIdRef = useRef(`turnstile-${generateSecureId()}`);
@@ -189,7 +109,7 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
     if (!siteKey) {
       return (
         <div className="my-4 border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-700">
-          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>VITE_TURNSTILE_SITE_KEY</code> or <code>TURNSTILE_SITE_KEY</code>).
+          <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>VITE_TURNSTILE_SITE_KEY</code>).
         </div>
       );
     }
@@ -200,7 +120,4 @@ export const AuthTurnstile = forwardRef<AuthTurnstileRef, AuthTurnstileProps>(
         <div id={containerIdRef.current} />
       </div>
     );
-  },
-);
-
-AuthTurnstile.displayName = 'AuthTurnstile';
+}

@@ -42,8 +42,8 @@ function resolveCssColor(value: string, fallback: string) {
     return value;
   }
 
-  const tokenName = value.slice(4, -1).trim();
-  return getComputedStyle(document.documentElement).getPropertyValue(tokenName).trim() || fallback;
+  const [tokenName = '', tokenFallback] = value.slice(4, -1).split(',', 2).map((part) => part.trim());
+  return getComputedStyle(document.documentElement).getPropertyValue(tokenName).trim() || tokenFallback || fallback;
 }
 
 export const SketchyButton = ({ 

@@ -7,6 +7,7 @@ import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { useToast } from '../../app/ToastProvider';
 import { createDepositMemo, prepareTonConnectDeposit } from '../../services/transactions.service';
 import type { DepositMemoDTO } from '../../types/api';
+import { normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 
 const DEPOSIT_ADDRESS_ID = 'deposit-address';
@@ -42,15 +43,16 @@ const DepositPanel = () => {
     setSendingTransaction(true);
 
     try {
-      const amountUsdt = Number(depositAmount);
-      if (!Number.isFinite(amountUsdt) || amountUsdt <= 0) {
-        throw new Error('Please enter a valid deposit amount.');
-      }
+      const amountUsdt = normalizeFixedScaleAmount(depositAmount, {
+        scale: 6,
+        allowZero: false,
+        label: 'Deposit amount',
+      });
 
       const prepared = await prepareTonConnectDeposit({
         memo: memoData.memo,
         walletAddress: connectedWalletAddress,
-        amountUsdt: amountUsdt.toFixed(6),
+        amountUsdt,
       });
 
       await tonConnectUI.sendTransaction(prepared.transaction);
@@ -81,11 +83,11 @@ const DepositPanel = () => {
       <div className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
-            <div className="rough-border flex h-16 w-16 items-center justify-center bg-success-bg">
+            <div className="rough-border flex size-16 items-center justify-center bg-success-bg">
               <ArrowDownRight size={32} className="text-success-text" />
             </div>
             <div>
-              <h2 className="text-3xl font-bold italic tracking-tighter uppercase">Deposit USDT</h2>
+              <h2 className="text-3xl font-semibold italic tracking-tighter uppercase">Deposit USDT</h2>
               <p className="text-sm font-mono opacity-60">Use TonConnect or a wallet that supports USDT jetton comments</p>
             </div>
           </div>
@@ -104,13 +106,13 @@ const DepositPanel = () => {
               disabled={loading}
               onClick={handleGenerateMemo}
             >
-              {loading ? 'Generating...' : 'Generate Deposit Address & Memo'}
+              {loading ? 'Generating…' : 'Generate Deposit Address & Memo'}
             </SketchyButton>
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
             <div className="rough-border bg-warning-bg border-warning-border p-4">
-              <h3 className="font-bold text-warning-text uppercase tracking-tight mb-2 flex items-center gap-2">
+              <h3 className="font-semibold text-warning-text uppercase tracking-tight mb-2 flex items-center gap-2">
                 <span aria-hidden="true">⚠️</span> Important Instructions
               </h3>
               <p className="text-sm text-warning-text font-mono">{memoData.instructions}</p>
@@ -145,7 +147,7 @@ const DepositPanel = () => {
 
             <div className="mt-6 flex flex-col gap-4">
               <div className="bg-white p-4 border-2 border-black/10 shadow-sm">
-                <h4 className="font-bold uppercase tracking-widest text-xs opacity-60 mb-2">
+                <h4 className="font-semibold uppercase tracking-widest text-xs opacity-60 mb-2">
                   TonConnect Deposit
                 </h4>
                 <p className="text-xs font-mono opacity-60 mb-3">
@@ -175,7 +177,7 @@ const DepositPanel = () => {
                   onClick={handleDepositTonConnect}
                   type="button"
                 >
-                  {sendingTransaction ? 'Sending...' : 'Deposit via TonConnect'}
+                  {sendingTransaction ? 'Sending…' : 'Deposit via TonConnect'}
                 </SketchyButton>
                 {!wallet && (
                   <p className="text-xs text-red-500 mt-2 text-center" id="wallet-connect-required">

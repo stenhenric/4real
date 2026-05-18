@@ -42,7 +42,7 @@ export function statusToneFromStatus(status: string): StatusTone {
     return 'warning';
   }
 
-  if (['failed', 'rejected', 'dismissed', 'critical', 'high', 'error'].includes(normalized)) {
+  if (['failed', 'rejected', 'dismissed', 'critical', 'high', 'error', 'stuck'].includes(normalized)) {
     return 'danger';
   }
 

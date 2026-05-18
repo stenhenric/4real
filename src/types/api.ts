@@ -1,1 +1,1 @@
-export * from '../../shared/types/api.ts';
+export * from '../../shared/types/api';

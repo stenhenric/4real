@@ -48,7 +48,7 @@ export function createOrder(payload: CreateOrderPayload) {
 }
 
 export function updateOrderStatus(orderId: string, status: OrderStatus) {
-  return request<OrderDTO>(`/orders/${orderId}`, {
+  return request<OrderDTO>(`/orders/${encodeURIComponent(orderId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });

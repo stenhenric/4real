@@ -28,7 +28,7 @@ export default function MerchantDashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-4xl font-bold italic tracking-tight">Treasury Overview</h2>
+          <h2 className="text-4xl font-semibold italic tracking-tight">Treasury Overview</h2>
           <p className="text-sm font-mono opacity-60">
             Real-time merchant operations view generated at {formatDateTime(dashboard.generatedAt)}.
           </p>
@@ -101,7 +101,7 @@ export default function MerchantDashboardPage() {
         <SketchyContainer className="bg-white">
           <div className="flex items-center justify-between border-b border-black/10 pb-3">
             <div>
-              <h3 className="text-2xl font-bold italic">24h Order Throughput</h3>
+              <h3 className="text-2xl font-semibold italic">24h Order Throughput</h3>
               <p className="text-sm font-mono opacity-60">Completed P2P volume grouped into four-hour buckets.</p>
             </div>
             <Link to="/merchant/liquidity" className="text-sm font-bold text-ink-blue hover:underline">
@@ -127,7 +127,7 @@ export default function MerchantDashboardPage() {
         <SketchyContainer className="bg-white">
           <div className="flex items-center justify-between border-b border-black/10 pb-3">
             <div>
-              <h3 className="text-2xl font-bold italic">Immediate Action Queue</h3>
+              <h3 className="text-2xl font-semibold italic">Immediate Action Queue</h3>
               <p className="text-sm font-mono opacity-60">Highest priority pending orders, sorted by risk and wait time.</p>
             </div>
             <Link to="/merchant/orders" className="text-sm font-bold text-ink-blue hover:underline">
@@ -142,7 +142,7 @@ export default function MerchantDashboardPage() {
               </div>
             ) : (
               dashboard.actionQueue.slice(0, 5).map((order) => (
-                <div key={order.id} className="border border-black/10 bg-black/5 px-4 py-4">
+                <div key={order.id} className="border border-black/10 bg-black/5 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export default function MerchantDashboardPage() {
       <SketchyContainer className="bg-white">
         <div className="flex items-center justify-between border-b border-black/10 pb-3">
           <div>
-            <h3 className="text-2xl font-bold italic">Alert Stream</h3>
+            <h3 className="text-2xl font-semibold italic">Alert Stream</h3>
             <p className="text-sm font-mono opacity-60">Operational issues that need treasury or support attention.</p>
           </div>
           <Link to="/merchant/alerts" className="text-sm font-bold text-ink-blue hover:underline">
@@ -187,14 +187,14 @@ export default function MerchantDashboardPage() {
             </div>
           ) : (
             dashboard.alerts.slice(0, 3).map((alert) => (
-              <div key={alert.id} className="border border-black/10 bg-black/5 px-4 py-4">
+              <div key={alert.id} className="border border-black/10 bg-black/5 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className={`px-3 py-1 text-xs font-bold uppercase ${alert.severity === 'critical' ? 'bg-red-100 text-ink-red' : alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-ink-blue'}`}>
                     {alert.severity}
                   </span>
                   <AlertTriangle size={18} className={alert.severity === 'critical' ? 'text-ink-red' : alert.severity === 'warning' ? 'text-yellow-800' : 'text-ink-blue'} />
                 </div>
-                <h4 className="mt-3 text-xl font-bold italic">{alert.title}</h4>
+                <h4 className="mt-3 text-xl font-semibold italic">{alert.title}</h4>
                 <p className="mt-2 text-sm font-mono opacity-70">{alert.description}</p>
               </div>
             ))

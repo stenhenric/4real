@@ -1,35 +1,52 @@
 import { moneyToNumber, type MoneyLike } from '../../utils/exact-money.ts';
 
+const moneyFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const compactNumberFormatter = new Intl.NumberFormat('en-US', {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
 export function formatMoney(value: MoneyLike): string {
-  const amount = moneyToNumber(value);
-  if (!Number.isFinite(amount)) {
+  if (value === null || value === undefined) {
     return 'Unavailable';
   }
 
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  const amount = moneyToNumber(value);
+  if (!Number.isFinite(amount) || (typeof value === 'string' && !Number.isFinite(Number(value)))) {
+    return 'Unavailable';
+  }
+
+  return moneyFormatter.format(amount);
 }
 
 export function formatCompactNumber(value: MoneyLike): string {
-  const amount = moneyToNumber(value);
-  if (!Number.isFinite(amount)) {
+  if (value === null || value === undefined) {
     return 'Unavailable';
   }
 
-  return new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(amount);
+  const amount = moneyToNumber(value);
+  if (!Number.isFinite(amount) || (typeof value === 'string' && !Number.isFinite(Number(value)))) {
+    return 'Unavailable';
+  }
+
+  return compactNumberFormatter.format(amount);
 }
 
-export function formatDateTime(value: string | undefined): string {
+export function formatDateTime(value: string | number | undefined): string {
   if (!value) {
     return 'Unavailable';
   }
 
-  return new Date(value).toLocaleString([], {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return 'Unavailable';
+  }
+
+  return date.toLocaleString([], {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',

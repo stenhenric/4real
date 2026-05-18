@@ -27,18 +27,18 @@ export function createMatch(payload: CreateMatchPayload) {
 }
 
 export function getUserMatches(userId: string, signal?: AbortSignal) {
-  return request<MatchDTO[]>(`/matches/user/${userId}`, signal ? { signal } : undefined);
+  return request<MatchDTO[]>(`/matches/user/${encodeURIComponent(userId)}`, signal ? { signal } : undefined);
 }
 
 export function getMatch(roomId: string, signal?: AbortSignal, inviteToken?: string) {
   const normalizedInviteToken = normalizeInviteToken(inviteToken);
   const query = normalizedInviteToken ? `?invite=${encodeURIComponent(normalizedInviteToken)}` : '';
-  return request<MatchDTO>(`/matches/${roomId}${query}`, signal ? { signal } : undefined);
+  return request<MatchDTO>(`/matches/${encodeURIComponent(roomId)}${query}`, signal ? { signal } : undefined);
 }
 
 export function joinMatch(roomId: string, inviteToken?: string) {
   const normalizedInviteToken = normalizeInviteToken(inviteToken);
-  return request<MatchDTO>(`/matches/${roomId}/join`, {
+  return request<MatchDTO>(`/matches/${encodeURIComponent(roomId)}/join`, {
     method: 'POST',
     headers: {
       'Idempotency-Key': createIdempotencyKey(),
@@ -48,7 +48,7 @@ export function joinMatch(roomId: string, inviteToken?: string) {
 }
 
 export function resignMatch(roomId: string) {
-  return request<MatchDTO>(`/matches/${roomId}/resign`, {
+  return request<MatchDTO>(`/matches/${encodeURIComponent(roomId)}/resign`, {
     method: 'POST',
     headers: {
       'Idempotency-Key': createIdempotencyKey(),

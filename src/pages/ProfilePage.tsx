@@ -38,16 +38,20 @@ const ProfilePage = () => {
           getUserMatches(userId, controller.signal),
         ]);
 
-        setProfile(profileData);
-        setHistory(historyData);
+        if (!controller.signal.aborted) {
+          setProfile(profileData);
+          setHistory(historyData);
+        }
       } catch (error) {
-        if (isAbortError(error)) {
+        if (isAbortError(error, controller.signal)) {
           return;
         }
 
         showError('Failed to fetch profile details.');
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
@@ -59,7 +63,7 @@ const ProfilePage = () => {
   }, [showError, userId]);
 
   if (loading) {
-    return <div className="text-center py-20 animate-pulse font-bold">Sharpening pencils...</div>;
+    return <div className="text-center py-20 animate-pulse font-bold">Sharpening pencils…</div>;
   }
 
   if (!profile) {
@@ -78,9 +82,9 @@ const ProfilePage = () => {
         <div className="md:col-span-1">
           <div className="rough-border bg-white text-center py-10 relative shadow-lg">
             <div aria-hidden="true" className="absolute -top-3 -left-3 text-3xl z-10 drop-shadow-md">📎</div>
-            <div className="w-32 h-32 mx-auto sketchy-border flex items-center justify-center bg-black/5 mb-6 overflow-hidden relative">
+            <div className="size-32 mx-auto sketchy-border flex items-center justify-center bg-black/5 mb-6 overflow-hidden relative">
               <div className="tape w-12 h-4 -top-1 left-1/2 -ml-6 z-20"></div>
-              <svg viewBox="0 0 100 100" className="w-20 h-20 opacity-30">
+              <svg viewBox="0 0 100 100" className="size-20 opacity-30">
                 <circle
                   cx="50"
                   cy="50"
@@ -96,7 +100,7 @@ const ProfilePage = () => {
               </svg>
             </div>
             <div className="relative inline-block px-4">
-              <h1 className="text-3xl font-bold italic mb-1 relative z-10">{profile.username}</h1>
+              <h1 className="text-3xl font-semibold italic mb-1 relative z-10">{profile.username}</h1>
               <div className="highlighter w-full bottom-2 left-0 h-4"></div>
             </div>
             <p className="font-mono text-xs opacity-40 uppercase mb-8 font-bold tracking-widest">
@@ -134,7 +138,7 @@ const ProfilePage = () => {
         <div className="md:col-span-2 space-y-8">
           <div className="rough-border bg-white/80 p-8 shadow-xl relative">
             <div className="tape w-20 h-6 -top-2 left-10 opacity-60"></div>
-            <h2 className="text-3xl font-bold flex items-center gap-2 mb-8 italic tracking-tighter underline">
+            <h2 className="text-3xl font-semibold flex items-center gap-2 mb-8 italic tracking-tighter underline">
               <Medal className="text-orange-700" size={28} /> Sketcher Portfolio
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -143,11 +147,11 @@ const ProfilePage = () => {
                   key={feature}
                   className="p-4 bg-white sketchy-border text-center grayscale opacity-20 hover:opacity-100 transition-all cursor-help relative group"
                 >
-                  <div aria-hidden="true" className="w-12 h-12 mx-auto bg-black/5 mb-3 flex items-center justify-center">
+                  <div aria-hidden="true" className="size-12 mx-auto bg-black/5 mb-3 flex items-center justify-center">
                     🏆
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-tight">{feature}</p>
-                  <div className="hidden group-hover:block absolute top-full left-1/2 -ml-20 w-40 p-2 bg-black text-white text-[10px] z-20 mt-2">
+                  <div className="hidden group-hover:block absolute top-full left-1/2 -ml-20 w-40 p-2 bg-gray-950 text-white text-[10px] z-20 mt-2">
                     Condition not met in this timeline.
                   </div>
                 </div>
@@ -157,7 +161,7 @@ const ProfilePage = () => {
 
           <div className="rough-border bg-white p-8 shadow-xl relative">
             <div className="tape w-20 h-6 -top-2 right-10 opacity-60 rotate-3"></div>
-            <h2 className="text-3xl font-bold flex items-center gap-2 mb-8 italic tracking-tighter underline">
+            <h2 className="text-3xl font-semibold flex items-center gap-2 mb-8 italic tracking-tighter underline">
               <Gamepad2 size={28} /> Board Mini-Sketches
             </h2>
             <div className="space-y-6">

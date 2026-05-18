@@ -8,6 +8,7 @@ import { AuthNotice, AuthShell, AuthDivider } from '../../features/auth/AuthShel
 import { GoogleAuthButton } from '../../features/auth/GoogleAuthButton';
 import { AuthInput } from '../../features/auth/components/AuthInput';
 import { PasswordInput } from '../../features/auth/components/PasswordInput';
+import { isPasswordValid as validatePasswordStrength } from '../../features/auth/components/PasswordStrengthMeter';
 import { buildVerifyEmailPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { registerAccount, requestGoogleOAuthRedirect } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
@@ -25,13 +26,13 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
-  const [isPasswordValid, setIsPasswordValid] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [usernameError, setUsernameError] = useState<string | undefined>();
   
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
+  const isPasswordValidRef = useRef(false);
   const siteKey = getTurnstileSiteKey();
 
   // Validation States
@@ -62,7 +63,7 @@ export default function RegisterPage() {
       showError('Please enter a valid email.');
       return false;
     }
-    if (!isPasswordValid) {
+    if (!isPasswordValidRef.current) {
       showError('Password requirements not met.');
       return false;
     }
@@ -76,6 +77,10 @@ export default function RegisterPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (step !== 'verification') return;
+    if (!siteKey) {
+      showError('Bot verification is not configured.');
+      return;
+    }
     
     if (siteKey && !turnstileToken) {
       showError('Please complete the verification.');
@@ -169,12 +174,15 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   label="Password"
                   name="password"
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    const nextPassword = event.target.value;
+                    setPassword(nextPassword);
+                    isPasswordValidRef.current = validatePasswordStrength(nextPassword);
+                  }}
                   placeholder="At least 12 characters"
                   required
                   value={password}
                   showStrengthMeter
-                  onValidationChange={setIsPasswordValid}
                 />
               </div>
 
@@ -220,11 +228,11 @@ export default function RegisterPage() {
 
             <SketchyButton 
               className="w-full py-4 text-xl mt-4" 
-              disabled={loading || (!!siteKey && !turnstileToken)} 
+              disabled={loading || !siteKey || !turnstileToken}
               type="submit"
               activeColor="#fff9c4"
             >
-              {loading ? 'Creating your account...' : 'Create account'}
+              {loading ? 'Creating your account…' : 'Create account'}
             </SketchyButton>
           </form>
         )}

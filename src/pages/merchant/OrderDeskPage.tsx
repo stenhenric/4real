@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, ExternalLink, ShieldAlert, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
@@ -23,6 +23,10 @@ type OrderStatusFilter = 'ALL' | OrderDTO['status'];
 const ORDER_STATUS_FILTERS: OrderStatusFilter[] = ['PENDING', 'DONE', 'REJECTED', 'ALL'];
 const ORDER_TYPE_FILTERS: OrderTypeFilter[] = ['ALL', 'BUY', 'SELL'];
 
+function getRowActionKey(orderId: string) {
+  return orderId;
+}
+
 export default function OrderDeskPage() {
   const { dashboard, refreshDashboard } = useMerchantOutletContext();
   const { error: showError, success } = useToast();
@@ -31,19 +35,47 @@ export default function OrderDeskPage() {
   const [page, setPage] = useState(1);
   const [deskData, setDeskData] = useState<MerchantOrderDeskResponseDTO | null>(null);
   const [loading, setLoading] = useState(true);
-  const [rowAction, setRowAction] = useState<string | null>(null);
+  const [rowActions, setRowActions] = useState<Record<string, true>>({});
+  const ordersRequestRef = useRef(0);
+  const ordersQueryRef = useRef({
+    page,
+    status: statusFilter,
+    type: typeFilter,
+  });
 
-  const loadOrders = useCallback(async (signal?: AbortSignal) => {
+  ordersQueryRef.current = {
+    page,
+    status: statusFilter,
+    type: typeFilter,
+  };
+
+  const loadOrders = useCallback(async (
+    signal?: AbortSignal,
+    requestedQuery = ordersQueryRef.current,
+  ) => {
+    const requestId = ordersRequestRef.current + 1;
+    ordersRequestRef.current = requestId;
     setLoading(true);
 
     try {
       const nextData = await getMerchantOrders({
-        page,
+        page: requestedQuery.page,
         pageSize: 25,
-        status: statusFilter,
-        type: typeFilter,
+        status: requestedQuery.status,
+        type: requestedQuery.type,
         ...(signal ? { signal } : {}),
       });
+
+      const currentQuery = ordersQueryRef.current;
+      if (
+        signal?.aborted
+        || ordersRequestRef.current !== requestId
+        || currentQuery.page !== requestedQuery.page
+        || currentQuery.status !== requestedQuery.status
+        || currentQuery.type !== requestedQuery.type
+      ) {
+        return;
+      }
 
       startTransition(() => {
         setDeskData(nextData);
@@ -51,6 +83,10 @@ export default function OrderDeskPage() {
       });
     } catch (error) {
       if (isAbortError(error, signal, { pageUnloading: document.visibilityState === 'hidden' })) {
+        return;
+      }
+
+      if (ordersRequestRef.current !== requestId) {
         return;
       }
 
@@ -62,7 +98,7 @@ export default function OrderDeskPage() {
       setLoading(false);
       showError(getApiErrorMessage(error, 'Could not load merchant orders.'));
     }
-  }, [page, showError, statusFilter, typeFilter]);
+  }, [showError]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,7 +110,8 @@ export default function OrderDeskPage() {
   }, [loadOrders]);
 
   const handleStatusUpdate = async (orderId: string, nextStatus: OrderDTO['status']) => {
-    setRowAction(orderId);
+    const rowActionKey = getRowActionKey(orderId);
+    setRowActions((current) => ({ ...current, [rowActionKey]: true }));
 
     try {
       await updateOrderStatus(orderId, nextStatus);
@@ -90,7 +127,10 @@ export default function OrderDeskPage() {
 
       showError(getApiErrorMessage(error, 'Could not update that order.'));
     } finally {
-      setRowAction(null);
+      setRowActions((current) => {
+        const { [rowActionKey]: _finishedAction, ...remaining } = current;
+        return remaining;
+      });
     }
   };
 
@@ -100,7 +140,7 @@ export default function OrderDeskPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-4xl font-bold italic tracking-tight">Order Desk</h2>
+          <h2 className="text-4xl font-semibold italic tracking-tight">Order Desk</h2>
           <p className="text-sm font-mono opacity-60">
             Pending queue {dashboard?.overview.pendingOrderCount ?? 0} • high risk {dashboard?.overview.highRiskPendingOrderCount ?? 0}
           </p>
@@ -152,7 +192,7 @@ export default function OrderDeskPage() {
       <SketchyContainer className="bg-white p-0">
         <div className="space-y-4 p-4 md:hidden">
           {loading ? (
-            <EmptyState>Loading merchant queue...</EmptyState>
+            <EmptyState>Loading merchant queue…</EmptyState>
           ) : orders.length === 0 ? (
             <EmptyState>No orders match the current filters.</EmptyState>
           ) : (
@@ -218,7 +258,7 @@ export default function OrderDeskPage() {
                     <>
                       <SketchyButton
                         className="px-3 py-2 text-sm text-danger-text"
-                        disabled={rowAction === order.id}
+                        disabled={Boolean(rowActions[getRowActionKey(order.id)])}
                         fill="var(--color-danger-bg)"
                         onClick={() => {
                           void handleStatusUpdate(order.id, 'REJECTED');
@@ -229,7 +269,7 @@ export default function OrderDeskPage() {
                       </SketchyButton>
                       <SketchyButton
                         className="px-3 py-2 text-sm text-success-text"
-                        disabled={rowAction === order.id}
+                        disabled={Boolean(rowActions[getRowActionKey(order.id)])}
                         fill="var(--color-success-bg)"
                         onClick={() => {
                           void handleStatusUpdate(order.id, 'DONE');
@@ -252,20 +292,20 @@ export default function OrderDeskPage() {
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="border-b-2 border-black/10 bg-black/5 text-left text-xs font-bold uppercase tracking-[0.2em] text-black/50">
-                <th className="px-4 py-4">Order</th>
-                <th className="px-4 py-4">User</th>
-                <th className="px-4 py-4">Submitted</th>
-                <th className="px-4 py-4">Risk</th>
-                <th className="px-4 py-4">Proof</th>
-                <th className="px-4 py-4">Status</th>
-                <th className="px-4 py-4 text-right">Actions</th>
+                <th className="p-4">Order</th>
+                <th className="p-4">User</th>
+                <th className="p-4">Submitted</th>
+                <th className="p-4">Risk</th>
+                <th className="p-4">Proof</th>
+                <th className="p-4">Status</th>
+                <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td className="px-4 py-10 text-center text-sm font-mono opacity-50" colSpan={7}>
-                    Loading merchant queue...
+                    Loading merchant queue…
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
@@ -277,7 +317,7 @@ export default function OrderDeskPage() {
               ) : (
                 orders.map((order) => (
                   <tr key={order.id} className="border-b border-black/10 align-top last:border-b-0">
-                    <td className="px-4 py-4">
+                    <td className="p-4">
                       <div className="flex items-start gap-3">
                         <StatusBadge tone={order.type === 'BUY' ? 'info' : 'danger'}>
                           {order.type}
@@ -293,16 +333,16 @@ export default function OrderDeskPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="p-4">
                       <Link className="font-bold text-ink-blue hover:underline" to={`/profile/${order.user.id}`}>
                         {order.user.username}
                       </Link>
                     </td>
-                    <td className="px-4 py-4 text-sm font-mono">
+                    <td className="p-4 text-sm font-mono">
                       <div>{formatDateTime(order.createdAt)}</div>
                       <div className="mt-1 opacity-60">{formatRelativeMinutes(order.waitMinutes)}</div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="p-4">
                       <StatusBadge tone={statusToneFromStatus(order.riskLevel)}>
                         {order.riskLevel === 'high' ? <ShieldAlert size={14} /> : order.riskLevel === 'medium' ? <AlertTriangle size={14} /> : null}
                         {order.riskLevel}
@@ -311,7 +351,7 @@ export default function OrderDeskPage() {
                         <p className="mt-2 max-w-xs text-sm font-mono opacity-70">{order.riskFlags.join(' • ')}</p>
                       ) : null}
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="p-4">
                       <div className="space-y-2">
                         {order.proof?.url ? (
                           <a
@@ -333,18 +373,18 @@ export default function OrderDeskPage() {
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="p-4">
                       <StatusBadge tone={statusToneFromStatus(order.status)}>
                         {order.status}
                       </StatusBadge>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="p-4">
                       <div className="flex justify-end gap-2">
                         {order.status === 'PENDING' ? (
                           <>
                             <SketchyButton
                               className="px-3 py-2 text-sm text-ink-red"
-                              disabled={rowAction === order.id}
+                              disabled={Boolean(rowActions[getRowActionKey(order.id)])}
                               onClick={() => {
                                 void handleStatusUpdate(order.id, 'REJECTED');
                               }}
@@ -356,7 +396,7 @@ export default function OrderDeskPage() {
                             </SketchyButton>
                             <SketchyButton
                               className="px-3 py-2 text-sm text-green-700"
-                              disabled={rowAction === order.id}
+                              disabled={Boolean(rowActions[getRowActionKey(order.id)])}
                               onClick={() => {
                                 void handleStatusUpdate(order.id, 'DONE');
                               }}
@@ -381,7 +421,7 @@ export default function OrderDeskPage() {
       </SketchyContainer>
 
       {deskData ? (
-        <div className="flex flex-col gap-3 border border-black/10 bg-white/80 px-4 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 border border-black/10 bg-white/80 p-4 md:flex-row md:items-center md:justify-between">
           <p className="text-sm font-mono opacity-60">
             Showing page {deskData.pagination.page} of {deskData.pagination.totalPages} • {deskData.pagination.total} total orders
           </p>

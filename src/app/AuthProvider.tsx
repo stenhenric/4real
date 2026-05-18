@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getCurrentUser, logout as logoutRequest } from '../services/auth.service';
 import { ApiClientError } from '../services/api/apiClient';
 import { shouldClearAuthAfterRefreshError } from '../features/auth/refresh-error';
@@ -50,8 +50,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentSession, setCurrentSession] = useState<SessionListItemDTO | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus | 'anonymous'>('anonymous');
   const [loading, setLoading] = useState(true);
+  const authGenerationRef = useRef(0);
+  const refreshRequestRef = useRef(0);
 
-  const setAuthStateFromResponse = useCallback((response: AuthResponseDTO | null) => {
+  const applyAuthState = useCallback((response: AuthResponseDTO | null) => {
     if (!response?.user) {
       setUser(null);
       setUserData(null);
@@ -66,18 +68,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthStatus(normalizeAuthStatus(response));
   }, []);
 
+  const setAuthStateFromResponse = useCallback((response: AuthResponseDTO | null) => {
+    authGenerationRef.current += 1;
+    applyAuthState(response);
+    setLoading(false);
+  }, [applyAuthState]);
+
   const clearAuth = useCallback(() => {
     setAuthStateFromResponse(null);
   }, [setAuthStateFromResponse]);
 
   const refreshUser = useCallback(async (signal?: AbortSignal) => {
+    const requestGeneration = authGenerationRef.current;
+    const requestId = refreshRequestRef.current + 1;
+    refreshRequestRef.current = requestId;
+
+    const isStaleRefresh = () => (
+      signal?.aborted
+      || authGenerationRef.current !== requestGeneration
+      || refreshRequestRef.current !== requestId
+    );
+
     try {
+      if (isStaleRefresh()) {
+        return null;
+      }
+
       const data = await getCurrentUser(signal);
-      setAuthStateFromResponse(data);
+      if (isStaleRefresh()) {
+        return null;
+      }
+
+      applyAuthState(data);
       setLoading(false);
       return data;
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(error, signal) || isStaleRefresh()) {
         return null;
       }
 
@@ -90,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setLoading(false);
     return null;
-  }, [clearAuth, setAuthStateFromResponse]);
+  }, [applyAuthState, clearAuth]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -123,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authStatus,
       isAdmin: userData?.isAdmin === true,
       isAuthenticated: user !== null,
-      isProfileComplete: userData !== null && userData.username.trim().length > 0,
+      isProfileComplete: authStatus === 'authenticated',
       refreshUser,
       setAuthStateFromResponse,
       clearAuth,
@@ -136,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
+  const context = use(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }

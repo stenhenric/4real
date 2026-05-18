@@ -6,5 +6,5 @@ export function getLeaderboard(signal?: AbortSignal) {
 }
 
 export function getUserProfile(userId: string, signal?: AbortSignal) {
-  return request<UserProfileDTO>(`/users/${userId}`, signal ? { signal } : undefined);
+  return request<UserProfileDTO>(`/users/${encodeURIComponent(userId)}`, signal ? { signal } : undefined);
 }

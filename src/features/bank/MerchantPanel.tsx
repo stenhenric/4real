@@ -7,6 +7,7 @@ import { SketchyButton } from '../../components/SketchyButton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
+import { formatDateTime } from '../merchant/format';
 import {
   createOrder,
   getMerchantConfig,
@@ -15,7 +16,7 @@ import {
 } from '../../services/orders.service';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
-import { formatMoneyValue, moneyToNumber } from '../../utils/exact-money.ts';
+import { formatMoneyValue, moneyToNumber, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 import type { MerchantConfigDTO, OrderDTO } from '../../types/api';
 
@@ -60,7 +61,7 @@ const MerchantPanel = () => {
         setOrders(ordersData);
         setMerchantConfig(configData);
       } catch (error) {
-        if (isAbortError(error)) {
+        if (isAbortError(error, controller.signal)) {
           return;
         }
 
@@ -96,8 +97,19 @@ const MerchantPanel = () => {
     setPaymentConfirmed(false);
   };
 
-  const amountValue = Number(amount);
-  const hasValidAmount = Number.isFinite(amountValue) && amountValue > 0;
+  const normalizedAmount = useMemo(() => {
+    try {
+      return normalizeFixedScaleAmount(amount, {
+        scale: 6,
+        allowZero: false,
+        label: 'USDT amount',
+      });
+    } catch {
+      return null;
+    }
+  }, [amount]);
+  const hasValidAmount = normalizedAmount !== null;
+  const amountValue = normalizedAmount ? moneyToNumber(normalizedAmount) : 0;
   const activeRate = activeTab === 'buy'
     ? merchantConfig?.buyRateKesPerUsdt ?? 0
     : merchantConfig?.sellRateKesPerUsdt ?? 0;
@@ -147,7 +159,9 @@ const MerchantPanel = () => {
     setLoading(true);
 
     try {
-      const parsedAmount = amountValue.toFixed(6);
+      if (!normalizedAmount) {
+        throw new Error('Enter a valid USDT amount.');
+      }
 
       if (activeTab === 'buy') {
         if (!paymentConfirmed) {
@@ -164,7 +178,7 @@ const MerchantPanel = () => {
 
         const order = await createOrder({
           type: 'BUY',
-          amount: parsedAmount,
+          amount: normalizedAmount,
           transactionCode: transactionCode.trim(),
           proofImage,
         });
@@ -184,7 +198,7 @@ const MerchantPanel = () => {
 
         const order = await createOrder({
           type: 'SELL',
-          amount: parsedAmount,
+          amount: normalizedAmount,
           mpesaNumber: mpesaNumber.trim(),
           mpesaName: mpesaName.trim(),
         });
@@ -196,6 +210,11 @@ const MerchantPanel = () => {
       resetTradeForm();
       await refreshUser();
     } catch (error) {
+      if (error instanceof Error && !(error instanceof ApiClientError)) {
+        showError(error.message);
+        return;
+      }
+
       showError(getApiErrorMessage(error, 'Transaction failed. Please try again.'));
     } finally {
       setLoading(false);
@@ -229,43 +248,43 @@ const MerchantPanel = () => {
               </div>
               <div className="flex items-center gap-2 mb-4">
                 <StickyNote className="text-yellow-700" />
-                <h2 className="text-2xl font-bold uppercase tracking-tighter underline">
+                <h2 className="text-2xl font-semibold uppercase tracking-tighter underline">
                   Fiat Merchant Instructions
                 </h2>
               </div>
               <div className="space-y-4 font-mono text-sm leading-relaxed">
-                <div className="p-3 bg-white/40 border-l-4 border-yellow-500">
+                <div className="border border-yellow-500 bg-white/40 p-3">
                   <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">
                     M-Pesa Till / Merchant ID
                   </p>
                   <p className="font-bold text-xl tracking-tight italic">
-                    {merchantConfig?.mpesaNumber ?? 'Loading...'}
+                    {merchantConfig?.mpesaNumber ?? 'Loading…'}
                   </p>
                 </div>
-                <div className="p-3 bg-white/40 border-l-4 border-yellow-500">
+                <div className="border border-yellow-500 bg-white/40 p-3">
                   <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">TON Wallet Address</p>
                   <p className="font-bold break-all text-xs">
-                    {merchantConfig?.walletAddress ?? 'Loading...'}
+                    {merchantConfig?.walletAddress ?? 'Loading…'}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-white/40 border-l-4 border-success-border">
+                  <div className="border border-success-border bg-white/40 p-3">
                     <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Buy Rate</p>
                     <p className="font-bold text-lg tracking-tight">
-                      {merchantConfig ? `${formatMoney(merchantConfig.buyRateKesPerUsdt)} ${fiatCurrency}` : 'Loading...'}
+                      {merchantConfig ? `${formatMoney(merchantConfig.buyRateKesPerUsdt)} ${fiatCurrency}` : 'Loading…'}
                     </p>
                     <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
                   </div>
-                  <div className="p-3 bg-white/40 border-l-4 border-danger-border">
+                  <div className="border border-danger-border bg-white/40 p-3">
                     <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Sell Rate</p>
                     <p className="font-bold text-lg tracking-tight">
-                      {merchantConfig ? `${formatMoney(merchantConfig.sellRateKesPerUsdt)} ${fiatCurrency}` : 'Loading...'}
+                      {merchantConfig ? `${formatMoney(merchantConfig.sellRateKesPerUsdt)} ${fiatCurrency}` : 'Loading…'}
                     </p>
                     <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
                   </div>
                 </div>
                 <p className="italic text-xs opacity-70 font-bold bg-white/20 p-2 whitespace-pre-wrap">
-                  {merchantConfig?.instructions ?? 'Loading merchant instructions...'}
+                  {merchantConfig?.instructions ?? 'Loading merchant instructions…'}
                 </p>
               </div>
             </div>
@@ -273,7 +292,7 @@ const MerchantPanel = () => {
             <div className="flex-1">
               <div className="relative min-h-[240px]">
                 {activeTab === 'buy' && paymentConfirmed ? (
-                  <div className="absolute -top-12 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center text-success-text animate-bounce">
+                  <div className="absolute -top-12 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center text-success-text">
                     <span className="border-2 border-success-border bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-center whitespace-nowrap">
                       Upload your payment screenshot here
                     </span>
@@ -396,7 +415,7 @@ const MerchantPanel = () => {
                     </div>
 
                     {hasValidAmount && rateConfigured ? (
-                      <div className="rough-border border-warning-border bg-warning-bg px-4 py-4">
+                      <div className="rough-border border-warning-border bg-warning-bg p-4">
                         <p className="text-xs font-bold uppercase tracking-[0.25em] text-warning-text">
                           Payment summary
                         </p>
@@ -423,7 +442,7 @@ const MerchantPanel = () => {
                         Confirm Payment
                       </SketchyButton>
                     ) : (
-                      <div className="rough-border border-success-border bg-success-bg px-4 py-4">
+                      <div className="rough-border border-success-border bg-success-bg p-4">
                         <p className="text-xs font-bold uppercase tracking-[0.25em] text-success-text">
                           Step 2: Share proof
                         </p>
@@ -447,7 +466,7 @@ const MerchantPanel = () => {
 
                     {!paymentConfirmed ? (
                       <div className="space-y-4 pt-4 border-t-2 border-black/10">
-                        <div className="rough-border border-info-border bg-info-bg px-4 py-4 mb-4">
+                        <div className="rough-border border-info-border bg-info-bg p-4 mb-4">
                           <p className="text-xs font-bold uppercase tracking-[0.25em] text-info-text">
                             Where should the merchant send KES?
                           </p>
@@ -489,7 +508,7 @@ const MerchantPanel = () => {
                         </SketchyButton>
                       </div>
                     ) : (
-                      <div className="rough-border border-success-border bg-success-bg px-4 py-4 space-y-2">
+                      <div className="rough-border border-success-border bg-success-bg p-4 space-y-2">
                         <p className="text-xs font-bold uppercase tracking-[0.25em] text-success-text border-b border-success-border/30 pb-2 mb-2">
                           Order Summary
                         </p>
@@ -533,7 +552,7 @@ const MerchantPanel = () => {
 
               <SketchyButton className="w-full py-4 text-2xl uppercase tracking-tighter" disabled={loading || (activeTab === 'buy' ? !buyReadyForSubmit : !sellReadyForSubmit)} type="submit">
                 {loading
-                  ? 'Processing...'
+                  ? 'Processing…'
                   : activeTab === 'buy'
                     ? 'Submit Buy Order'
                     : 'Place Sell Order'}
@@ -547,7 +566,7 @@ const MerchantPanel = () => {
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-2">
                 <History className="text-ink-blue" />
-                <h2 className="text-3xl font-bold italic tracking-tighter uppercase underline decoration-double">
+                <h2 className="text-3xl font-semibold italic tracking-tighter uppercase underline decoration-double">
                   The Ledger
                 </h2>
               </div>
@@ -566,7 +585,7 @@ const MerchantPanel = () => {
                       <div className="flex items-center gap-4">
                         <div
                           className={cn(
-                            'rough-border flex h-10 w-10 items-center justify-center font-bold',
+                            'rough-border flex size-10 items-center justify-center font-bold',
                             order.type === 'BUY' ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text',
                           )}
                         >
@@ -577,7 +596,7 @@ const MerchantPanel = () => {
                             {order.type === 'BUY' ? 'BUY USDT' : 'SELL USDT'} {formatMoney(order.amount)} USDT
                           </p>
                           <p className="text-[10px] opacity-40 font-mono font-bold uppercase">
-                            TX-{order._id.substring(0, 12)} | {new Date(order.createdAt).toLocaleDateString()}
+                            TX-{order._id.substring(0, 12)} | {formatDateTime(order.createdAt)}
                           </p>
                           {order.exchangeRate && order.fiatTotal && order.fiatCurrency ? (
                             <p className="mt-2 text-xs font-mono opacity-60">

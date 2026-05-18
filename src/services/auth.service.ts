@@ -4,6 +4,7 @@ import type { AuthResponseDTO } from '../types/api';
 interface PasswordLoginRequest {
   identifier: string;
   password: string;
+  redirectTo?: string;
   turnstileToken?: string;
 }
 

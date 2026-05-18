@@ -46,9 +46,12 @@ const PUBLIC_AUTH_ENDPOINTS = new Set([
   '/auth/login/password',
   '/auth/register',
   '/auth/login/magic-link/request',
+  '/auth/login/magic-link/consume',
+  '/auth/login/suspicious/consume',
   '/auth/password/forgot',
   '/auth/password/reset',
   '/auth/email/verify/resend',
+  '/auth/email/verify/consume',
   '/auth/mfa/challenge',
 ]);
 

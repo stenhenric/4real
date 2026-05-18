@@ -19,6 +19,11 @@ export default function ForgotPasswordPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setPreviewUrl(null);
+    if (!siteKey) {
+      showError('Bot verification is not configured.');
+      return;
+    }
     setLoading(true);
 
     if (siteKey && !turnstileToken) {
@@ -74,7 +79,7 @@ export default function ForgotPasswordPage() {
 
           <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
 
-          <SketchyButton className="w-full py-3 text-base" disabled={loading || (!!siteKey && !turnstileToken)} type="submit">
+          <SketchyButton className="w-full py-3 text-base" disabled={loading || !siteKey || !turnstileToken} type="submit">
             {loading ? 'Sending reset link...' : 'Send reset link'}
           </SketchyButton>
         </form>

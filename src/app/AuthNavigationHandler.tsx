@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { useToast } from './ToastProvider';
 import {
@@ -13,7 +13,6 @@ import {
 } from '../features/auth/auth-routing';
 
 export function AuthNavigationHandler() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { clearAuth } = useAuth();
   const { info } = useToast();
@@ -30,7 +29,7 @@ export function AuthNavigationHandler() {
           buildMfaChallengePath({
             challengeId: detail.challengeId,
             challengeReason: detail.challengeReason ?? 'sensitive_action',
-            returnTo: detail.returnTo ?? `${location.pathname}${location.search}`,
+            returnTo: detail.returnTo ?? `${window.location.pathname}${window.location.search}`,
           }),
           { replace: true },
         );
@@ -54,7 +53,7 @@ export function AuthNavigationHandler() {
 
     const handleSessionExpired = () => {
       clearAuth();
-      if (location.pathname.startsWith('/auth')) {
+      if (window.location.pathname.startsWith('/auth')) {
         return;
       }
 
@@ -69,7 +68,7 @@ export function AuthNavigationHandler() {
       window.removeEventListener(AUTH_REDIRECT_EVENT, handleAuthRedirect);
       window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
     };
-  }, [clearAuth, info, location.pathname, location.search, navigate]);
+  }, [clearAuth, info, navigate]);
 
   return null;
 }
