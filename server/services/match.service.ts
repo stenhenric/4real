@@ -223,6 +223,10 @@ export class MatchService {
       const player1Id = match.player1Id.toString();
       const player2Id = match.player2Id?.toString();
 
+      if (userId === player1Id && match.status === 'waiting' && !player2Id) {
+        throw conflict('Users cannot join their own match', 'MATCH_SELF_JOIN_NOT_ALLOWED');
+      }
+
       if (userId === player1Id || userId === player2Id) {
         return match;
       }

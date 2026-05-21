@@ -41,8 +41,7 @@ function isApiErrorPayload(value: unknown): value is ApiErrorDTO {
 }
 
 let activeSessionRefresh: Promise<void> | null = null;
-const PUBLIC_AUTH_ENDPOINTS = new Set([
-  '/auth/me',
+const AUTH_REFRESH_EXCLUDED_ENDPOINTS = new Set([
   '/auth/login/password',
   '/auth/register',
   '/auth/login/magic-link/request',
@@ -54,9 +53,13 @@ const PUBLIC_AUTH_ENDPOINTS = new Set([
   '/auth/email/verify/consume',
   '/auth/mfa/challenge',
 ]);
+const SESSION_EXPIRED_REDIRECT_EXCLUDED_ENDPOINTS = new Set([
+  '/auth/me',
+  ...AUTH_REFRESH_EXCLUDED_ENDPOINTS,
+]);
 
 function shouldSkipSessionExpiredRedirect(endpoint: string) {
-  return PUBLIC_AUTH_ENDPOINTS.has(endpoint);
+  return SESSION_EXPIRED_REDIRECT_EXCLUDED_ENDPOINTS.has(endpoint);
 }
 
 async function refreshAuthSession(): Promise<void> {
@@ -100,7 +103,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
     response.status === 401
     && !skipAuthRefresh
     && endpoint !== '/auth/refresh'
-    && !PUBLIC_AUTH_ENDPOINTS.has(endpoint)
+    && !AUTH_REFRESH_EXCLUDED_ENDPOINTS.has(endpoint)
   ) {
     try {
       await refreshAuthSession();

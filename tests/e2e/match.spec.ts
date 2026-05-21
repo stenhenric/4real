@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { closeContext, createLoggedInPage, resetApp } from './helpers';
+import { closeContext, createLoggedInPage, expireAccessCookie, resetApp } from './helpers';
 
 test.beforeEach(async ({ request }) => {
   await resetApp(request);
@@ -33,8 +33,8 @@ test('lets two authenticated players create, join, and finish a realtime public 
     await playerOne.page.goto('/play');
     await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
     await playerOne.page.getByRole('button', { name: /new draft/i }).click();
-    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /free public/i }).click();
-    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /^Create Match$/ }).click();
+    await playerOne.page.getByRole('radio', { name: /free public/i }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
 
     await expect(playerOne.page).toHaveURL(/\/game\//);
     await expect(playerOne.page.getByText(/waiting for p2/i)).toBeVisible();
@@ -70,6 +70,61 @@ test('lets two authenticated players create, join, and finish a realtime public 
   }
 });
 
+test('keeps both players signed in when access cookies expire before a winning move', async ({ browser }) => {
+  const playerOne = await createLoggedInPage(browser, 'player1@example.com');
+  const playerTwo = await createLoggedInPage(browser, 'player2@example.com');
+
+  try {
+    await playerOne.page.goto('/play');
+    await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerOne.page.getByRole('button', { name: /new draft/i }).click();
+    await playerOne.page.getByRole('radio', { name: /free public/i }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
+
+    await expect(playerOne.page).toHaveURL(/\/game\//);
+    await expect(playerOne.page.getByText(/waiting for p2/i)).toBeVisible();
+
+    await playerTwo.page.goto('/play');
+    await expect(playerTwo.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerTwo.page.getByRole('button', { name: /join for free/i }).click();
+    await playerTwo.page.getByRole('button', { name: /join match/i }).click();
+
+    await expect(playerTwo.page).toHaveURL(/\/game\//);
+    await expect(playerTwo.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
+    await playerOne.page.reload();
+    await expect(playerOne.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
+
+    const boardOne = playerOne.page.locator('canvas[aria-label^="Connect board"]');
+    const boardTwo = playerTwo.page.locator('canvas[aria-label^="Connect board"]');
+
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 1 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 2 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 3 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 4 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 5 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 6 });
+
+    await expireAccessCookie(playerOne.page);
+    await expireAccessCookie(playerTwo.page);
+
+    await boardOne.focus();
+    await boardOne.press('1');
+    await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/you were defeated/i)).toBeVisible();
+
+    await playerOne.page.getByRole('button', { name: /return to lobby/i }).click();
+    await playerTwo.page.getByRole('button', { name: /return to lobby/i }).click();
+
+    await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await expect(playerTwo.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await expect(playerOne.page).not.toHaveURL(/\/auth\/login/);
+    await expect(playerTwo.page).not.toHaveURL(/\/auth\/login/);
+  } finally {
+    await closeContext(playerOne.context);
+    await closeContext(playerTwo.context);
+  }
+});
+
 test('create match submits only one room when the create control is activated twice', async ({ browser }) => {
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
   let createRequests = 0;
@@ -87,8 +142,8 @@ test('create match submits only one room when the create control is activated tw
     await playerOne.page.goto('/play');
     await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
     await playerOne.page.getByRole('button', { name: /new draft/i }).click();
-    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /free public/i }).click();
-    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /^Create Match$/ }).dblclick();
+    await playerOne.page.getByRole('radio', { name: /free public/i }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).dblclick();
 
     await expect(playerOne.page).toHaveURL(/\/game\//);
     await expect.poll(() => createRequests).toBe(1);
@@ -111,10 +166,10 @@ test('settles a paid public match with merchant commission end to end', async ({
     await playerOne.page.goto('/play');
     await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
     await playerOne.page.getByRole('button', { name: /new draft/i }).click();
-    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /paid public/i }).click();
-    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /next step/i }).click();
+    await playerOne.page.getByRole('radio', { name: /paid public/i }).click();
+    await playerOne.page.getByRole('button', { name: /next step/i }).click();
     await playerOne.page.getByLabel(/wager amount/i).fill('10');
-    await playerOne.page.locator('div.cursor-pointer').filter({ hasText: /^Create Match$/ }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
 
     await expect(playerOne.page).toHaveURL(/\/game\//);
     await expect(playerOne.page.getByText(/waiting for p2/i)).toBeVisible();

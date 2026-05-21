@@ -824,6 +824,11 @@ function createApp() {
     });
   });
 
+  app.post('/__e2e__/expire-access-cookie', (_req, res) => {
+    res.cookie(authCookieName, 'expired-access-token', cookieOptions());
+    res.json({ ok: true });
+  });
+
   app.get('/__e2e__/proofs/:proofId', (req, res) => {
     const proof = state.proofsById.get(String(req.params.proofId));
     if (!proof) {

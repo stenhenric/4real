@@ -31,6 +31,11 @@ export async function loginAs(page: Page, email: string) {
   );
 }
 
+export async function expireAccessCookie(page: Page) {
+  const response = await page.request.post('/__e2e__/expire-access-cookie');
+  expect(response.ok()).toBeTruthy();
+}
+
 export async function createLoggedInPage(browser: Browser, email: string) {
   const context = await browser.newContext({ baseURL: APP_URL });
   const page = await context.newPage();
