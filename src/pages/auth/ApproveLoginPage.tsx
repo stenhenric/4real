@@ -47,8 +47,8 @@ export default function ApproveLoginPage() {
   return (
     <AuthShell
       eyebrow="Sign-In Approval"
-      title="Approve the blocked sign-in."
-      description="New-device sign-ins require explicit approval before the backend issues a session, which reduces unsafe link activation and session fixation risk."
+      title="Approve your sign-in"
+      description="To keep your account secure, we need you to approve sign-ins from new devices or locations."
       footer={(
         <p className="text-sm text-black/60">
           Need to restart?{' '}
@@ -62,13 +62,13 @@ export default function ApproveLoginPage() {
       <div className="space-y-6">
         {consuming ? (
           <AuthNotice tone="info">
-            Confirming the sign-in approval and issuing a session for this browser.
+            Verifying your sign-in approval...
           </AuthNotice>
         ) : null}
 
         {!token && !consumeError ? (
           <AuthNotice tone="info">
-            Open the sign-in approval link from {email || 'your inbox'} in this browser to continue.
+            Please open the approval link we sent to {email || 'your inbox'} on this device to continue.
           </AuthNotice>
         ) : null}
 

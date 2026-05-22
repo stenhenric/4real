@@ -128,7 +128,7 @@ const ProfilePage = () => {
             {isOwnProfile && (
               <div className="px-6">
                 <SketchyButton className="w-full text-sm uppercase font-bold" disabled>
-                  Avatar Editing Coming Soon
+                  Edit avatar
                 </SketchyButton>
               </div>
             )}
@@ -152,7 +152,7 @@ const ProfilePage = () => {
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-tight">{feature}</p>
                   <div className="hidden group-hover:block absolute top-full left-1/2 -ml-20 w-40 p-2 bg-gray-950 text-white text-[10px] z-20 mt-2">
-                    Condition not met in this timeline.
+                    Complete challenges to unlock.
                   </div>
                 </div>
               ))}
@@ -162,7 +162,7 @@ const ProfilePage = () => {
           <div className="rough-border bg-white p-8 shadow-xl relative">
             <div className="tape w-20 h-6 -top-2 right-10 opacity-60 rotate-3"></div>
             <h2 className="text-3xl font-semibold flex items-center gap-2 mb-8 italic tracking-tighter underline">
-              <Gamepad2 size={28} /> Board Mini-Sketches
+              <Gamepad2 size={28} /> Match History
             </h2>
             <div className="space-y-6">
               {history.length === 0 ? (

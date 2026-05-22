@@ -121,8 +121,8 @@ export default function RegisterPage() {
   return (
     <AuthShell
       eyebrow="Create Account"
-      title="Enter with a verified identity."
-      description="Your email becomes the sign-in identifier. Your username stays public inside matches, profiles, and leaderboards."
+      title="Create your account."
+      description="We'll use your email to sign you in. Your username will be public on profiles and leaderboards."
       footer={(
         <p className="text-sm text-black/60 font-bold">
           Already have an account?{' '}
@@ -145,7 +145,7 @@ export default function RegisterPage() {
                 autoComplete="username"
                 label="Public Username"
                 name="username"
-                hint={usernameError ? undefined : 'This is the public handle players see in lobbies.'}
+                hint={usernameError ? undefined : 'This is your public name that players see in matches and lobbies.'}
                 error={usernameError}
                 onChange={(event) => {
                   setUsername(event.target.value);
@@ -221,7 +221,7 @@ export default function RegisterPage() {
             </SketchyButton>
 
             <AuthNotice tone="info">
-              Verify you are human to create the account for {email}.
+              Please complete the security check to finish creating your account for {email}.
             </AuthNotice>
 
             <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />

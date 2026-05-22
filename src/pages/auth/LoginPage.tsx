@@ -202,8 +202,8 @@ export default function LoginPage() {
   return (
     <AuthShell
       eyebrow="Account Access"
-      title="Sign in without friction."
-      description="Use email or username with your password, a magic link, or Google. Sensitive actions are step-up protected after you are inside."
+      title="Welcome back."
+      description="Sign in with email, username, or Google. Your account security is our top priority."
       footer={(
         <p className="text-sm text-black/60 font-bold">
           New here?{' '}
@@ -322,7 +322,7 @@ export default function LoginPage() {
             </SketchyButton>
 
             <AuthNotice tone="info">
-              Verify you are human to send a magic link to {identifier.trim()}.
+              Please complete the verification below to send a magic link to {identifier.trim()}.
             </AuthNotice>
 
             <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />

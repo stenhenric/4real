@@ -165,7 +165,7 @@ const MerchantPanel = () => {
 
       if (activeTab === 'buy') {
         if (!paymentConfirmed) {
-          throw new Error('Confirm payment after paying before you submit the order.');
+          throw new Error('Please confirm you have sent the payment first.');
         }
 
         if (!transactionCode.trim()) {
@@ -567,11 +567,11 @@ const MerchantPanel = () => {
               <div className="flex items-center gap-2">
                 <History className="text-ink-blue" />
                 <h2 className="text-3xl font-semibold italic tracking-tighter uppercase underline decoration-double">
-                  The Ledger
+                  Recent Trades
                 </h2>
               </div>
               <div className="text-[10px] uppercase font-bold opacity-30 font-mono tracking-widest">
-                Authenticated Nodes ONLY
+                Secure trades
               </div>
             </div>
 
@@ -658,7 +658,7 @@ const MerchantPanel = () => {
               <div className="mt-8 p-4 bg-orange-100 border-2 border-orange-300 italic text-sm text-orange-900 flex items-center gap-3">
                 <span aria-hidden="true" className="text-2xl">⚠️</span>
                 <span className="font-bold">
-                  ENSURE TO SUBMIT MPESA SCREENSHOT
+                  Please verify the M-Pesa screenshot matches the transaction details before approving.
                 </span>
               </div>
             )}

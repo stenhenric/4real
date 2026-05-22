@@ -84,8 +84,8 @@ export default function VerifyEmailPage() {
   return (
     <AuthShell
       eyebrow="Verify Email"
-      title="Activate your account before you play."
-      description="Email verification is required before we issue a live app session. Open the link in your inbox or request a fresh one below."
+      title="Verify your email"
+      description="Please verify your email address to activate your account. Click the link we sent to your inbox, or request a new link below."
       footer={(
         <p className="text-sm text-black/60">
           Back to{' '}
@@ -99,7 +99,7 @@ export default function VerifyEmailPage() {
       <div className="space-y-6">
         {consuming ? (
           <AuthNotice tone="info">
-            Verifying your email and activating a session for this browser.
+            Verifying your email and setting up your account...
           </AuthNotice>
         ) : null}
         {consumeError || errorMessage ? (
@@ -107,7 +107,7 @@ export default function VerifyEmailPage() {
         ) : null}
         {!token ? (
           <AuthNotice tone="info">
-            Opening the emailed link completes verification through a secure POST confirmation and then redirects back into 4real.
+            Clicking the link in your email will verify your address and bring you back here automatically.
           </AuthNotice>
         ) : null}
 

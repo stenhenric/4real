@@ -427,7 +427,7 @@ export default function SecuritySettingsPage() {
                       <SketchyButton
                         className="w-full px-4 py-3 text-sm"
                         fill="#ffffff"
-                        onClick={() => void copyToClipboard(setup.totpSecret, 'Secret copied.')}
+                        onClick={() => void copyToClipboard(setup.totpSecret, 'Setup key copied to clipboard.')}
                         type="button"
                       >
                         <Copy size={16} />
@@ -436,7 +436,7 @@ export default function SecuritySettingsPage() {
                       <SketchyButton
                         className="w-full px-4 py-3 text-sm"
                         fill="#ffffff"
-                        onClick={() => void copyToClipboard(setup.otpauthUrl, 'OTP Auth URL copied.')}
+                        onClick={() => void copyToClipboard(setup.otpauthUrl, 'Authenticator link copied to clipboard.')}
                         type="button"
                       >
                         <Copy size={16} />
@@ -564,7 +564,7 @@ export default function SecuritySettingsPage() {
                   <SketchyButton
                     className="px-4 py-3 text-sm"
                     fill="#ffffff"
-                    onClick={() => void copyToClipboard(recoveryCodes.join('\n'), 'Recovery codes copied.')}
+                    onClick={() => void copyToClipboard(recoveryCodes.join('\n'), 'Recovery codes copied to clipboard.')}
                     type="button"
                   >
                     <Copy size={16} />

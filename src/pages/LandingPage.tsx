@@ -109,12 +109,12 @@ function SketchBarChart() {
 // Top players
 
 const TOP_PLAYERS = [
-  { rank: 1, name: 'Navername', node: 'NODE: [ID]' },
-  { rank: 2, name: 'Maigen',   node: 'NODE: [ID]' },
-  { rank: 3, name: 'Loyalot', node: 'NODE: [ID]' },
-  { rank: 4, name: 'Wanziomm',node: 'NODE: [ID]' },
-  { rank: 5, name: 'Eikle',   node: 'NODE: [ID]' },
-  { rank: 6, name: 'Magin',   node: 'NODE: [ID]' },
+  { rank: 1, name: 'Navername', node: 'TON: EQ...5k' },
+  { rank: 2, name: 'Maigen',   node: 'TON: EQ...a4' },
+  { rank: 3, name: 'Loyalot',  node: 'TON: EQ...3b' },
+  { rank: 4, name: 'Wanziomm', node: 'TON: EQ...9z' },
+  { rank: 5, name: 'Eikle',    node: 'TON: EQ...7c' },
+  { rank: 6, name: 'Magin',    node: 'TON: EQ...1x' },
 ];
 
 // Landing Page
@@ -122,12 +122,12 @@ const TOP_PLAYERS = [
 const STEPS = [
   { n: '01', title: 'Fund your balance',   body: 'Deposit USDT via TON wallet. Balance is always visible in-app.' },
   { n: '02', title: 'Challenge a player',  body: 'Create a public match or invite one opponent. Set the wager, lock the table.' },
-  { n: '03', title: 'Win. Settle. Done.',  body: 'Server resolves the outcome, updates balances, and records history instantly.' },
+  { n: '03', title: 'Win. Settle. Done.',  body: 'Matches are resolved instantly, updating your balance and match history immediately.' },
 ] as const;
 
 const FEATURES = [
   { icon: Trophy,   title: 'Real-money wagers',        body: 'Stake USDT in public or private matches. Every result settles transparently.' },
-  { icon: Shield,   title: 'Verified accounts',        body: 'MFA, step-up checks, and session controls ship as first-class features.' },
+  { icon: Shield,   title: 'Verified accounts',        body: 'Multi-factor authentication, secure deposits, and instant sign-in alerts keep your account safe.' },
   { icon: Clock,    title: 'Instant settlement',       body: 'Results resolve in real-time. Balances update the moment the move drops.' },
   { icon: Users,    title: 'Public & private tables',  body: 'Open lobby or a direct invite link to lock a two-player seat.' },
   { icon: BarChart2,title: 'Live leaderboard',         body: 'Real-time rankings track wins, earnings, and history across every session.' },
@@ -252,7 +252,7 @@ export default function LandingPage() {
 
             {/* Trust badges */}
             <ul className="flex flex-wrap gap-2" aria-label="Trust indicators">
-              {['Verified accounts', 'Protected sessions', 'Wallet controls', 'Rate-limited sign-in'].map((item) => (
+              {['Verified accounts', 'Secure logins', 'Wallet protection', '2FA enabled'].map((item) => (
                 <li
                   key={item}
                   className="text-[10px] font-bold uppercase tracking-widest opacity-50 border-2 border-black/10 px-3 py-1"

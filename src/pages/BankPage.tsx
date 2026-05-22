@@ -96,7 +96,7 @@ const BankPage = () => {
           onClick={() => setActiveView('portal')}
           type="button"
         >
-          {'←'} Back to Bank Portal
+          {'←'} Back to Bank
         </SketchyButton>
         <Suspense fallback={<RouteLoading message="Loading bank portal…" />}>
           {panelContent}
@@ -163,7 +163,7 @@ const BankPage = () => {
         <div className="flex items-center gap-3 mb-8">
           <History size={32} className="text-ink-black opacity-70" />
           <h2 className="text-3xl font-semibold italic tracking-tighter uppercase underline decoration-wavy">
-            Global Transaction History
+            Transaction History
           </h2>
         </div>
 

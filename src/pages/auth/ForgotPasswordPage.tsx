@@ -52,8 +52,8 @@ export default function ForgotPasswordPage() {
   return (
     <AuthShell
       eyebrow="Password Recovery"
-      title="Reset access without exposing account state."
-      description="Enter your email and we will send a single-use password reset link if the account is eligible."
+      title="Reset your password"
+      description="Enter your email and we'll send you a link to reset your password."
       footer={(
         <p className="text-sm text-black/60">
           Remembered your password?{' '}

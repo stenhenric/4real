@@ -399,7 +399,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                           <div className="mb-3">
                             <h4 className="font-semibold text-lg uppercase tracking-tight">{match.p1Username}</h4>
                             <p className="text-[10px] font-mono opacity-40 font-bold">
-                              NODE: {match.roomId.toUpperCase()}
+                              Room: {match.roomId.toUpperCase()}
                             </p>
                           </div>
                           <SketchyButton className="w-full text-sm py-2" onClick={() => navigate(`/game/${match.roomId}`)}>
@@ -434,7 +434,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                           <div className="mb-3 mt-2">
                             <h4 className="font-semibold text-lg uppercase tracking-tight">{match.p1Username}</h4>
                             <p className="text-[10px] font-mono opacity-40 font-bold">
-                              NODE: {match.roomId.toUpperCase()}
+                              Room: {match.roomId.toUpperCase()}
                             </p>
                           </div>
                           <SketchyButton className="w-full text-sm py-2" fill="var(--color-note-yellow)" onClick={() => navigate(`/game/${match.roomId}`)}>
@@ -539,7 +539,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle,black_1px,transparent_1px)] bg-size-[10px_10px]"></div>
                 <div className="text-4xl mb-4 opacity-20">🎭</div>
                 <p className="italic opacity-30 text-center font-bold uppercase text-[10px] tracking-[0.2em] relative z-10 leading-relaxed">
-                  Profile Avatar Rendering System OFFLINE
+                  Avatar customization coming soon.
                 </p>
               </div>
             </div>

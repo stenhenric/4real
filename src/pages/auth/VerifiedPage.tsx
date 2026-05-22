@@ -34,7 +34,7 @@ export default function VerifiedPage() {
     <AuthShell
       eyebrow="Email Verified"
       title="Your account is active."
-      description="We have confirmed your email address and issued a session for this browser."
+      description="Your email address has been successfully verified."
       footer={(
         <p className="text-sm text-black/60">
           If nothing happens, you can continue manually.
@@ -43,7 +43,7 @@ export default function VerifiedPage() {
     >
       <div className="space-y-6">
         <AuthNotice tone="success">
-          Verification complete. You can continue into the app now.
+          Your account is ready! Redirecting you to the app...
         </AuthNotice>
 
         <div className="flex flex-col gap-3 sm:flex-row">

@@ -65,12 +65,12 @@ export default function MfaChallengePage() {
 
   return (
     <AuthShell
-      eyebrow="Multi-Factor Verification"
-      title={reason === 'sensitive_action' ? 'Approve this sensitive action.' : 'Verify this sign-in.'}
+      eyebrow="Security Verification"
+      title={reason === 'sensitive_action' ? 'Confirm your identity' : 'Verify your sign-in'}
       description={
         reason === 'sensitive_action'
-          ? 'Enter a 6-digit authenticator code or a recovery code before continuing with this protected action.'
-          : 'We detected a higher-risk sign-in. Enter a 6-digit authenticator code or use a recovery code to continue.'
+          ? 'Please enter the 6-digit code from your authenticator app, or use a recovery code to complete this change.'
+          : 'Enter the 6-digit code from your authenticator app, or use a recovery code to sign in.'
       }
       footer={(
         <p className="text-sm text-black/60">
@@ -90,7 +90,7 @@ export default function MfaChallengePage() {
         <form className="space-y-5" onSubmit={handleSubmit}>
           <AuthField
             autoComplete="one-time-code"
-            hint="Use the current 6-digit code from your authenticator app."
+            hint="The 6-digit code from your authenticator app."
             label="Authenticator Code"
             maxLength={6}
             name="code"
@@ -100,7 +100,7 @@ export default function MfaChallengePage() {
             value={code}
           />
           <AuthField
-            hint="You can use a recovery code instead of a live authenticator code."
+            hint="Use this if you don't have access to your authenticator app."
             label="Recovery Code"
             name="recoveryCode"
             onChange={(event) => setRecoveryCode(event.target.value)}

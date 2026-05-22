@@ -56,8 +56,8 @@ export default function ResetPasswordPage() {
   return (
     <AuthShell
       eyebrow="Reset Password"
-      title="Replace your password and revoke old sessions."
-      description="Successful reset revokes existing sessions so you can sign in again with the new password."
+      title="Choose a new password"
+      description="Once you update your password, you'll be signed out of other devices so you can sign in securely."
       footer={(
         <p className="text-sm text-black/60">
           Need a new link?{' '}

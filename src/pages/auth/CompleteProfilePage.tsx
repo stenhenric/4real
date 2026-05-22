@@ -33,8 +33,8 @@ export default function CompleteProfilePage() {
   return (
     <AuthShell
       eyebrow="Complete Profile"
-      title="Choose the public name players will see."
-      description="Google and magic-link accounts still need a gameplay identity before they can enter the lobby."
+      title="Choose your username"
+      description="You'll need a unique username before you can join matches and play."
     >
       <div className="space-y-6">
         <AuthNotice tone="info">
@@ -44,7 +44,7 @@ export default function CompleteProfilePage() {
         <form className="space-y-5" onSubmit={handleSubmit}>
           <AuthField
             autoComplete="username"
-            hint="3 to 32 characters. Letters, numbers, and separators only."
+            hint="Must be 3 to 32 characters. Only letters, numbers, and hyphens or underscores are allowed."
             label="Public Username"
             maxLength={32}
             minLength={3}

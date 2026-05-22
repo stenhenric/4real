@@ -47,8 +47,8 @@ export default function MagicLinkPage() {
   return (
     <AuthShell
       eyebrow="Magic Link"
-      title="Finish sign-in in this browser."
-      description="Magic links are single-use and only activate a session after this page securely posts the token back to the backend."
+      title="Finish signing in"
+      description="We are verifying your magic link. You will be signed in and redirected automatically in a moment."
       footer={(
         <p className="text-sm text-black/60">
           Need another link?{' '}
@@ -62,13 +62,13 @@ export default function MagicLinkPage() {
       <div className="space-y-6">
         {consuming ? (
           <AuthNotice tone="info">
-            Verifying your magic link and issuing a session for this browser.
+            Verifying your sign-in link...
           </AuthNotice>
         ) : null}
 
         {!token && !consumeError ? (
           <AuthNotice tone="info">
-            Check {email || 'your inbox'} for the secure sign-in link, then open it in this browser to continue.
+            Please check {email || 'your inbox'} for the sign-in link and open it on this device to continue.
           </AuthNotice>
         ) : null}
 

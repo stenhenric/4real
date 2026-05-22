@@ -282,7 +282,7 @@ export function MerchantLayout() {
           </nav>
 
           <div className="rough-border bg-white/80 p-4 shadow-lg">
-            <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Reserve Snapshot</p>
+            <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Reserve Summary</p>
             <div className="mt-3 space-y-3 font-mono text-sm">
               <div className="flex items-center justify-between">
                 <span className="opacity-60">On-chain USDT</span>
@@ -321,7 +321,7 @@ export function MerchantLayout() {
                     {statusBadge.label}
                   </span>
                   <span className="text-sm font-mono opacity-60">
-                    Last sync {dashboard ? formatDateTime(dashboard.generatedAt) : 'pending'}
+                    Updated {dashboard ? formatDateTime(dashboard.generatedAt) : 'pending'}
                   </span>
                 </div>
               </div>
@@ -385,7 +385,7 @@ export function MerchantLayout() {
               </nav>
 
               <div className="border border-black/10 bg-black/5 p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Pocket Snapshot</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Quick Balance</p>
                 <div className="mt-3 grid grid-cols-2 gap-3 font-mono text-sm">
                   <div>
                     <p className="opacity-50">Pending orders</p>
