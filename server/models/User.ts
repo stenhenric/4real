@@ -65,6 +65,15 @@ const UserSchema: Schema = new Schema({
 });
 
 UserSchema.index({ elo: -1 });
+UserSchema.index(
+  { elo: -1, username: 1, _id: 1, usernameNormalized: 1 },
+  {
+    name: 'leaderboard_public_by_elo',
+    partialFilterExpression: {
+      usernameNormalized: { $type: 'string' },
+    },
+  },
+);
 
 export const User = mongoose.model<IUser>('User', UserSchema);
 

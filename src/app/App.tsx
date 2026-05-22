@@ -13,9 +13,6 @@ const LandingPage = lazy(() => import('../pages/LandingPage'));
 const PrivacyPolicyPage = lazy(() => import('../pages/PrivacyPolicyPage'));
 const TermsOfUsePage = lazy(() => import('../pages/TermsOfUsePage'));
 const BankPage = lazy(() => import('../pages/BankPage'));
-const TonConnectRouteProvider = lazy(() => import('./TonConnectRouteProvider').then((module) => ({
-  default: module.TonConnectRouteProvider,
-})));
 const DashboardPage = lazy(() => import('../pages/DashboardPage'));
 const GamePage = lazy(() => import('../pages/GamePage'));
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage'));
@@ -100,14 +97,7 @@ export default function App() {
                 path="/leaderboard"
                 element={<DashboardPage key="dashboard-leaderboard" initialTab="leaderboard" />}
               />
-              <Route
-                path="/bank"
-                element={(
-                  <TonConnectRouteProvider>
-                    <BankPage />
-                  </TonConnectRouteProvider>
-                )}
-              />
+              <Route path="/bank" element={<BankPage />} />
               <Route path="/game/:roomId" element={<GamePage />} />
               <Route path="/profile/:userId" element={<ProfilePage />} />
             </Route>

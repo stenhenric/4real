@@ -25,13 +25,8 @@ import {
 } from '../../features/auth/AuthShell';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { SECURITY_PAGE_COPY, shouldAutoStartTotpSetup } from './security-page-content';
+import { formatSessionDeviceLabel, formatSessionLastSeen } from './session-device-label';
 import { getApiErrorMessage } from '../../utils/errors';
-import { formatDateTime } from '../../features/merchant/format';
-
-function formatSessionLabel(session: SessionListItemDTO) {
-  const seen = new Date(session.lastSeenAt).toLocaleString();
-  return `${session.userAgent ?? 'Unknown device'} • Last seen ${seen}`;
-}
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
@@ -651,15 +646,9 @@ export default function SecuritySettingsPage() {
                           <Laptop2 size={14} />
                           {session.current ? 'Current browser' : 'Tracked device'}
                         </StatusBadge>
-                        <span className="truncate text-xs font-mono text-black/45">{session.deviceId}</span>
                       </div>
-                      <p className="mt-3 text-base font-semibold text-black">{formatSessionLabel(session)}</p>
-                      <p className="mt-2 text-sm text-black/60">
-                        Idle expiry {formatDateTime(session.idleExpiresAt)} • Absolute expiry {formatDateTime(session.absoluteExpiresAt)}
-                      </p>
-                      {session.ipAddress ? (
-                        <p className="mt-1 text-xs font-mono text-black/45">IP {session.ipAddress}</p>
-                      ) : null}
+                      <p className="mt-3 text-base font-semibold text-black">{formatSessionDeviceLabel(session)}</p>
+                      <p className="mt-2 text-sm text-black/60">{formatSessionLastSeen(session)}</p>
                     </div>
 
                     <SketchyButton

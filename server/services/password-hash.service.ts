@@ -116,7 +116,17 @@ function parseHashString(value: string) {
   };
 }
 
+let mockHashPasswordForTests: ((password: string) => Promise<string>) | null = null;
+
+export function setHashPasswordForTests(fn: ((password: string) => Promise<string>) | null): void {
+  mockHashPasswordForTests = fn;
+}
+
 export async function hashPassword(password: string): Promise<string> {
+  if (mockHashPasswordForTests) {
+    return mockHashPasswordForTests(password);
+  }
+
   const salt = crypto.randomBytes(ARGON2_SALT_LENGTH);
   const hash = await runArgon2(password, salt);
   return buildHashString({ hash, salt });

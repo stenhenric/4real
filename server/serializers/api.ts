@@ -27,6 +27,7 @@ import {
   parseUsdtAmount,
 } from '../utils/money.ts';
 import type { IAuthSession } from '../models/AuthSession.ts';
+import type { LeaderboardUserRecord } from '../services/user.service.ts';
 
 function serializeStats(stats?: IUser['stats']): UserStatsDTO {
   return {
@@ -147,7 +148,7 @@ export function serializeUserProfile(user: IUser): UserProfileDTO {
   };
 }
 
-export function serializeLeaderboardUser(user: IUser): LeaderboardUserDTO {
+export function serializeLeaderboardUser(user: LeaderboardUserRecord): LeaderboardUserDTO {
   return {
     id: user._id.toString(),
     username: user.username ?? 'Pending profile',

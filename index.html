@@ -3,13 +3,58 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <meta
+      name="description"
+      content="4real is a Connect4-based earning platform powered by TON Connect."
+    />
+    <meta name="author" content="4real" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="dark light" />
+
+    <!-- Open Graph: Telegram, Discord, WhatsApp, Facebook, etc. -->
+    <meta property="og:title" content="4real | Earn with Connect4" />
+    <meta
+      property="og:description"
+      content="Play Connect4, connect your TON wallet, and earn with 4real."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="%PUBLIC_APP_ORIGIN%" />
+    <meta property="og:image" content="%PUBLIC_APP_ORIGIN%/preview-image.jpg" />
+
+    <!-- Twitter / X preview -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="4real | Earn with Connect4" />
+    <meta
+      name="twitter:description"
+      content="Play Connect4, connect your TON wallet, and earn with 4real."
+    />
+    <meta name="twitter:image" content="%PUBLIC_APP_ORIGIN%/preview-image.jpg" />
+
+    <!-- Icons -->
     <link rel="icon" type="image/jpeg" href="/tonconnect-icon.jpg" />
-    <link rel="preload" href="/fonts/cabin-sketch-700.woff2" as="font" type="font/woff2" crossorigin />
-    <title>4real | Sketchy Connect 4</title>
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Font preload -->
+    <link
+      rel="preload"
+      href="/fonts/cabin-sketch-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    <title>4real | Earn with Connect4</title>
   </head>
+
   <body>
+    <noscript>You need to enable JavaScript to run 4real.</noscript>
+
     <div id="root"></div>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

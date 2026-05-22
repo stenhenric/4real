@@ -166,13 +166,24 @@ function isDuplicateKeyError(error: unknown): error is { code: number } {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 11000);
 }
 
-export async function executeIdempotentMutationV2<TBody>({
-  userId,
-  routeKey,
-  idempotencyKey,
-  requestPayload,
-  execute,
-}: ExecuteIdempotentMutationV2Options<TBody>): Promise<IdempotentMutationResponse<TBody>> {
+let activeV2Executor: any = null;
+
+export function setIdempotencyV2ExecutorForTests(fn: any): void {
+  activeV2Executor = fn;
+}
+
+export function resetIdempotencyV2ExecutorForTests(): void {
+  activeV2Executor = null;
+}
+
+export async function executeIdempotentMutationV2<TBody>(
+  options: ExecuteIdempotentMutationV2Options<TBody>,
+): Promise<IdempotentMutationResponse<TBody>> {
+  if (activeV2Executor) {
+    return activeV2Executor(options);
+  }
+
+  const { userId, routeKey, idempotencyKey, requestPayload, execute } = options;
   const requestHash = hashIdempotencyPayload(requestPayload);
   const session = await mongoose.startSession();
   let response: IdempotentMutationResponse<TBody> | null = null;

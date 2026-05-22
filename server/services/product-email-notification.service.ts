@@ -201,25 +201,25 @@ async function sendToMerchantAdmins(params: {
     return;
   }
 
-  for (const recipient of recipients) {
-    if (recipient.id === SYSTEM_COMMISSION_ACCOUNT_ID) {
-      continue;
-    }
+  const tasks = recipients
+    .filter((recipient) => recipient.id !== SYSTEM_COMMISSION_ACCOUNT_ID)
+    .map(async (recipient) => {
+      try {
+        await deliver({
+          scenario: params.scenario,
+          recipient,
+          content: params.render(recipient),
+        });
+      } catch (error) {
+        logError('product_email.render_failed', {
+          scenario: params.scenario,
+          recipientDomain: getRecipientDomain(recipient.email),
+          error: sanitizeLoggedError(error),
+        });
+      }
+    });
 
-    try {
-      await deliver({
-        scenario: params.scenario,
-        recipient,
-        content: params.render(recipient),
-      });
-    } catch (error) {
-      logError('product_email.render_failed', {
-        scenario: params.scenario,
-        recipientDomain: getRecipientDomain(recipient.email),
-        error: sanitizeLoggedError(error),
-      });
-    }
-  }
+  await Promise.allSettled(tasks);
 }
 
 export class ProductEmailNotificationService {

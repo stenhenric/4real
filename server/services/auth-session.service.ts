@@ -365,6 +365,55 @@ async function markRefreshTokenUsed(params: {
   );
 }
 
+interface RefreshReuseMarker {
+  refreshTokenHash: string;
+  userId: string;
+  sessionId: string;
+  expiresAt: Date;
+}
+
+interface RedisPipeline {
+  setex(key: string, ttlSeconds: number, value: string): RedisPipeline;
+  exec(): Promise<unknown>;
+}
+
+function getRedisPipeline(redis: ReturnType<typeof getRedis>): RedisPipeline | null {
+  const candidate = redis as unknown as { pipeline?: () => RedisPipeline };
+  return typeof candidate.pipeline === 'function' ? candidate.pipeline() : null;
+}
+
+async function markRefreshTokensUsed(markers: RefreshReuseMarker[]): Promise<void> {
+  if (markers.length === 0) {
+    return;
+  }
+
+  const redis = getRedis();
+  const pipeline = getRedisPipeline(redis);
+  if (pipeline) {
+    for (const marker of markers) {
+      pipeline.setex(
+        getUsedRefreshRedisKey(marker.refreshTokenHash),
+        getTtlSeconds(marker.expiresAt),
+        JSON.stringify({
+          userId: marker.userId,
+          sessionId: marker.sessionId,
+        }),
+      );
+    }
+    await pipeline.exec();
+    return;
+  }
+
+  await Promise.all(markers.map((marker) => redis.setex(
+    getUsedRefreshRedisKey(marker.refreshTokenHash),
+    getTtlSeconds(marker.expiresAt),
+    JSON.stringify({
+      userId: marker.userId,
+      sessionId: marker.sessionId,
+    }),
+  )));
+}
+
 async function getRefreshReuseMarker(refreshTokenHash: string): Promise<{ userId: string; sessionId: string } | null> {
   const rawValue = await getRedis().get(getUsedRefreshRedisKey(refreshTokenHash));
   if (!rawValue) {
@@ -419,6 +468,53 @@ async function revokeSessionDocument(document: IAuthSession, reason: string): Pr
   await document.save();
 }
 
+async function revokeSessionDocuments(documents: IAuthSession[], reason: string): Promise<void> {
+  if (documents.length === 0) {
+    return;
+  }
+
+  const accessKeys = documents
+    .map((document) => document.currentAccessTokenHash)
+    .filter((hash): hash is string => Boolean(hash))
+    .map((hash) => getAccessRedisKey(hash));
+  if (accessKeys.length > 0) {
+    await getRedis().del(...accessKeys);
+  }
+
+  await markRefreshTokensUsed(
+    documents
+      .filter((document): document is IAuthSession & { currentRefreshTokenHash: string } => Boolean(document.currentRefreshTokenHash))
+      .map((document) => ({
+        refreshTokenHash: document.currentRefreshTokenHash,
+        userId: document.userId.toString(),
+        sessionId: document.sessionId,
+        expiresAt: document.absoluteExpiresAt,
+      })),
+  );
+
+  const revokedAt = new Date();
+  await AuthSession.updateMany(
+    { _id: { $in: documents.map((document) => document._id) } },
+    {
+      $set: {
+        revokedAt,
+        revokeReason: reason,
+      },
+      $unset: {
+        currentAccessTokenHash: '',
+        currentRefreshTokenHash: '',
+      },
+    },
+  );
+
+  for (const document of documents) {
+    document.revokedAt = revokedAt;
+    document.revokeReason = reason;
+    document.currentAccessTokenHash = undefined;
+    document.currentRefreshTokenHash = undefined;
+  }
+}
+
 export class AuthSessionService {
   static ensureDeviceId(existingValue?: string | null): string {
     if (typeof existingValue === 'string' && existingValue.trim().length >= 16) {
@@ -447,9 +543,7 @@ export class AuthSessionService {
         deviceId: params.metadata.deviceId,
         ...buildActiveSessionQuery(),
       });
-      for (const existingSession of existingSessions) {
-        await revokeSessionDocument(existingSession, 'device_replaced');
-      }
+      await revokeSessionDocuments(existingSessions, 'device_replaced');
 
       const session = await AuthSession.create({
         sessionId,
@@ -670,9 +764,7 @@ export class AuthSessionService {
         ...buildActiveSessionQuery(),
       });
 
-      for (const session of sessions) {
-        await revokeSessionDocument(session, reason);
-      }
+      await revokeSessionDocuments(sessions, reason);
     });
   }
 
@@ -684,9 +776,7 @@ export class AuthSessionService {
         ...buildActiveSessionQuery(),
       });
 
-      for (const session of sessions) {
-        await revokeSessionDocument(session, 'other_sessions_revoked');
-      }
+      await revokeSessionDocuments(sessions, 'other_sessions_revoked');
     });
   }
 

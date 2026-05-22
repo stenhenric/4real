@@ -44,7 +44,21 @@ function mergeMerchantConfig(stored: Partial<MerchantConfig> | null | undefined)
   };
 }
 
+let mockConfigForTests: MerchantConfig | null = null;
+
+export function setMerchantConfigForTests(config: MerchantConfig | null): void {
+  mockConfigForTests = config;
+}
+
+export function resetMerchantConfigForTests(): void {
+  mockConfigForTests = null;
+}
+
 export async function getMerchantConfig(): Promise<MerchantConfig> {
+  if (mockConfigForTests) {
+    return mockConfigForTests;
+  }
+
   const { value } = await getOrPopulateJson({
     key: CacheKeys.merchantConfig(),
     ttlSeconds: CACHE_TTLS.merchantConfig,

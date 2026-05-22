@@ -105,7 +105,7 @@ function parseContentDisposition(value: string): Record<string, string> {
     }, {});
 }
 
-export async function parseMultipartForm(
+async function parseMultipartFormImpl(
   req: Request,
   options: { maxBytes: number },
 ): Promise<ParsedMultipartForm> {
@@ -192,4 +192,21 @@ export async function parseMultipartForm(
   }
 
   return { fields, files };
+}
+
+let activeParser = parseMultipartFormImpl;
+
+export function setMultipartParserForTests(fn: typeof parseMultipartFormImpl): void {
+  activeParser = fn;
+}
+
+export function resetMultipartParserForTests(): void {
+  activeParser = parseMultipartFormImpl;
+}
+
+export async function parseMultipartForm(
+  req: Request,
+  options: { maxBytes: number },
+): Promise<ParsedMultipartForm> {
+  return activeParser(req, options);
 }

@@ -25,6 +25,12 @@ export interface VerifiedMerchantEmailRecipient {
   username?: string | null;
 }
 
+export interface LeaderboardUserRecord {
+  _id: { toString(): string };
+  username?: string | null;
+  elo: number;
+}
+
 export class UserService {
   static async getDisplayBalance(userId: string, session?: mongoose.ClientSession): Promise<string> {
     const balanceDoc = await UserBalanceRepository.findByUserId(userId, session);
@@ -319,13 +325,14 @@ export class UserService {
     );
   }
 
-  static async getLeaderboard(limit: number = 10): Promise<IUser[]> {
+  static async getLeaderboard(limit: number = 10): Promise<LeaderboardUserRecord[]> {
     return User.find(trustFilter({
       _id: { $ne: SYSTEM_COMMISSION_ACCOUNT_ID },
-      usernameNormalized: { $ne: null },
+      usernameNormalized: { $type: 'string' as const },
     }))
       .sort({ elo: -1 })
       .limit(limit)
-      .select('-passwordHash -__v');
+      .select('_id username elo')
+      .lean<LeaderboardUserRecord[]>();
   }
 }

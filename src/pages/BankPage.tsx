@@ -35,6 +35,9 @@ type BankView = 'portal' | 'merchant' | 'deposit' | 'withdraw';
 
 const DepositPanel = lazy(() => import('../features/bank/DepositPanel'));
 const MerchantPanel = lazy(() => import('../features/bank/MerchantPanel'));
+const TonConnectRouteProvider = lazy(() => import('../app/TonConnectRouteProvider').then((module) => ({
+  default: module.TonConnectRouteProvider,
+})));
 const WithdrawPanel = lazy(() => import('../features/bank/WithdrawPanel'));
 
 const BankPage = () => {
@@ -81,6 +84,10 @@ const BankPage = () => {
         : activeView === 'deposit'
           ? DepositPanel
           : WithdrawPanel;
+    const activePanel = <ActivePanel />;
+    const panelContent = activeView === 'merchant'
+      ? activePanel
+      : <TonConnectRouteProvider>{activePanel}</TonConnectRouteProvider>;
 
     return (
       <div className="space-y-4">
@@ -92,7 +99,7 @@ const BankPage = () => {
           {'←'} Back to Bank Portal
         </SketchyButton>
         <Suspense fallback={<RouteLoading message="Loading bank portal…" />}>
-          <ActivePanel />
+          {panelContent}
         </Suspense>
       </div>
     );

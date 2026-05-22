@@ -125,7 +125,17 @@ async function writeCachedString(key: string, value: string, ttlSeconds: number)
   }
 }
 
+let mockInvalidateCacheKeysForTests: ((keys: string[]) => Promise<void>) | null = null;
+
+export function setInvalidateCacheKeysForTests(fn: ((keys: string[]) => Promise<void>) | null): void {
+  mockInvalidateCacheKeysForTests = fn;
+}
+
 export async function invalidateCacheKeys(keys: string[]): Promise<void> {
+  if (mockInvalidateCacheKeysForTests) {
+    return mockInvalidateCacheKeysForTests(keys);
+  }
+
   if (keys.length === 0) {
     return;
   }

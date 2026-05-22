@@ -1,12 +1,16 @@
 import { getEnv } from '../config/env.ts';
 import { FailedDepositIngestionRepository } from '../repositories/failed-deposit-ingestion.repository.ts';
-import { ingestIncomingTransfer } from '../services/deposit-ingestion.service.ts';
+import {
+  buildTransferLookupContext,
+  ingestIncomingTransfer,
+} from '../services/deposit-ingestion.service.ts';
 import { logger } from '../utils/logger.ts';
 
 const MAX_BACKOFF_MS = 5 * 60_000;
 const REPLAY_BATCH_SIZE = 50;
 
 const defaultReplayWorkerDependencies = {
+  buildTransferLookupContext,
   ingestIncomingTransfer,
 };
 
@@ -23,10 +27,18 @@ export async function runFailedDepositReplayWorker(): Promise<void> {
   const maxRetries = env.DEPOSIT_INGESTION_MAX_RETRIES;
   const now = new Date();
   const retryableFailures = await FailedDepositIngestionRepository.findRetryable(now, maxRetries, REPLAY_BATCH_SIZE);
+  const transferLookupContext = retryableFailures.length > 0
+    ? await replayWorkerDependencies.buildTransferLookupContext(
+        retryableFailures.map((failedIngestion) => failedIngestion.transferData),
+      )
+    : null;
 
   for (const failedIngestion of retryableFailures) {
     try {
-      await replayWorkerDependencies.ingestIncomingTransfer(failedIngestion.transferData);
+      await replayWorkerDependencies.ingestIncomingTransfer(
+        failedIngestion.transferData,
+        transferLookupContext ?? undefined,
+      );
       await FailedDepositIngestionRepository.markResolved(failedIngestion.txHash);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

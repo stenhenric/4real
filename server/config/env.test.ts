@@ -152,6 +152,42 @@ test('getEnv rejects distributed production topology unless coordination flags a
   });
 });
 
+test('getEnv requires edge protection for public cacheable GETs in distributed production', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+    PRODUCTION_TOPOLOGY: 'distributed',
+    FEATURE_DISTRIBUTED_LOCK: 'true',
+    FEATURE_BULLMQ_JOBS: 'true',
+    FEATURE_REDIS_SOCKET_ADAPTER: 'true',
+    PUBLIC_CACHEABLE_GET_EDGE_PROTECTION: 'false',
+  }, () => {
+    assert.throws(() => getEnv(), /PUBLIC_CACHEABLE_GET_EDGE_PROTECTION=true/i);
+  });
+});
+
+test('getEnv accepts distributed production when public cacheable GET edge protection is asserted', () => {
+  withEnv({
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+    REDIS_URL: 'rediss://redis.example.invalid:6379',
+    PUBLIC_APP_ORIGIN: 'https://app.example.com',
+    ALLOWED_ORIGINS: 'https://app.example.com',
+    PRODUCTION_TOPOLOGY: 'distributed',
+    FEATURE_DISTRIBUTED_LOCK: 'true',
+    FEATURE_BULLMQ_JOBS: 'true',
+    FEATURE_REDIS_SOCKET_ADAPTER: 'true',
+    PUBLIC_CACHEABLE_GET_EDGE_PROTECTION: 'true',
+  }, () => {
+    assert.equal(getEnv().PUBLIC_CACHEABLE_GET_EDGE_PROTECTION, true);
+  });
+});
+
 test('getEnv requires explicit bounded TRUST_PROXY in production', () => {
   withEnv({
     NODE_ENV: 'production',

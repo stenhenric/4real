@@ -1,0 +1,18 @@
+{
+  "name": "4real",
+  "short_name": "4real",
+  "description": "Play Connect4, connect your TON wallet, and earn with 4real.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/tonconnect-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

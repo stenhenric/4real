@@ -7,6 +7,7 @@ import {
   setBackgroundJobDependenciesForTests,
   startBackgroundJobs,
 } from '../services/background-jobs.service.ts';
+import { disconnectRedis, getBullmqRedisClient, getRedisClient } from '../services/redis.service.ts';
 import { setHotWalletRuntimeForTests } from '../services/hot-wallet-runtime.service.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { resetWithdrawalWorkerStateForTests } from '../workers/withdrawal-worker.ts';
@@ -94,6 +95,23 @@ test('startBackgroundJobs uses BullMQ as the only scheduler when queue mode is e
   assert.equal(setIntervalMock.mock.callCount(), 0);
   assert.equal(bullmqMock.mock.callCount(), 1);
   assert.equal(bullmqStop.mock.callCount(), 1);
+});
+
+test('Redis clients use fail-fast retries for app operations and blocking-safe retries for BullMQ', async (t) => {
+  registerEnvCleanup(t);
+  process.env.REDIS_URL = 'redis://127.0.0.1:6379';
+  resetEnvCacheForTests();
+
+  t.after(async () => {
+    await disconnectRedis();
+  });
+
+  const appRedis = getRedisClient();
+  const bullmqRedis = getBullmqRedisClient();
+
+  assert.equal(appRedis.options.maxRetriesPerRequest, 3);
+  assert.equal(bullmqRedis.options.maxRetriesPerRequest, null);
+  assert.notEqual(appRedis, bullmqRedis);
 });
 
 test('startBackgroundJobs falls back to local intervals when BullMQ mode is disabled', async (t) => {

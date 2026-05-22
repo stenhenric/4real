@@ -214,7 +214,7 @@ export class OrderController {
 
     if (!result.replayed) {
       await invalidateCacheKeys([CacheKeys.merchantDashboard()]);
-      await ProductEmailNotificationService.sendOrderCreated({
+      ProductEmailNotificationService.sendOrderCreated({
         userId: user._id.toString(),
         orderId: responseBody._id,
         orderType: responseBody.type,
@@ -227,6 +227,12 @@ export class OrderController {
         ...(responseBody.transactionCode ? { transactionCode: responseBody.transactionCode } : {}),
         ...(responseBody.mpesaNumber ? { mpesaNumber: responseBody.mpesaNumber } : {}),
         ...(responseBody.mpesaName ? { mpesaName: responseBody.mpesaName } : {}),
+      }).catch((error) => {
+        logger.error('order.notification_delivery_failed', {
+          orderId: responseBody._id,
+          userId: user._id.toString(),
+          error,
+        });
       });
     }
     res.status(result.statusCode).json(responseBody);

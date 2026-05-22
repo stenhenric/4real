@@ -10,3 +10,8 @@ process.env.GOOGLE_CLIENT_SECRET ??= 'gmail-client-secret';
 process.env.GOOGLE_REFRESH_TOKEN ??= 'gmail-refresh-token';
 process.env.GOOGLE_REDIRECT_URI ??= 'http://127.0.0.1:8787/oauth2/gmail/callback';
 process.env.EMAIL_FROM ??= 'botandbag@gmail.com';
+
+// Optimize Argon2 parameters for test execution speed
+process.env.AUTH_ARGON2_MEMORY_KIB = '19456';
+process.env.AUTH_ARGON2_PASSES = '1';
+process.env.AUTH_ARGON2_PARALLELISM = '1';

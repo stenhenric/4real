@@ -16,7 +16,10 @@ import {
 } from './http/cache-policy.ts';
 import { csrfProtectionMiddleware } from './middleware/csrf.middleware.ts';
 import { errorHandler, notFoundApiHandler } from './middleware/error.middleware.ts';
-import { createGeneralRateLimiter } from './middleware/rate-limit.middleware.ts';
+import {
+  createGeneralRateLimiter,
+  createPublicCacheableGetRateLimiter,
+} from './middleware/rate-limit.middleware.ts';
 import { requestContextMiddleware } from './middleware/request-context.middleware.ts';
 import { recordReadinessDependency, renderMetrics } from './services/metrics.service.ts';
 import { probeBullmq } from './services/bullmq-jobs.service.ts';
@@ -31,15 +34,21 @@ interface AppStatusProvider {
 }
 
 interface AppDependencies {
+  registerPublicCacheableApiRoutes: (app: Express, publicCacheableGetRateLimiter: RequestHandler) => Promise<void> | void;
   registerApiRoutes: (app: Express) => Promise<void> | void;
   registerFrontendMiddleware: (app: Express) => Promise<void>;
   createGeneralRateLimiter: () => RequestHandler;
+  createPublicCacheableGetRateLimiter: () => RequestHandler;
   probeRedis: typeof probeRedis;
   probeBullmq: typeof probeBullmq;
   getHotWalletRuntime: typeof getHotWalletRuntime;
 }
 
 const defaultAppDependencies: AppDependencies = {
+  registerPublicCacheableApiRoutes: async (app, publicCacheableGetRateLimiter) => {
+    const { registerPublicCacheableApiRoutes } = await import('./routes/index.ts');
+    return registerPublicCacheableApiRoutes(app, publicCacheableGetRateLimiter);
+  },
   registerApiRoutes: async (app) => {
     const { registerApiRoutes } = await import('./routes/index.ts');
     return registerApiRoutes(app);
@@ -49,6 +58,7 @@ const defaultAppDependencies: AppDependencies = {
     await registerFrontendMiddleware(app);
   },
   createGeneralRateLimiter,
+  createPublicCacheableGetRateLimiter,
   probeRedis,
   probeBullmq,
   getHotWalletRuntime,
@@ -370,6 +380,11 @@ export async function createApp(
 
     return sendMissingAuthCookieResponse(req, res);
   });
+
+  await appDependencies.registerPublicCacheableApiRoutes(
+    app,
+    appDependencies.createPublicCacheableGetRateLimiter(),
+  );
 
   app.use('/api', appDependencies.createGeneralRateLimiter());
   app.use('/api', apiNoStoreMiddleware);

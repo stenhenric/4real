@@ -89,3 +89,64 @@ test('requestPasswordReset omits previewUrl when the backend sends a reset email
     });
   });
 });
+test('register responds 202 immediately and does not wait/block on sendVerificationEmail', async (t) => {
+  const passwordHashService = await import('../services/password-hash.service.ts');
+  passwordHashService.setHashPasswordForTests(async () => 'argon2id$v=1$m=19456,t=1,p=1$c2FsdA$aGFzaA');
+  t.after(() => {
+    passwordHashService.setHashPasswordForTests(null);
+  });
+
+  // Mock Turnstile validation
+  t.mock.method(globalThis, 'fetch', async () => {
+    return new Response(JSON.stringify({ success: true }));
+  });
+
+  t.mock.method(UserService, 'findByEmail', async () => null);
+  t.mock.method(UserService, 'findByUsername', async () => null);
+  t.mock.method(UserService, 'createUser', async () => ({
+    _id: { toString: () => 'user-456' },
+    email: 'newuser@example.com',
+    username: 'newuser',
+  }));
+
+  let emailServiceCalled = false;
+  let emailServiceResolved = false;
+
+  t.mock.method(AuthEmailService, 'sendVerificationEmail', async () => {
+    emailServiceCalled = true;
+    // Simulate a slow network delivery of 100ms
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    emailServiceResolved = true;
+    return 'http://127.0.0.1:3000/auth/verify?token=xyz';
+  });
+
+  await withEmailEnv(async () => {
+    const req = {
+      body: {
+        email: 'newuser@example.com',
+        username: 'newuser',
+        password: 'Password123!',
+        turnstileToken: 'dummy-token',
+      },
+      ip: '127.0.0.1',
+    } as any;
+    const res = createResponseMock();
+
+    const start = performance.now();
+    await AuthController.register(req, res);
+    const duration = performance.now() - start;
+
+    // Verify response is sent immediately
+    assert.equal(res.statusCode, 202);
+    assert.equal((res.payload as any)?.status, 'pending_email_verification');
+
+    // Confirm that at the time the HTTP response was sent, the email call had started but NOT yet finished/resolved!
+    assert.equal(emailServiceCalled, true);
+    assert.equal(emailServiceResolved, false);
+    assert.ok(duration < 50, `Registration HTTP response was not immediate: ${duration}ms`);
+
+    // Let the email service resolve
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(emailServiceResolved, true);
+  });
+});

@@ -29,7 +29,12 @@ function createResponseMock() {
     locals: {
       requestId: 'req-1',
     },
+    statusCode: undefined as number | undefined,
     jsonBody: undefined as unknown,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
     json(body: unknown) {
       this.jsonBody = body;
       return this;
@@ -372,4 +377,107 @@ test('updateOrder sends user notification when order is rejected', async (t) => 
     transactionCode: 'REJ123XYZ',
   });
   assert.equal((res.jsonBody as { status: string }).status, 'REJECTED');
+});
+
+test('createOrder completes immediately and does not await/block on ProductEmailNotificationService.sendOrderCreated', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const orderId = new mongoose.Types.ObjectId();
+
+  // Mock dependencies
+  t.mock.method(UserService, 'findById', async () => ({
+    _id: userId,
+    email: 'bob@example.com',
+    username: 'bob',
+  }));
+
+  // We mock multipart form parsing
+  const multipart = await import('../utils/multipart.ts');
+  multipart.setMultipartParserForTests(async () => ({
+    fields: {
+      type: 'SELL',
+      amount: '5.000000',
+      mpesaNumber: '254700111222',
+      mpesaName: 'Bob Seller',
+    },
+    files: {},
+  }));
+  t.after(() => {
+    multipart.resetMultipartParserForTests();
+  });
+
+  const merchantConfig = await import('../services/merchant-config.service.ts');
+  merchantConfig.setMerchantConfigForTests({
+    mpesaNumber: '254700000000',
+    walletAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    instructions: 'Use exact amount.',
+    fiatCurrency: 'KES',
+    buyRateKesPerUsdt: '140.000000',
+    sellRateKesPerUsdt: '135.000000',
+  });
+  t.after(() => {
+    merchantConfig.resetMerchantConfigForTests();
+  });
+
+  const idempotency = await import('../services/idempotency.service.ts');
+  idempotency.setIdempotencyV2ExecutorForTests(async (params: any) => {
+    return {
+      statusCode: 201,
+      replayed: false,
+      requestHash: 'hash-123',
+      body: {
+        _id: orderId.toString(),
+        userId: userId.toString(),
+        type: 'SELL',
+        amount: '5.000000',
+        status: 'PENDING',
+        fiatCurrency: 'KES',
+        fiatTotal: '675.00',
+        exchangeRate: '135.000000',
+        mpesaNumber: '254700111222',
+        mpesaName: 'Bob Seller',
+      },
+    };
+  });
+  t.after(() => {
+    idempotency.resetIdempotencyV2ExecutorForTests();
+  });
+
+  const cache = await import('../services/cache.service.ts');
+  cache.setInvalidateCacheKeysForTests(async () => {});
+  t.after(() => {
+    cache.setInvalidateCacheKeysForTests(null);
+  });
+
+  let sendOrderCreatedCalled = false;
+  let sendOrderCreatedResolved = false;
+
+  t.mock.method(ProductEmailNotificationService, 'sendOrderCreated', async () => {
+    sendOrderCreatedCalled = true;
+    // Simulate slow SMTP delivery of 100ms
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    sendOrderCreatedResolved = true;
+  });
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: false },
+    headers: { 'idempotency-key': 'key-12345678' },
+    get(name: string) {
+      return this.headers[name.toLowerCase()];
+    },
+  } as any;
+  const res = createResponseMock();
+
+  const start = performance.now();
+  await OrderController.createOrder(req, res);
+  const duration = performance.now() - start;
+
+  assert.equal(res.jsonBody !== undefined, true);
+  assert.equal((res.jsonBody as any)._id, orderId.toString());
+  assert.equal(sendOrderCreatedCalled, true);
+  assert.equal(sendOrderCreatedResolved, false);
+  assert.ok(duration < 50, `Order creation response was not immediate: ${duration}ms`);
+
+  // Wait for background notification dispatch to complete
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(sendOrderCreatedResolved, true);
 });

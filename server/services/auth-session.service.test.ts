@@ -356,6 +356,84 @@ test('refreshSession revokes sessions when the atomic refresh update loses the r
   ]);
 });
 
+test('revokeOtherSessionsForUser revokes matching sessions with one database update', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const sessions = [
+    createMockSession({
+      _id: new mongoose.Types.ObjectId(),
+      sessionId: 'session-old-1',
+      userId,
+      currentAccessTokenHash: 'access-old-1',
+      currentRefreshTokenHash: 'refresh-old-1',
+      save: async () => {
+        throw new Error('individual session saves should be batched');
+      },
+    }),
+    createMockSession({
+      _id: new mongoose.Types.ObjectId(),
+      sessionId: 'session-old-2',
+      userId,
+      currentAccessTokenHash: 'access-old-2',
+      currentRefreshTokenHash: 'refresh-old-2',
+      save: async () => {
+        throw new Error('individual session saves should be batched');
+      },
+    }),
+  ];
+  const redisCalls: Array<{ method: string; args: unknown[] }> = [];
+  const pipelineCommands: Array<{ method: string; args: unknown[] }> = [];
+  let capturedFilter: Record<string, any> | undefined;
+  let capturedUpdate: Record<string, any> | undefined;
+
+  setAuthSessionDependenciesForTests({
+    getRedisClient: () => ({
+      del: async (...args: unknown[]) => {
+        redisCalls.push({ method: 'del', args });
+        return args.length;
+      },
+      pipeline: () => {
+        const pipeline = {
+          setex: (...args: unknown[]) => {
+            pipelineCommands.push({ method: 'setex', args });
+            return pipeline;
+          },
+          exec: async () => {
+            redisCalls.push({ method: 'pipeline.exec', args: [...pipelineCommands] });
+            return [];
+          },
+        };
+        return pipeline;
+      },
+    }) as any,
+  });
+  t.after(() => resetAuthSessionDependenciesForTests());
+  t.mock.method(AuthSession, 'find', async (filter: Record<string, any>) => {
+    capturedFilter = filter;
+    return sessions;
+  });
+  const updateManyMock = t.mock.method(AuthSession, 'updateMany', async (filter: Record<string, any>, update: Record<string, any>) => {
+    capturedFilter = filter;
+    capturedUpdate = update;
+    return { acknowledged: true, matchedCount: 2, modifiedCount: 2 } as any;
+  });
+
+  await AuthSessionService.revokeOtherSessionsForUser(userId.toString(), 'session-current');
+
+  assert.equal(updateManyMock.mock.callCount(), 1);
+  assert.deepEqual(capturedFilter?._id?.$in, sessions.map((session) => session._id));
+  assert(capturedUpdate?.$set?.revokedAt instanceof Date);
+  assert.equal(capturedUpdate?.$set?.revokeReason, 'other_sessions_revoked');
+  assert.deepEqual(capturedUpdate?.$unset, {
+    currentAccessTokenHash: '',
+    currentRefreshTokenHash: '',
+  });
+  assert.deepEqual(redisCalls[0], {
+    method: 'del',
+    args: ['auth:access:access-old-1', 'auth:access:access-old-2'],
+  });
+  assert.equal(pipelineCommands.length, 2);
+});
+
 test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index and legacy absoluteExpiresAt index', async (t) => {
   const calls: string[] = [];
 
@@ -452,4 +530,35 @@ test('createSession wraps unexpected session-store failures with AUTH_SESSION_UN
       error: castError,
     },
   ]);
+});
+
+test('refreshSession wraps unexpected Redis failures with AUTH_SESSION_UNAVAILABLE', async (t) => {
+  const refreshToken = 'refresh-token';
+  t.mock.method(logger, 'error', () => undefined);
+
+  setAuthSessionDependenciesForTests({
+    getRedisClient: () => ({
+      get: async () => {
+        throw new Error('Redis connection failed');
+      },
+    }) as any,
+  });
+  t.after(() => resetAuthSessionDependenciesForTests());
+
+  await assert.rejects(
+    () => AuthSessionService.refreshSession({
+      refreshToken,
+      metadata: {
+        deviceId: 'device-1',
+        ipAddress: '127.0.0.1',
+        userAgent: 'test-agent',
+      },
+    }),
+    (error: unknown) => typeof error === 'object'
+      && error !== null
+      && 'code' in error
+      && 'details' in error
+      && (error as { code?: string }).code === 'AUTH_SESSION_UNAVAILABLE'
+      && (error as { details?: { operation?: string } }).details?.operation === 'refreshSession',
+  );
 });

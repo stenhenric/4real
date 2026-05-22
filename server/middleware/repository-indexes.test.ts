@@ -75,6 +75,7 @@ test('startup index verification covers staging-required query indexes', () => {
       'orders.status_1_type_1_createdAt_-1',
       'orders.type_1_createdAt_-1',
       'transactions.createdAt_-1__id_-1',
+      'users.leaderboard_public_by_elo',
       'withdrawals.status_1_startedAt_1',
     ],
   );

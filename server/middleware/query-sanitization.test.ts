@@ -42,19 +42,28 @@ function hasTrustedSymbol(value: object) {
 }
 
 function createResolvedQuery<T>(items: T[]) {
+  const calls: string[] = [];
   const query = {
     sort() {
+      calls.push('sort');
       return query;
     },
     limit() {
+      calls.push('limit');
       return query;
     },
     select() {
+      calls.push('select');
       return query;
+    },
+    async lean() {
+      calls.push('lean');
+      return items;
     },
     then(resolve: (value: T[]) => unknown) {
       return Promise.resolve(resolve(items));
     },
+    calls,
   };
 
   return query;
@@ -151,6 +160,9 @@ test('UserService.getLeaderboard trusts every operator filter under mongoose san
     select() {
       return query;
     },
+    async lean() {
+      return [];
+    },
     then(resolve: (value: unknown[]) => unknown) {
       return Promise.resolve(resolve([]));
     },
@@ -168,7 +180,29 @@ test('UserService.getLeaderboard trusts every operator filter under mongoose san
   assert.equal(capturedFilters.length, 1);
   assert.ok(hasTrustedSymbol(capturedFilters[0]));
   assert.equal(capturedFilters[0]._id.$ne, SYSTEM_COMMISSION_ACCOUNT_ID);
-  assert.equal(capturedFilters[0].usernameNormalized.$ne, null);
+  assert.equal(capturedFilters[0].usernameNormalized.$type, 'string');
+});
+
+test('UserService.getLeaderboard uses a lean projection for the public leaderboard payload', async (t) => {
+  registerEnvCleanup(t);
+
+  const query = createResolvedQuery([]);
+  const selectCalls: unknown[] = [];
+  const findMock = mock.method(User, 'find', (() => {
+    const originalSelect = query.select;
+    query.select = ((fields: unknown) => {
+      selectCalls.push(fields);
+      return originalSelect.call(query);
+    }) as typeof query.select;
+    return query;
+  }) as any);
+
+  t.after(() => findMock.mock.restore());
+
+  await UserService.getLeaderboard(10);
+
+  assert.deepEqual(selectCalls, ['_id username elo']);
+  assert.equal(query.calls.includes('lean'), true);
 });
 
 test('errorHandler returns INVALID_IDENTIFIER only for identifier cast errors', () => {

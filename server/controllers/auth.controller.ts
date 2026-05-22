@@ -206,19 +206,24 @@ export class AuthController {
 
     if (existingUser) {
       if (!existingUser.emailVerifiedAt) {
-        try {
-          await AuthEmailService.sendVerificationEmail(existingUser._id.toString(), existingUser.email);
-        } catch (error) {
-          if (!isEmailDeliveryFailed(error)) {
-            throw error;
-          }
-          logger.warn('auth.email_delivery_failed', {
-            flow: 'register_existing_unverified',
-            userId: existingUser._id.toString(),
-            recipientDomain: getRecipientDomain(existingUser.email),
-            errorMessage: error instanceof Error ? error.message : String(error),
+        AuthEmailService.sendVerificationEmail(existingUser._id.toString(), existingUser.email)
+          .catch((error) => {
+            if (!isEmailDeliveryFailed(error)) {
+              logger.error('auth.email_delivery_system_error', {
+                flow: 'register_existing_unverified',
+                userId: existingUser._id.toString(),
+                recipientDomain: getRecipientDomain(existingUser.email),
+                error,
+              });
+              return;
+            }
+            logger.warn('auth.email_delivery_failed', {
+              flow: 'register_existing_unverified',
+              userId: existingUser._id.toString(),
+              recipientDomain: getRecipientDomain(existingUser.email),
+              errorMessage: error instanceof Error ? error.message : String(error),
+            });
           });
-        }
         res.status(202).json({
           status: 'pending_email_verification',
           message: 'Verify your email to continue.',
@@ -242,19 +247,24 @@ export class AuthController {
       passwordHash,
     });
 
-    try {
-      await AuthEmailService.sendVerificationEmail(user._id.toString(), user.email);
-    } catch (error) {
-      if (!isEmailDeliveryFailed(error)) {
-        throw error;
-      }
-      logger.warn('auth.email_delivery_failed', {
-        flow: 'register_new_user',
-        userId: user._id.toString(),
-        recipientDomain: getRecipientDomain(user.email),
-        errorMessage: error instanceof Error ? error.message : String(error),
+    AuthEmailService.sendVerificationEmail(user._id.toString(), user.email)
+      .catch((error) => {
+        if (!isEmailDeliveryFailed(error)) {
+          logger.error('auth.email_delivery_system_error', {
+            flow: 'register_new_user',
+            userId: user._id.toString(),
+            recipientDomain: getRecipientDomain(user.email),
+            error,
+          });
+          return;
+        }
+        logger.warn('auth.email_delivery_failed', {
+          flow: 'register_new_user',
+          userId: user._id.toString(),
+          recipientDomain: getRecipientDomain(user.email),
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
       });
-    }
     res.status(202).json({
       status: 'pending_email_verification',
       message: 'Verify your email to continue.',

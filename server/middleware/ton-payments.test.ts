@@ -30,7 +30,7 @@ import {
 import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
 import { LockUnavailableError } from '../services/distributed-lock.service.ts';
-import type { JettonTransferEvent } from '../services/deposit-ingestion.service.ts';
+import type { JettonTransferEvent, TransferLookupContext } from '../services/deposit-ingestion.service.ts';
 import * as userServiceModule from '../services/user.service.ts';
 import * as withdrawalEngineModule from '../services/withdrawal-engine.ts';
 import { pollDeposits } from '../workers/deposit-poller.ts';
@@ -80,6 +80,13 @@ function registerBaseCleanup(t: TestContext) {
   });
   setWithdrawalWorkerDependenciesForTests({
     withLock: async (_resource, _ttlMs, fn) => fn(),
+  });
+  setFailedDepositReplayWorkerDependenciesForTests({
+    buildTransferLookupContext: async () => ({
+      memoMap: new Map(),
+      processedHashes: new Set(),
+      unmatchedOpenHashes: new Set(),
+    }),
   });
 
   t.after(() => {
@@ -919,6 +926,104 @@ test('terminal replay failure emits alert, marks record, and allows cursor to mo
   assert.equal(upsertCalled, false);
   assert.equal(markStateMock.mock.callCount(), 1);
   assert.equal(markStateMock.mock.calls[0].arguments[1], 1_700_000_040);
+});
+
+test('failed deposit replay worker batches retry lookup context for the whole batch', async (t) => {
+  registerBaseCleanup(t);
+  process.env.DEPOSIT_INGESTION_MAX_RETRIES = '3';
+  resetEnvCacheForTests();
+
+  const retryableFailures: FailedDepositIngestionDocument[] = [
+    {
+      txHash: 'retry-batched-1',
+      transferData: {
+        transaction_hash: 'retry-batched-1',
+        transaction_now: 1_700_000_050,
+        comment: 'memo-retry-1',
+        jetton_master: USDT_MASTER,
+        amount: '1000000',
+        source: ZERO_ADDRESS,
+        source_wallet: SENDER_JETTON_WALLET,
+      },
+      failedAt: new Date(),
+      retryCount: 0,
+      lastError: 'initial failure',
+      status: 'pending',
+      nextRetryAt: new Date(0),
+      resolvedAt: null,
+      terminalFailureAt: null,
+      updatedAt: new Date(),
+    },
+    {
+      txHash: 'retry-batched-2',
+      transferData: {
+        transaction_hash: 'retry-batched-2',
+        transaction_now: 1_700_000_051,
+        comment: 'memo-retry-2',
+        jetton_master: USDT_MASTER,
+        amount: '2000000',
+        source: ZERO_ADDRESS,
+        source_wallet: SENDER_JETTON_WALLET,
+      },
+      failedAt: new Date(),
+      retryCount: 0,
+      lastError: 'initial failure',
+      status: 'pending',
+      nextRetryAt: new Date(0),
+      resolvedAt: null,
+      terminalFailureAt: null,
+      updatedAt: new Date(),
+    },
+  ];
+  const sharedContext: TransferLookupContext = {
+    memoMap: new Map(),
+    processedHashes: new Set(),
+    unmatchedOpenHashes: new Set(),
+  };
+  const receivedContexts: unknown[] = [];
+
+  const findRetryableMock = mock.method(
+    FailedDepositIngestionRepository,
+    'findRetryable',
+    async () => retryableFailures,
+  );
+  const markResolvedMock = mock.method(FailedDepositIngestionRepository, 'markResolved', async () => {});
+  const markRetryScheduledMock = mock.method(FailedDepositIngestionRepository, 'markRetryScheduled', async () => {});
+  const markTerminalFailureMock = mock.method(FailedDepositIngestionRepository, 'markTerminalFailure', async () => {});
+
+  t.after(() => findRetryableMock.mock.restore());
+  t.after(() => markResolvedMock.mock.restore());
+  t.after(() => markRetryScheduledMock.mock.restore());
+  t.after(() => markTerminalFailureMock.mock.restore());
+
+  setFailedDepositReplayWorkerDependenciesForTests({
+    buildTransferLookupContext: async (transfers: JettonTransferEvent[]) => {
+      assert.deepEqual(transfers.map((transfer) => transfer.transaction_hash), ['retry-batched-1', 'retry-batched-2']);
+      return sharedContext;
+    },
+    ingestIncomingTransfer: async (tx: JettonTransferEvent, context?: TransferLookupContext) => {
+      receivedContexts.push(context);
+      return {
+        txHash: tx.transaction_hash,
+        decision: 'credit',
+        amountRaw: String(tx.amount),
+        amountUsdt: tx.transaction_hash === 'retry-batched-1' ? '1.000000' : '2.000000',
+        comment: tx.comment ?? '',
+        memoStatus: 'active',
+        senderJettonWallet: SENDER_JETTON_WALLET,
+        senderOwnerAddress: ZERO_ADDRESS,
+        txTime: new Date(tx.transaction_now * 1000).toISOString(),
+      };
+    },
+  } as Parameters<typeof setFailedDepositReplayWorkerDependenciesForTests>[0] & {
+    buildTransferLookupContext: (transfers: JettonTransferEvent[]) => Promise<TransferLookupContext>;
+  });
+
+  await runFailedDepositReplayWorker();
+
+  assert.equal(receivedContexts.length, 2);
+  assert.deepEqual(receivedContexts, [sharedContext, sharedContext]);
+  assert.equal(markResolvedMock.mock.callCount(), 2);
 });
 
 test('requestWithdrawal rejects insufficient balance', async (t) => {

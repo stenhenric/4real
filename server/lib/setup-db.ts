@@ -26,6 +26,7 @@ export const REQUIRED_DATABASE_INDEXES = [
   { collection: 'orders', name: 'status_1_type_1_createdAt_-1' },
   { collection: 'transactions', name: 'createdAt_-1__id_-1' },
   { collection: 'withdrawals', name: 'status_1_startedAt_1' },
+  { collection: 'users', name: 'leaderboard_public_by_elo' },
   {
     collection: FailedDepositIngestionRepository.collectionName,
     name: 'status_1_resolvedAt_1_transferData.transaction_now_1',

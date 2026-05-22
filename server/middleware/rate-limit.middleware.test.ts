@@ -5,13 +5,20 @@ import express from 'express';
 
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { setRedisClientForTests } from '../services/redis.service.ts';
-import { createAuthRateLimiter, createGeneralRateLimiter, createPasswordLoginIdentifierRateLimiter } from './rate-limit.middleware.ts';
+import {
+  createAuthRateLimiter,
+  createGeneralRateLimiter,
+  createPasswordLoginIdentifierRateLimiter,
+  createPublicCacheableGetRateLimiter,
+} from './rate-limit.middleware.ts';
 
 function withRedisRateLimitEnv(t: TestContext): void {
   const previous = {
     REDIS_URL: process.env.REDIS_URL,
     GENERAL_RATE_LIMIT_WINDOW_MS: process.env.GENERAL_RATE_LIMIT_WINDOW_MS,
     GENERAL_RATE_LIMIT_MAX: process.env.GENERAL_RATE_LIMIT_MAX,
+    PUBLIC_CACHEABLE_GET_RATE_LIMIT_WINDOW_MS: process.env.PUBLIC_CACHEABLE_GET_RATE_LIMIT_WINDOW_MS,
+    PUBLIC_CACHEABLE_GET_RATE_LIMIT_MAX: process.env.PUBLIC_CACHEABLE_GET_RATE_LIMIT_MAX,
     AUTH_RATE_LIMIT_WINDOW_MS: process.env.AUTH_RATE_LIMIT_WINDOW_MS,
     AUTH_RATE_LIMIT_MAX: process.env.AUTH_RATE_LIMIT_MAX,
   };
@@ -19,6 +26,8 @@ function withRedisRateLimitEnv(t: TestContext): void {
   process.env.REDIS_URL = 'redis://rate-limit-test';
   process.env.GENERAL_RATE_LIMIT_WINDOW_MS = '60000';
   process.env.GENERAL_RATE_LIMIT_MAX = '100';
+  process.env.PUBLIC_CACHEABLE_GET_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.PUBLIC_CACHEABLE_GET_RATE_LIMIT_MAX = '100';
   process.env.AUTH_RATE_LIMIT_WINDOW_MS = '60000';
   process.env.AUTH_RATE_LIMIT_MAX = '100';
   resetEnvCacheForTests();
@@ -166,6 +175,37 @@ test('Redis-backed general and auth rate limiters do not double-count one auth r
     ))),
     false,
   );
+});
+
+test('public cacheable GET limiter uses its dedicated lightweight budget', async (t) => {
+  withRedisRateLimitEnv(t);
+  process.env.PUBLIC_CACHEABLE_GET_RATE_LIMIT_MAX = '1';
+  resetEnvCacheForTests();
+
+  const app = express();
+  app.set('trust proxy', 1);
+  app.get('/api/users/leaderboard', createPublicCacheableGetRateLimiter(), (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
+  const server = app.listen(0);
+  t.after(() => {
+    server.close();
+  });
+  await once(server, 'listening');
+  const address = server.address();
+  assert(address && typeof address === 'object');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  assert.equal((await fetch(`${baseUrl}/api/users/leaderboard`)).status, 200);
+
+  const limited = await fetch(`${baseUrl}/api/users/leaderboard`);
+
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), {
+    code: 'RATE_LIMITED',
+    message: 'Too many requests, please try again later.',
+  });
 });
 
 test('password login limiter blocks repeated failures for one normalized identifier', async (t) => {

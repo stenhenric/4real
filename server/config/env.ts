@@ -88,6 +88,17 @@ const rawEnvSchema = z.object({
   REQUEST_BODY_LIMIT: z.string().trim().default('100kb'),
   GENERAL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   GENERAL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
+  PUBLIC_CACHEABLE_GET_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  PUBLIC_CACHEABLE_GET_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
+  PUBLIC_CACHEABLE_GET_EDGE_PROTECTION: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return false;
+    }),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
   METRICS_TOKEN: z.string().trim().min(1).optional(),
@@ -368,6 +379,10 @@ export function getEnv(): AppEnv {
       )
     ) {
       throw new Error('Distributed production requires FEATURE_DISTRIBUTED_LOCK, FEATURE_BULLMQ_JOBS, and FEATURE_REDIS_SOCKET_ADAPTER');
+    }
+
+    if (parsed.data.PRODUCTION_TOPOLOGY === 'distributed' && !parsed.data.PUBLIC_CACHEABLE_GET_EDGE_PROTECTION) {
+      throw new Error('Distributed production requires PUBLIC_CACHEABLE_GET_EDGE_PROTECTION=true for public cacheable GET routes');
     }
 
     if (parsed.data.PRODUCTION_TOPOLOGY === 'single-instance' && (parsed.data.RENDER_INSTANCE_COUNT ?? 1) !== 1) {

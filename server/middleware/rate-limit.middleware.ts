@@ -38,6 +38,22 @@ export function createGeneralRateLimiter() {
   });
 }
 
+export function createPublicCacheableGetRateLimiter() {
+  const env = getEnv();
+
+  return rateLimit({
+    windowMs: env.PUBLIC_CACHEABLE_GET_RATE_LIMIT_WINDOW_MS,
+    max: env.PUBLIC_CACHEABLE_GET_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    requestPropertyName: 'publicCacheableGetRateLimit',
+    legacyHeaders: false,
+    message: {
+      code: 'RATE_LIMITED',
+      message: 'Too many requests, please try again later.',
+    },
+  });
+}
+
 export function createAuthRateLimiter() {
   const env = getEnv();
   const store = createRateLimitStore('rl:auth:');

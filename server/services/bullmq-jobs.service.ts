@@ -1,7 +1,7 @@
 import { Queue, Worker, type JobsOptions } from 'bullmq';
 
 import { getEnv } from '../config/env.ts';
-import { getRedisClient } from './redis.service.ts';
+import { getBullmqRedisClient } from './redis.service.ts';
 import { registerMetricsCollector, setBullmqQueueDepth } from './metrics.service.ts';
 import { logger } from '../utils/logger.ts';
 
@@ -70,11 +70,11 @@ function readAttemptLimit(job: { opts: { attempts?: number } }): number {
 export async function startBullmqBackgroundJobs(
   definitions: BullmqJobDefinition[],
 ): Promise<BullmqBackgroundJobRuntime> {
-  const redis = getRedisClient();
+  const redis = getBullmqRedisClient();
   const queues: Queue<Record<string, unknown>>[] = [];
   const dlqQueues: Queue<Record<string, unknown>>[] = [];
   const workers: Worker<Record<string, unknown>>[] = [];
-  const workerConnections: Array<ReturnType<typeof getRedisClient>> = [];
+  const workerConnections: Array<ReturnType<typeof getBullmqRedisClient>> = [];
 
   for (const definition of definitions) {
     const queue = new Queue<Record<string, unknown>>(definition.queueName, {

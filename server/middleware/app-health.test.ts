@@ -7,6 +7,7 @@ import mongoose from 'mongoose';
 import { createApp } from '../app.ts';
 import { getAuthCookieName } from '../config/cookies.ts';
 import { resetEnvCacheForTests } from '../config/env.ts';
+import { applyPublicSharedCacheHeaders } from '../http/cache-policy.ts';
 import type { BackgroundJobState } from '../services/background-jobs.service.ts';
 import { resetBuildInfoForTests } from '../utils/build-info.ts';
 
@@ -30,6 +31,11 @@ async function withTestServer(
     databaseReady?: boolean;
     env?: Record<string, string | undefined>;
     createGeneralRateLimiter?: () => (req: any, res: any, next: () => void) => void;
+    createPublicCacheableGetRateLimiter?: () => (req: any, res: any, next: () => void) => void;
+    registerPublicCacheableApiRoutes?: (
+      app: Express,
+      publicCacheableGetRateLimiter: (req: any, res: any, next: () => void) => void,
+    ) => Promise<void> | void;
     registerApiRoutes?: (app: Express) => Promise<void> | void;
   } = {},
 ): Promise<void> {
@@ -58,8 +64,11 @@ async function withTestServer(
       getBackgroundJobs: () => options.backgroundJobs ?? HEALTHY_BACKGROUND_JOBS,
     }, {
       registerApiRoutes: options.registerApiRoutes ?? (() => undefined),
+      registerPublicCacheableApiRoutes: options.registerPublicCacheableApiRoutes ?? (() => undefined),
       registerFrontendMiddleware: async () => undefined,
       createGeneralRateLimiter: options.createGeneralRateLimiter ?? (() => (_req, _res, next) => next()),
+      createPublicCacheableGetRateLimiter:
+        options.createPublicCacheableGetRateLimiter ?? (() => (_req, _res, next) => next()),
       probeRedis: options.probeRedis ?? (async () => 'disabled'),
       probeBullmq: options.probeBullmq ?? (async () => 'disabled'),
       getHotWalletRuntime: () => {
@@ -139,8 +148,11 @@ async function createTestApp(options: Parameters<typeof withTestServer>[1] = {})
       getBackgroundJobs: () => options.backgroundJobs ?? HEALTHY_BACKGROUND_JOBS,
     }, {
       registerApiRoutes: () => undefined,
+      registerPublicCacheableApiRoutes: options.registerPublicCacheableApiRoutes ?? (() => undefined),
       registerFrontendMiddleware: async () => undefined,
       createGeneralRateLimiter: options.createGeneralRateLimiter ?? (() => (_req, _res, next) => next()),
+      createPublicCacheableGetRateLimiter:
+        options.createPublicCacheableGetRateLimiter ?? (() => (_req, _res, next) => next()),
       probeRedis: options.probeRedis ?? (async () => 'disabled'),
       probeBullmq: options.probeBullmq ?? (async () => 'disabled'),
       getHotWalletRuntime: () => ({
@@ -398,6 +410,55 @@ test('/api/auth/me without an auth cookie bypasses the Redis-backed general limi
     createGeneralRateLimiter: () => (_req, _res, next) => {
       limiterCalls += 1;
       next();
+    },
+  });
+});
+
+test('public cacheable leaderboard bypasses the Redis-backed general limiter but still has a local limiter', async () => {
+  let generalLimiterCalls = 0;
+  let publicLimiterCalls = 0;
+
+  await withTestServer(async (baseUrl) => {
+    const publicResponse = await fetch(`${baseUrl}/api/users/leaderboard`);
+    const publicPayload = await publicResponse.json() as { ok?: boolean };
+
+    assert.equal(publicResponse.status, 200);
+    assert.deepEqual(publicPayload, { ok: true });
+    assert.equal(
+      publicResponse.headers.get('cache-control'),
+      'public, max-age=30, s-maxage=30, stale-while-revalidate=30, stale-if-error=60',
+    );
+    assert.equal(publicLimiterCalls, 1);
+    assert.equal(generalLimiterCalls, 0);
+
+    const privateResponse = await fetch(`${baseUrl}/api/cache-contract/private`);
+    const privatePayload = await privateResponse.json() as { ok?: boolean };
+
+    assert.equal(privateResponse.status, 200);
+    assert.deepEqual(privatePayload, { ok: true });
+    assert.equal(privateResponse.headers.get('cache-control'), 'no-store, max-age=0');
+    assert.equal(publicLimiterCalls, 1);
+    assert.equal(generalLimiterCalls, 1);
+  }, {
+    createGeneralRateLimiter: () => (_req, _res, next) => {
+      generalLimiterCalls += 1;
+      next();
+    },
+    createPublicCacheableGetRateLimiter: () => (_req, _res, next) => {
+      publicLimiterCalls += 1;
+      next();
+    },
+    registerPublicCacheableApiRoutes: (app, publicCacheableGetRateLimiter) => {
+      app.get('/api/users/leaderboard', publicCacheableGetRateLimiter, (_req, res) => {
+        applyPublicSharedCacheHeaders(res, 30, {
+          staleWhileRevalidateSeconds: 30,
+          staleIfErrorSeconds: 60,
+        });
+        res.json({ ok: true });
+      });
+    },
+    registerApiRoutes: (app) => {
+      app.get('/api/cache-contract/private', (_req, res) => res.json({ ok: true }));
     },
   });
 });

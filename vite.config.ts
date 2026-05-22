@@ -39,7 +39,7 @@ export default defineConfig(() => {
       },
     },
     plugins: [react(), tailwindcss()],
-    envPrefix: ['VITE_', 'TURNSTILE_SITE_KEY'],
+    envPrefix: ['VITE_', 'TURNSTILE_SITE_KEY', 'PUBLIC_APP_ORIGIN'],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
