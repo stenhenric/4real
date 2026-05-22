@@ -142,7 +142,7 @@ function applySessionCookies(
 function clearSessionCookies(res: Response): void {
   res.clearCookie(getAuthCookieName(), getAuthCookieClearOptions());
   res.clearCookie(getRefreshCookieName(), getRefreshCookieClearOptions());
-  res.clearCookie(getDeviceCookieName(), getDeviceCookieClearOptions());
+  // Do NOT clear the device cookie, so it persists across sessions.
 }
 
 async function respondWithIssuedSession(params: {

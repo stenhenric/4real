@@ -43,7 +43,7 @@ export function applyImmutableAssetCacheHeaders(res: Response): void {
 }
 
 export function applyClearSiteDataHeaders(res: Response): void {
-  res.setHeader('Clear-Site-Data', '"cache", "cookies", "storage"');
+  res.setHeader('Clear-Site-Data', '"cache", "storage"');
 }
 
 export function apiNoStoreMiddleware(_req: Request, res: Response, next: NextFunction): void {

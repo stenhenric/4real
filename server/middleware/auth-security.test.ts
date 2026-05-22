@@ -815,10 +815,10 @@ test('logout clears site data and removes all session cookies', async (t) => {
 
   assert.equal(logoutMock.mock.callCount(), 1);
   assert.equal(res.statusCode, 204);
-  assert.equal(res.getHeader('clear-site-data'), '"cache", "cookies", "storage"');
+  assert.equal(res.getHeader('clear-site-data'), '"cache", "storage"');
   assert.deepEqual(
     res.clearedCookies.map((entry: { name: string }) => entry.name).sort(),
-    [getAuthCookieName(), getDeviceCookieName(), getRefreshCookieName()].sort(),
+    [getAuthCookieName(), getRefreshCookieName()].sort(),
   );
 });
 
@@ -850,7 +850,7 @@ test('revokeSession scopes revocation to the authenticated user and clears site 
     'user_session_revoked',
   ]);
   assert.equal(listMock.mock.callCount(), 1);
-  assert.equal(res.getHeader('clear-site-data'), '"cache", "cookies", "storage"');
+  assert.equal(res.getHeader('clear-site-data'), '"cache", "storage"');
 });
 
 test('requireMfaStepUpIfEnabled allows first-time MFA setup without a step-up', async () => {
@@ -916,3 +916,60 @@ test('requireMfaStepUpIfEnabled requires a fresh step-up before replacing existi
   assert.equal(capturedError?.code, 'MFA_REQUIRED');
   assert.equal(capturedError?.details?.challengeId, 'challenge-1');
 });
+
+test('logout and revocation do not clear the device ID cookie and preserve Clear-Site-Data with cache and storage only', async (t) => {
+  const logoutMock = t.mock.method(AuthSessionService, 'logoutFromTokens', async () => undefined);
+  const revokeMock = t.mock.method(AuthSessionService, 'revokeSessionForUser', async () => true);
+  const listMock = t.mock.method(AuthSessionService, 'listSessions', async () => []);
+
+  // 1. Test logout behavior
+  const reqLogout = {
+    cookies: {
+      [getAuthCookieName()]: 'access-token',
+      [getRefreshCookieName()]: 'refresh-token',
+      [getDeviceCookieName()]: 'device-1',
+    },
+  } as any;
+  const resLogout = createResponseMock() as any;
+
+  await AuthController.logout(reqLogout, resLogout);
+
+  assert.equal(logoutMock.mock.callCount(), 1);
+  assert.equal(resLogout.statusCode, 204);
+  // Ensure that Clear-Site-Data excludes cookies
+  assert.equal(resLogout.getHeader('clear-site-data'), '"cache", "storage"');
+  // Ensure that device cookie is NOT in clearedCookies
+  assert.ok(!resLogout.clearedCookies.some((entry: { name: string }) => entry.name === getDeviceCookieName()));
+  // Ensure only auth and refresh cookies are cleared
+  assert.deepEqual(
+    resLogout.clearedCookies.map((entry: { name: string }) => entry.name).sort(),
+    [getAuthCookieName(), getRefreshCookieName()].sort(),
+  );
+
+  // 2. Test current session revocation behavior
+  const reqRevoke = {
+    user: {
+      id: 'user-1',
+      sessionId: 'session-1',
+      deviceId: 'device-1',
+      isAdmin: false,
+      emailVerified: true,
+      usernameComplete: true,
+      mfaEnabled: false,
+    },
+    params: {
+      sessionId: 'session-1',
+    },
+  } as any;
+  const resRevoke = createResponseMock() as any;
+
+  await AuthController.revokeSession(reqRevoke, resRevoke);
+
+  assert.equal(revokeMock.mock.callCount(), 1);
+  assert.equal(listMock.mock.callCount(), 1);
+  // Ensure that Clear-Site-Data excludes cookies
+  assert.equal(resRevoke.getHeader('clear-site-data'), '"cache", "storage"');
+  // Ensure that device cookie is NOT in clearedCookies
+  assert.ok(!resRevoke.clearedCookies.some((entry: { name: string }) => entry.name === getDeviceCookieName()));
+});
+
