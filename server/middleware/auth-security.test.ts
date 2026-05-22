@@ -228,6 +228,37 @@ test('User passwordHash is excluded from default queries by schema policy', () =
   assert.equal(User.schema.path('passwordHash')?.options?.select, false);
 });
 
+test('linkGoogleAccount only links already verified users without marking email verified', async (t) => {
+  let capturedFilter: Record<string, unknown> | undefined;
+  let capturedUpdate: Record<string, unknown> | undefined;
+  let capturedOptions: Record<string, unknown> | undefined;
+  const findByIdAndUpdateMock = t.mock.method(User, 'findByIdAndUpdate', async () => {
+    throw new Error('Google linking must not update by id only');
+  });
+  const findOneAndUpdateMock = t.mock.method(User, 'findOneAndUpdate', async (filter, update, options) => {
+    capturedFilter = filter as Record<string, unknown>;
+    capturedUpdate = update as Record<string, unknown>;
+    capturedOptions = options as Record<string, unknown>;
+    return createMockUser({ googleSubject: 'google-sub-1' });
+  });
+
+  const linkedUser = await UserService.linkGoogleAccount('user-1', 'google-sub-1');
+
+  assert.equal(findByIdAndUpdateMock.mock.callCount(), 0);
+  assert.equal(findOneAndUpdateMock.mock.callCount(), 1);
+  assert.equal(capturedFilter?._id, 'user-1');
+  const emailVerifiedFilter = capturedFilter?.emailVerifiedAt as Record<string, unknown> | undefined;
+  assert.equal(emailVerifiedFilter?.$exists, true);
+  assert.equal(emailVerifiedFilter?.$ne, null);
+  assert.deepEqual(capturedUpdate, {
+    $set: {
+      googleSubject: 'google-sub-1',
+    },
+  });
+  assert.equal(capturedOptions?.returnDocument, 'after');
+  assert.equal(linkedUser?.googleSubject, 'google-sub-1');
+});
+
 test('auth cookie names drop the __Host- prefix outside production and restore it in production', () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousRedisUrl = process.env.REDIS_URL;
@@ -417,6 +448,140 @@ test('register with an unverified existing email returns pending_email_verificat
     assert.equal(res.statusCode, 202);
     assert.equal((res.payload as { status?: string }).status, 'pending_email_verification');
     assert.equal((res.payload as { email?: string }).email, 'alice@example.com');
+  } finally {
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
+    resetEnvCacheForTests();
+  }
+});
+
+test('register uses the same response shape for new and existing email account states', async (t) => {
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = '';
+  resetEnvCacheForTests();
+
+  try {
+    const sendVerificationMock = t.mock.method(
+      AuthEmailService,
+      'sendVerificationEmail',
+      async () => 'http://127.0.0.1:3000/auth/verify-email?token=verify-token',
+    );
+    const createUserMock = t.mock.method(UserService, 'createUser', async (input) => createMockUser({
+      username: input.username,
+      email: input.email,
+      emailVerifiedAt: null,
+    }));
+    t.mock.method(UserService, 'findByUsername', async () => null);
+
+    async function registerWithEmail(email: string) {
+      const req = {
+        body: {
+          username: `user-${email.split('@')[0]}`,
+          email,
+          password: 'paper-lobby-stakes-2026',
+          turnstileToken: 'token',
+        },
+        ip: '127.0.0.1',
+        cookies: {},
+        get: () => undefined,
+      } as any;
+      const res = createResponseMock() as any;
+      await AuthController.register(req, res);
+      return res;
+    }
+
+    const findByEmailMock = t.mock.method(UserService, 'findByEmail', async () => null);
+    const newUserResponse = await registerWithEmail('new@example.com');
+    findByEmailMock.mock.mockImplementationOnce(async () => createMockUser({
+      email: 'existing-unverified@example.com',
+      emailVerifiedAt: null,
+    }));
+    const unverifiedResponse = await registerWithEmail('existing-unverified@example.com');
+    findByEmailMock.mock.mockImplementationOnce(async () => createMockUser({
+      email: 'existing-verified@example.com',
+      emailVerifiedAt: new Date('2026-05-03T00:00:00.000Z'),
+    }));
+    const verifiedResponse = await registerWithEmail('existing-verified@example.com');
+
+    const normalizePayload = (payload: unknown) => {
+      const value = payload as { email?: string; redirectTo?: string };
+      const encodedEmail = value.email ? encodeURIComponent(value.email) : '';
+      return {
+        ...(payload as object),
+        email: '<submitted-email>',
+        redirectTo: value.redirectTo
+          ?.replace(value.email ?? '', '<submitted-email>')
+          .replace(encodedEmail, '<submitted-email>'),
+      };
+    };
+
+    assert.equal(newUserResponse.statusCode, 202);
+    assert.equal(unverifiedResponse.statusCode, 202);
+    assert.equal(verifiedResponse.statusCode, 202);
+    assert.deepEqual(
+      normalizePayload(newUserResponse.payload),
+      normalizePayload(unverifiedResponse.payload),
+    );
+    assert.deepEqual(
+      normalizePayload(newUserResponse.payload),
+      normalizePayload(verifiedResponse.payload),
+    );
+    assert.equal(createUserMock.mock.callCount(), 1);
+    assert.equal(sendVerificationMock.mock.callCount(), 2);
+  } finally {
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
+    resetEnvCacheForTests();
+  }
+});
+
+test('register does not expose username collisions in the HTTP response', async (t) => {
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = '';
+  resetEnvCacheForTests();
+
+  try {
+    const findByEmailMock = t.mock.method(UserService, 'findByEmail', async () => null);
+    const findByUsernameMock = t.mock.method(UserService, 'findByUsername', async () => createMockUser({
+      _id: { toString: () => 'user-2' },
+      username: 'taken-name',
+      email: 'other@example.com',
+    }));
+    const createUserMock = t.mock.method(UserService, 'createUser', async () => {
+      throw new Error('registration should not create a duplicate username');
+    });
+    const sendVerificationMock = t.mock.method(AuthEmailService, 'sendVerificationEmail', async () => {
+      throw new Error('registration should not send verification email for a duplicate username');
+    });
+
+    const req = {
+      body: {
+        username: 'taken-name',
+        email: 'new-email@example.com',
+        password: 'paper-lobby-stakes-2026',
+        turnstileToken: 'token',
+      },
+      ip: '127.0.0.1',
+      cookies: {},
+      get: () => undefined,
+    } as any;
+    const res = createResponseMock() as any;
+
+    await AuthController.register(req, res);
+
+    assert.equal(findByEmailMock.mock.callCount(), 1);
+    assert.equal(findByUsernameMock.mock.callCount(), 1);
+    assert.equal(createUserMock.mock.callCount(), 0);
+    assert.equal(sendVerificationMock.mock.callCount(), 0);
+    assert.equal(res.statusCode, 202);
+    assert.equal((res.payload as { status?: string }).status, 'pending_email_verification');
+    assert.equal((res.payload as { message?: string }).message, 'If this account can be created, a verification email is on the way.');
   } finally {
     if (previousTurnstileSecret === undefined) {
       delete process.env.TURNSTILE_SECRET_KEY;
@@ -801,6 +966,241 @@ test('handleGoogleCallback redirects to login and logs stable session failure de
   ]);
 });
 
+test('handleGoogleCallback rejects a matching unverified password account without linking or issuing a session', async (t) => {
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = '';
+  resetEnvCacheForTests();
+  t.after(() => {
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
+    resetEnvCacheForTests();
+  });
+
+  const password = 'paper-lobby-stakes-2026';
+  const localAccount = createMockUser({
+    _id: { toString: () => 'victim-user' },
+    email: 'victim@example.com',
+    emailVerifiedAt: null,
+    passwordHash: await hashPassword(password),
+  });
+  const googleProfileMock = t.mock.method(GoogleOAuthService, 'consumeCallback', async () => ({
+    googleSubject: 'google-victim-sub',
+    email: 'victim@example.com',
+    name: 'Victim',
+    picture: null,
+    redirectTo: '/play',
+  }));
+  const googleSubjectLookupMock = t.mock.method(UserService, 'findByGoogleSubject', async () => null);
+  const emailLookupMock = t.mock.method(UserService, 'findByEmail', async () => localAccount);
+  const linkMock = t.mock.method(UserService, 'linkGoogleAccount', async () => createMockUser({
+    ...localAccount,
+    emailVerifiedAt: new Date('2026-05-03T00:00:00.000Z'),
+    googleSubject: 'google-victim-sub',
+  }));
+  const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+  const verificationEmailMock = t.mock.method(AuthEmailService, 'sendVerificationEmail', async () => (
+    'http://127.0.0.1:3000/auth/verify-email?token=verify-token'
+  ));
+  t.mock.method(logger, 'error', () => undefined);
+  t.mock.method(logger, 'warn', () => undefined);
+
+  const oauthReq = {
+    query: {
+      state: 'oauth-state',
+      code: 'oauth-code',
+    },
+    cookies: {},
+    ip: '127.0.0.1',
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const oauthRes = createResponseMock() as any;
+
+  await AuthController.handleGoogleCallback(oauthReq, oauthRes);
+
+  assert.equal(googleProfileMock.mock.callCount(), 1);
+  assert.equal(googleSubjectLookupMock.mock.callCount(), 1);
+  assert.equal(emailLookupMock.mock.callCount(), 1);
+  assert.equal(linkMock.mock.callCount(), 0);
+  assert.equal(sessionMock.mock.callCount(), 0);
+  assert.equal(oauthRes.statusCode, 302);
+  assert.equal(oauthRes.payload, '/auth/login?error=google_account_verification_required');
+  assert.equal(oauthRes.cookies.length, 0);
+  assert.equal(localAccount.emailVerifiedAt, null);
+
+  const passwordReq = {
+    body: {
+      identifier: 'victim@example.com',
+      password,
+      turnstileToken: 'token',
+    },
+    ip: '127.0.0.1',
+    cookies: {},
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const passwordRes = createResponseMock() as any;
+
+  await AuthController.loginPassword(passwordReq, passwordRes);
+
+  assert.equal(sessionMock.mock.callCount(), 0);
+  assert.equal(verificationEmailMock.mock.callCount(), 1);
+  assert.equal(passwordRes.statusCode, 202);
+  assert.equal((passwordRes.payload as { status?: string }).status, 'pending_email_verification');
+});
+
+test('handleGoogleCallback links and logs in an existing verified local account by email', async (t) => {
+  const verifiedUser = createMockUser({
+    _id: { toString: () => 'verified-user' },
+    email: 'verified@example.com',
+    emailVerifiedAt: new Date('2026-05-03T00:00:00.000Z'),
+    passwordHash: 'existing-password-hash',
+  });
+  const linkedUser = createMockUser({
+    ...verifiedUser,
+    googleSubject: 'google-verified-sub',
+  });
+  const googleProfileMock = t.mock.method(GoogleOAuthService, 'consumeCallback', async () => ({
+    googleSubject: 'google-verified-sub',
+    email: 'verified@example.com',
+    name: 'Verified',
+    picture: null,
+    redirectTo: '/bank',
+  }));
+  const googleSubjectLookupMock = t.mock.method(UserService, 'findByGoogleSubject', async () => null);
+  const emailLookupMock = t.mock.method(UserService, 'findByEmail', async () => verifiedUser);
+  const linkMock = t.mock.method(UserService, 'linkGoogleAccount', async () => linkedUser);
+  const createUserMock = t.mock.method(UserService, 'createUser', async () => {
+    throw new Error('verified email match should link, not create a duplicate user');
+  });
+  const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+
+  const req = {
+    query: {
+      state: 'oauth-state',
+      code: 'oauth-code',
+    },
+    cookies: {},
+    ip: '127.0.0.1',
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const res = createResponseMock() as any;
+
+  await AuthController.handleGoogleCallback(req, res);
+
+  assert.equal(googleProfileMock.mock.callCount(), 1);
+  assert.equal(googleSubjectLookupMock.mock.callCount(), 1);
+  assert.equal(emailLookupMock.mock.callCount(), 1);
+  assert.deepEqual(linkMock.mock.calls[0]?.arguments, ['verified-user', 'google-verified-sub']);
+  assert.equal(createUserMock.mock.callCount(), 0);
+  assert.equal(sessionMock.mock.callCount(), 1);
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.payload, '/bank');
+  assert.deepEqual(
+    res.cookies.map((entry: { name: string }) => entry.name).sort(),
+    [getAuthCookieName(), getDeviceCookieName(), getRefreshCookieName()].sort(),
+  );
+});
+
+test('handleGoogleCallback logs in an account already linked to the Google subject', async (t) => {
+  const linkedUser = createMockUser({
+    _id: { toString: () => 'linked-user' },
+    email: 'linked@example.com',
+    googleSubject: 'google-linked-sub',
+  });
+  const googleProfileMock = t.mock.method(GoogleOAuthService, 'consumeCallback', async () => ({
+    googleSubject: 'google-linked-sub',
+    email: 'linked@example.com',
+    name: 'Linked',
+    picture: null,
+    redirectTo: '/play',
+  }));
+  const googleSubjectLookupMock = t.mock.method(UserService, 'findByGoogleSubject', async () => linkedUser);
+  const emailLookupMock = t.mock.method(UserService, 'findByEmail', async () => {
+    throw new Error('email fallback should not run for an already linked Google subject');
+  });
+  const linkMock = t.mock.method(UserService, 'linkGoogleAccount', async () => {
+    throw new Error('already linked Google accounts should not be linked again');
+  });
+  const createUserMock = t.mock.method(UserService, 'createUser', async () => {
+    throw new Error('already linked Google accounts should not create a new user');
+  });
+  const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+
+  const req = {
+    query: {
+      state: 'oauth-state',
+      code: 'oauth-code',
+    },
+    cookies: {},
+    ip: '127.0.0.1',
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const res = createResponseMock() as any;
+
+  await AuthController.handleGoogleCallback(req, res);
+
+  assert.equal(googleProfileMock.mock.callCount(), 1);
+  assert.equal(googleSubjectLookupMock.mock.callCount(), 1);
+  assert.equal(emailLookupMock.mock.callCount(), 0);
+  assert.equal(linkMock.mock.callCount(), 0);
+  assert.equal(createUserMock.mock.callCount(), 0);
+  assert.equal(sessionMock.mock.callCount(), 1);
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.payload, '/play');
+});
+
+test('handleGoogleCallback creates and logs in a new Google user when no local account exists', async (t) => {
+  const createdUser = createMockUser({
+    _id: { toString: () => 'new-google-user' },
+    username: null,
+    email: 'new-google@example.com',
+    googleSubject: 'google-new-sub',
+  });
+  const googleProfileMock = t.mock.method(GoogleOAuthService, 'consumeCallback', async () => ({
+    googleSubject: 'google-new-sub',
+    email: 'new-google@example.com',
+    name: 'New Google',
+    picture: null,
+    redirectTo: undefined,
+  }));
+  const googleSubjectLookupMock = t.mock.method(UserService, 'findByGoogleSubject', async () => null);
+  const emailLookupMock = t.mock.method(UserService, 'findByEmail', async () => null);
+  const linkMock = t.mock.method(UserService, 'linkGoogleAccount', async () => {
+    throw new Error('new Google users should not link an existing account');
+  });
+  const createUserMock = t.mock.method(UserService, 'createUser', async (input) => {
+    assert.equal(input.email, 'new-google@example.com');
+    assert.equal(input.googleSubject, 'google-new-sub');
+    assert.equal(input.emailVerifiedAt instanceof Date, true);
+    return createdUser;
+  });
+  const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+
+  const req = {
+    query: {
+      state: 'oauth-state',
+      code: 'oauth-code',
+    },
+    cookies: {},
+    ip: '127.0.0.1',
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const res = createResponseMock() as any;
+
+  await AuthController.handleGoogleCallback(req, res);
+
+  assert.equal(googleProfileMock.mock.callCount(), 1);
+  assert.equal(googleSubjectLookupMock.mock.callCount(), 1);
+  assert.equal(emailLookupMock.mock.callCount(), 1);
+  assert.equal(linkMock.mock.callCount(), 0);
+  assert.equal(createUserMock.mock.callCount(), 1);
+  assert.equal(sessionMock.mock.callCount(), 1);
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.payload, '/auth/complete-profile');
+});
+
 test('logout clears site data and removes all session cookies', async (t) => {
   const logoutMock = t.mock.method(AuthSessionService, 'logoutFromTokens', async () => undefined);
   const req = {
@@ -972,4 +1372,3 @@ test('logout and revocation do not clear the device ID cookie and preserve Clear
   // Ensure that device cookie is NOT in clearedCookies
   assert.ok(!resRevoke.clearedCookies.some((entry: { name: string }) => entry.name === getDeviceCookieName()));
 });
-

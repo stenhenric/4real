@@ -19,6 +19,7 @@ const USER_SAFE_CODES = new Set([
   'INVALID_REQUEST_PAYLOAD',
   'SESSION_ID_REQUIRED',
   'GOOGLE_SIGNIN_FAILED',
+  'GOOGLE_ACCOUNT_VERIFICATION_REQUIRED',
   'INSUFFICIENT_BALANCE',
   'RESOURCE_ALREADY_EXISTS',
   'INVALID_IDENTIFIER',
@@ -39,6 +40,7 @@ const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
   INVALID_REQUEST_PAYLOAD: 'Something went wrong. Please check your entry and try again.',
   SESSION_ID_REQUIRED: 'Your session has expired. Please sign in again.',
   GOOGLE_SIGNIN_FAILED: 'Could not complete sign-in with Google. Please try again.',
+  GOOGLE_ACCOUNT_VERIFICATION_REQUIRED: 'Verify or recover the existing account before using Google sign-in.',
   INSUFFICIENT_BALANCE: 'You do not have enough funds to complete this transaction.',
   RESOURCE_ALREADY_EXISTS: 'This item already exists.',
   INVALID_IDENTIFIER: 'Incorrect username or email format.',
@@ -69,4 +71,3 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 
   return fallback;
 }
-

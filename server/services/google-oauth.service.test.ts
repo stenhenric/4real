@@ -261,6 +261,61 @@ test('consumeCallback rejects userinfo that does not match the verified token su
   });
 });
 
+test('consumeCallback rejects a Google userinfo profile with an unverified email', async () => {
+  await withOAuthEnv(async () => {
+    const stateStore = new Map<string, string>();
+    let nonce = '';
+
+    setGoogleOAuthDependenciesForTests({
+      setState: async (key, _ttlSeconds, value) => {
+        stateStore.set(key, value);
+        nonce = JSON.parse(value).nonce as string;
+      },
+      getState: async (key) => stateStore.get(key) ?? null,
+      deleteState: async (key) => {
+        stateStore.delete(key);
+      },
+      fetch: async (url) => {
+        if (String(url).includes('oauth2.googleapis.com/token')) {
+          return createJsonResponse(true, {
+            access_token: 'google-access-token',
+            id_token: 'signed-google-id-token',
+          });
+        }
+
+        return createJsonResponse(true, {
+          sub: 'google-sub-1',
+          email: 'alice@example.com',
+          email_verified: false,
+        });
+      },
+      verifyIdToken: async () => ({
+        sub: 'google-sub-1',
+        email: 'alice@example.com',
+        email_verified: true,
+        nonce,
+      }),
+    });
+
+    const authorizationRequest = await GoogleOAuthService.createAuthorizationRequest();
+    const authorizationUrl = new URL(authorizationRequest.authorizationUrl);
+    const state = authorizationUrl.searchParams.get('state');
+    assert.ok(state);
+
+    await assert.rejects(
+      () => GoogleOAuthService.consumeCallback({
+        state,
+        code: 'auth-code',
+        browserState: authorizationRequest.browserState,
+      }),
+      (error: unknown) => typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: string }).code === 'GOOGLE_EMAIL_NOT_VERIFIED',
+    );
+  });
+});
+
 test('consumeCallback rejects a valid OAuth state without the browser binding cookie value', async () => {
   await withOAuthEnv(async () => {
     const stateStore = new Map<string, string>();

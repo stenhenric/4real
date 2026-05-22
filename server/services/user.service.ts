@@ -187,12 +187,14 @@ export class UserService {
   }
 
   static async linkGoogleAccount(id: string, googleSubject: string): Promise<IUser | null> {
-    return User.findByIdAndUpdate(
-      id,
+    return User.findOneAndUpdate(
+      trustFilter({
+        _id: id,
+        emailVerifiedAt: { $exists: true, $ne: null },
+      }),
       {
         $set: {
           googleSubject,
-          emailVerifiedAt: new Date(),
         },
       },
       { returnDocument: 'after' },

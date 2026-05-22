@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import fs from 'node:fs';
+import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import express from 'express';
 
 import { resetEnvCacheForTests } from '../config/env.ts';
 import { setRedisClientForTests } from '../services/redis.service.ts';
 import {
+  createAdminMutationRateLimiter,
+  createAuthEmailRecipientRateLimiter,
   createAuthRateLimiter,
+  createDepositOperationRateLimiter,
   createGeneralRateLimiter,
+  createMatchMutationRateLimiter,
+  createOrderCreateRateLimiter,
   createPasswordLoginIdentifierRateLimiter,
   createPublicCacheableGetRateLimiter,
 } from './rate-limit.middleware.ts';
@@ -82,11 +89,31 @@ function withAuthRateLimitEnv(t: TestContext, max = '2'): void {
     REDIS_URL: process.env.REDIS_URL,
     AUTH_RATE_LIMIT_WINDOW_MS: process.env.AUTH_RATE_LIMIT_WINDOW_MS,
     AUTH_RATE_LIMIT_MAX: process.env.AUTH_RATE_LIMIT_MAX,
+    AUTH_EMAIL_RECIPIENT_RATE_LIMIT_WINDOW_MS: process.env.AUTH_EMAIL_RECIPIENT_RATE_LIMIT_WINDOW_MS,
+    AUTH_EMAIL_RECIPIENT_RATE_LIMIT_MAX: process.env.AUTH_EMAIL_RECIPIENT_RATE_LIMIT_MAX,
+    DEPOSIT_OPERATION_RATE_LIMIT_WINDOW_MS: process.env.DEPOSIT_OPERATION_RATE_LIMIT_WINDOW_MS,
+    DEPOSIT_OPERATION_RATE_LIMIT_MAX: process.env.DEPOSIT_OPERATION_RATE_LIMIT_MAX,
+    ORDER_CREATE_RATE_LIMIT_WINDOW_MS: process.env.ORDER_CREATE_RATE_LIMIT_WINDOW_MS,
+    ORDER_CREATE_RATE_LIMIT_MAX: process.env.ORDER_CREATE_RATE_LIMIT_MAX,
+    MATCH_MUTATION_RATE_LIMIT_WINDOW_MS: process.env.MATCH_MUTATION_RATE_LIMIT_WINDOW_MS,
+    MATCH_MUTATION_RATE_LIMIT_MAX: process.env.MATCH_MUTATION_RATE_LIMIT_MAX,
+    ADMIN_MUTATION_RATE_LIMIT_WINDOW_MS: process.env.ADMIN_MUTATION_RATE_LIMIT_WINDOW_MS,
+    ADMIN_MUTATION_RATE_LIMIT_MAX: process.env.ADMIN_MUTATION_RATE_LIMIT_MAX,
   };
 
   delete process.env.REDIS_URL;
   process.env.AUTH_RATE_LIMIT_WINDOW_MS = '60000';
   process.env.AUTH_RATE_LIMIT_MAX = max;
+  process.env.AUTH_EMAIL_RECIPIENT_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.AUTH_EMAIL_RECIPIENT_RATE_LIMIT_MAX = max;
+  process.env.DEPOSIT_OPERATION_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.DEPOSIT_OPERATION_RATE_LIMIT_MAX = max;
+  process.env.ORDER_CREATE_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.ORDER_CREATE_RATE_LIMIT_MAX = max;
+  process.env.MATCH_MUTATION_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.MATCH_MUTATION_RATE_LIMIT_MAX = max;
+  process.env.ADMIN_MUTATION_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.ADMIN_MUTATION_RATE_LIMIT_MAX = max;
   resetEnvCacheForTests();
 
   t.after(() => {
@@ -99,6 +126,49 @@ function withAuthRateLimitEnv(t: TestContext, max = '2'): void {
     }
     resetEnvCacheForTests();
   });
+}
+
+async function startActorRateLimitApp(t: TestContext, handler: express.RequestHandler) {
+  const app = express();
+  app.set('trust proxy', 1);
+  app.use(express.json());
+  app.post('/expensive', (req, _res, next) => {
+    (req as any).user = {
+      id: typeof req.body?.userId === 'string' ? req.body.userId : 'user-1',
+    };
+    next();
+  }, handler, (_req, res) => {
+    res.status(202).json({ status: 'accepted' });
+  });
+
+  const server = app.listen(0);
+  t.after(() => {
+    server.close();
+  });
+  await once(server, 'listening');
+  const address = server.address();
+  assert(address && typeof address === 'object');
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function startAuthEmailRateLimitApp(t: TestContext, handler: express.RequestHandler) {
+  const app = express();
+  app.set('trust proxy', 1);
+  app.use(express.json());
+  app.post(
+    '/api/auth/password/forgot',
+    createAuthEmailRecipientRateLimiter(),
+    handler,
+  );
+
+  const server = app.listen(0);
+  t.after(() => {
+    server.close();
+  });
+  await once(server, 'listening');
+  const address = server.address();
+  assert(address && typeof address === 'object');
+  return `http://127.0.0.1:${address.port}`;
 }
 
 async function startLoginRateLimitApp(t: TestContext, handler: express.RequestHandler) {
@@ -136,6 +206,38 @@ function loginRequest(baseUrl: string, params: {
     body: JSON.stringify({
       identifier: params.identifier,
       password: params.password ?? 'wrong-password',
+    }),
+  });
+}
+
+function authEmailRequest(baseUrl: string, params: {
+  email: string;
+  ip?: string;
+}) {
+  return fetch(`${baseUrl}/api/auth/password/forgot`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(params.ip ? { 'X-Forwarded-For': params.ip } : {}),
+    },
+    body: JSON.stringify({
+      email: params.email,
+    }),
+  });
+}
+
+function expensiveRequest(baseUrl: string, params: {
+  userId: string;
+  ip?: string;
+}) {
+  return fetch(`${baseUrl}/expensive`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(params.ip ? { 'X-Forwarded-For': params.ip } : {}),
+    },
+    body: JSON.stringify({
+      userId: params.userId,
     }),
   });
 }
@@ -284,4 +386,77 @@ test('password login limited responses are generic for existing and absent ident
   assert.equal(existingLimited.status, 429);
   assert.equal(absentLimited.status, 429);
   assert.deepEqual(await existingLimited.json(), await absentLimited.json());
+});
+
+test('auth email recipient limiter blocks repeated requests for one normalized email across IPs', async (t) => {
+  withAuthRateLimitEnv(t);
+  const baseUrl = await startAuthEmailRateLimitApp(t, (_req, res) => {
+    res.status(202).json({ status: 'accepted' });
+  });
+
+  assert.equal((await authEmailRequest(baseUrl, { email: 'Alice@Example.com', ip: '10.0.5.1' })).status, 202);
+  assert.equal((await authEmailRequest(baseUrl, { email: ' alice@example.com ', ip: '10.0.5.2' })).status, 202);
+  const limited = await authEmailRequest(baseUrl, { email: 'ALICE@example.com', ip: '10.0.5.3' });
+
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), {
+    code: 'AUTH_EMAIL_RATE_LIMITED',
+    message: 'Too many requests, please try again later.',
+  });
+  assert.equal((await authEmailRequest(baseUrl, { email: 'bob@example.com', ip: '10.0.5.4' })).status, 202);
+});
+
+test('expensive operation limiters are keyed by authenticated user instead of IP', async (t) => {
+  withAuthRateLimitEnv(t);
+
+  for (const [name, limiter] of [
+    ['deposit', createDepositOperationRateLimiter()],
+    ['order', createOrderCreateRateLimiter()],
+    ['match', createMatchMutationRateLimiter()],
+    ['admin', createAdminMutationRateLimiter()],
+  ] as const) {
+    await t.test(name, async (subtest) => {
+      const baseUrl = await startActorRateLimitApp(subtest, limiter);
+
+      assert.equal((await expensiveRequest(baseUrl, { userId: `${name}-user`, ip: '10.0.6.1' })).status, 202);
+      assert.equal((await expensiveRequest(baseUrl, { userId: `${name}-user`, ip: '10.0.6.2' })).status, 202);
+      const limited = await expensiveRequest(baseUrl, { userId: `${name}-user`, ip: '10.0.6.3' });
+
+      assert.equal(limited.status, 429);
+      assert.deepEqual(await limited.json(), {
+        code: 'OPERATION_RATE_LIMITED',
+        message: 'Too many requests for this operation, please try again later.',
+      });
+      assert.equal((await expensiveRequest(baseUrl, { userId: `${name}-other`, ip: '10.0.6.4' })).status, 202);
+    });
+  }
+});
+
+test('expensive authenticated mutation routes apply route-specific limiters before handlers', () => {
+  const transactionsRoutes = fs.readFileSync(
+    path.join(process.cwd(), 'server', 'routes', 'transactions.routes.ts'),
+    'utf8',
+  );
+  const ordersRoutes = fs.readFileSync(
+    path.join(process.cwd(), 'server', 'routes', 'orders.routes.ts'),
+    'utf8',
+  );
+  const matchesRoutes = fs.readFileSync(
+    path.join(process.cwd(), 'server', 'routes', 'matches.routes.ts'),
+    'utf8',
+  );
+  const adminRoutes = fs.readFileSync(
+    path.join(process.cwd(), 'server', 'routes', 'admin.routes.ts'),
+    'utf8',
+  );
+
+  assert.match(transactionsRoutes, /router\.post\('\/deposit\/memo',\s*createDepositOperationRateLimiter\(\),\s*asyncHandler\(generateDepositMemoHandler\)\)/s);
+  assert.match(transactionsRoutes, /router\.post\('\/deposit\/prepare',\s*createDepositOperationRateLimiter\(\),\s*validateBody\(prepareTonConnectDepositRequestSchema\),\s*asyncHandler\(prepareTonConnectDepositHandler\)\)/s);
+  assert.match(ordersRoutes, /router\.post\('\/',\s*createOrderCreateRateLimiter\(\),\s*asyncHandler\(OrderController\.createOrder\)\)/s);
+  assert.match(matchesRoutes, /router\.post\('\/',\s*createMatchMutationRateLimiter\(\),\s*validateBody\(createMatchRequestSchema\),\s*asyncHandler\(MatchController\.createMatch\)\)/s);
+  assert.match(matchesRoutes, /router\.post\('\/:roomId\/join',\s*createMatchMutationRateLimiter\(\),\s*asyncHandler\(MatchController\.joinMatch\)\)/s);
+  assert.match(matchesRoutes, /router\.post\('\/:roomId\/resign',\s*createMatchMutationRateLimiter\(\),\s*asyncHandler\(MatchController\.resignMatch\)\)/s);
+  assert.match(adminRoutes, /router\.post\(\s*'\/merchant\/deposits\/replay-window',\s*createAdminMutationRateLimiter\(\),\s*validateBody\(merchantDepositReplayWindowRequestSchema\),\s*asyncHandler\(MerchantAdminController\.replayDepositWindow\)/s);
+  assert.match(adminRoutes, /router\.post\(\s*'\/merchant\/deposits\/:txHash\/reconcile',\s*createAdminMutationRateLimiter\(\),\s*validateBody\(merchantDepositReconcileRequestSchema\),\s*asyncHandler\(MerchantAdminController\.reconcileDeposit\)/s);
+  assert.match(adminRoutes, /router\.post\(\s*'\/withdrawals\/:withdrawalId\/recover',\s*createAdminMutationRateLimiter\(\),\s*validateBody\(withdrawalRecoveryRequestSchema\),\s*asyncHandler\(WithdrawalRecoveryController\.recover\)/s);
 });

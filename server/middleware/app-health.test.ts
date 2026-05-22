@@ -277,6 +277,32 @@ test('production liveness response is public but does not expose build metadata'
   });
 });
 
+test('production responses include an enforced content security policy', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/health`);
+    const csp = response.headers.get('content-security-policy') ?? '';
+
+    assert.notEqual(csp, '');
+    assert.match(csp, /(?:^|;\s*)default-src 'self'(?:;|$)/);
+    assert.match(csp, /(?:^|;\s*)script-src 'self' https:\/\/challenges\.cloudflare\.com(?:;|$)/);
+    assert.match(csp, /(?:^|;\s*)object-src 'none'(?:;|$)/);
+    assert.match(csp, /(?:^|;\s*)base-uri 'self'(?:;|$)/);
+    assert.match(csp, /(?:^|;\s*)frame-ancestors 'none'(?:;|$)/);
+    assert.match(csp, /(?:^|;\s*)form-action 'self'(?:;|$)/);
+    assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
+    assert.equal(response.headers.get('content-security-policy-report-only'), null);
+  }, {
+    env: {
+      NODE_ENV: 'production',
+      TRUST_PROXY: '1',
+      MONGODB_URI: 'mongodb+srv://example.invalid/4real',
+      REDIS_URL: 'rediss://redis.example.invalid:6379',
+      PUBLIC_APP_ORIGIN: 'https://app.example.com',
+      ALLOWED_ORIGINS: 'https://app.example.com',
+    },
+  });
+});
+
 test('/api/health/ready is ready when required background jobs are healthy', async () => {
   await withTestServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/health/ready`);

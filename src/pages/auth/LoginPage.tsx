@@ -24,6 +24,9 @@ import {
 
 function getErrorMessage(value: string | null) {
   if (value === 'google') return 'Google sign-in did not complete. Try again or use email and password.';
+  if (value === 'google_account_verification_required') {
+    return 'Verify or recover the existing account before using Google sign-in.';
+  }
   if (value === 'suspicious') return 'That sign-in approval link is invalid or expired. Start the sign-in flow again.';
   if (value === 'session') return 'Your session expired. Sign in again to continue.';
   return null;

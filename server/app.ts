@@ -14,6 +14,7 @@ import {
   applyNoStoreHeaders,
   applyPublicSharedCacheHeaders,
 } from './http/cache-policy.ts';
+import { getSecurityHelmetOptions } from './http/security-headers.ts';
 import { csrfProtectionMiddleware } from './middleware/csrf.middleware.ts';
 import { errorHandler, notFoundApiHandler } from './middleware/error.middleware.ts';
 import {
@@ -265,10 +266,7 @@ export async function createApp(
   });
 
   app.use(requestContextMiddleware);
-  app.use(helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
-  }));
+  app.use(helmet(getSecurityHelmetOptions(env)));
   app.use(cors(getCorsOptions()));
   app.use(compression());
   app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }));

@@ -29,6 +29,11 @@ import {
 import type { IAuthSession } from '../models/AuthSession.ts';
 import type { LeaderboardUserRecord } from '../services/user.service.ts';
 
+const PUBLIC_WITHDRAWAL_STUCK_MESSAGE =
+  'Withdrawal confirmation is taking longer than expected and is under review.';
+const PUBLIC_WITHDRAWAL_FAILED_MESSAGE =
+  'Withdrawal processing failed after retries. Your held balance was refunded.';
+
 function serializeStats(stats?: IUser['stats']): UserStatsDTO {
   return {
     wins: stats?.wins ?? 0,
@@ -242,7 +247,25 @@ export function serializeWithdrawalTransaction(withdrawal: WithdrawalDocument): 
   };
 }
 
+function getPublicWithdrawalLastError(withdrawal: WithdrawalDocument): string | undefined {
+  if (!withdrawal.lastError) {
+    return undefined;
+  }
+
+  if (withdrawal.status === 'stuck') {
+    return PUBLIC_WITHDRAWAL_STUCK_MESSAGE;
+  }
+
+  if (withdrawal.status === 'failed') {
+    return PUBLIC_WITHDRAWAL_FAILED_MESSAGE;
+  }
+
+  return undefined;
+}
+
 export function serializeWithdrawalStatus(withdrawal: WithdrawalDocument): WithdrawalStatusDTO {
+  const publicLastError = getPublicWithdrawalLastError(withdrawal);
+
   return {
     withdrawalId: withdrawal.withdrawalId,
     status: withdrawal.status,
@@ -251,6 +274,6 @@ export function serializeWithdrawalStatus(withdrawal: WithdrawalDocument): Withd
     createdAt: withdrawal.createdAt.toISOString(),
     ...(withdrawal.updatedAt ? { updatedAt: withdrawal.updatedAt.toISOString() } : {}),
     ...(withdrawal.txHash ? { txHash: withdrawal.txHash } : {}),
-    ...(withdrawal.lastError ? { lastError: withdrawal.lastError } : {}),
+    ...(publicLastError ? { lastError: publicLastError } : {}),
   };
 }

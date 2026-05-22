@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 
-import { getAllTransactions, getUserTransactions } from '../controllers/transaction.controller.ts';
+import { getAllTransactions, getUserTransactions, getWithdrawalStatusHandler } from '../controllers/transaction.controller.ts';
 import { Transaction } from '../models/Transaction.ts';
+import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 
 function createResponseMock() {
@@ -66,6 +67,90 @@ test('getAllTransactions bounds limit and offset before fetching admin transacti
 
   assert.deepEqual(capturedArgs, [500, 10_000]);
   assert.deepEqual(res.payload, []);
+});
+
+test('getWithdrawalStatusHandler returns a generic public error for stuck withdrawals', async (t) => {
+  const rawProviderError = 'Toncenter request failed: https://toncenter.example/api/v3?api_key=secret stack=WalletSendError';
+  const lookupMock = mock.method(WithdrawalRepository, 'findByWithdrawalIdForUser', async () => ({
+    withdrawalId: 'withdrawal-1',
+    userId: 'user-1',
+    toAddress: 'EQDestination',
+    amountRaw: '1000000',
+    amountDisplay: '1.000000',
+    status: 'stuck',
+    createdAt: new Date('2026-05-03T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-03T00:05:00.000Z'),
+    retries: 2,
+    lastError: rawProviderError,
+  }));
+  t.after(() => lookupMock.mock.restore());
+
+  const req = {
+    params: { withdrawalId: 'withdrawal-1' },
+    user: { id: 'user-1' },
+  };
+  const res = createResponseMock();
+
+  await getWithdrawalStatusHandler(req as any, res as any);
+
+  assert.equal(lookupMock.mock.callCount(), 1);
+  assert.equal((res.payload as { lastError?: string }).lastError, 'Withdrawal confirmation is taking longer than expected and is under review.');
+  assert.equal(JSON.stringify(res.payload).includes(rawProviderError), false);
+  assert.equal(JSON.stringify(res.payload).includes('api_key=secret'), false);
+});
+
+test('getWithdrawalStatusHandler returns a generic public error for failed withdrawals', async (t) => {
+  const rawProviderError = 'send failed: seqno timeout from hot wallet shard';
+  const lookupMock = mock.method(WithdrawalRepository, 'findByWithdrawalIdForUser', async () => ({
+    withdrawalId: 'withdrawal-2',
+    userId: 'user-1',
+    toAddress: 'EQDestination',
+    amountRaw: '1000000',
+    amountDisplay: '1.000000',
+    status: 'failed',
+    createdAt: new Date('2026-05-03T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-03T00:05:00.000Z'),
+    retries: 3,
+    lastError: rawProviderError,
+  }));
+  t.after(() => lookupMock.mock.restore());
+
+  const req = {
+    params: { withdrawalId: 'withdrawal-2' },
+    user: { id: 'user-1' },
+  };
+  const res = createResponseMock();
+
+  await getWithdrawalStatusHandler(req as any, res as any);
+
+  assert.equal((res.payload as { lastError?: string }).lastError, 'Withdrawal processing failed after retries. Your held balance was refunded.');
+  assert.equal(JSON.stringify(res.payload).includes(rawProviderError), false);
+});
+
+test('getWithdrawalStatusHandler omits raw retry errors for queued withdrawals', async (t) => {
+  const lookupMock = mock.method(WithdrawalRepository, 'findByWithdrawalIdForUser', async () => ({
+    withdrawalId: 'withdrawal-3',
+    userId: 'user-1',
+    toAddress: 'EQDestination',
+    amountRaw: '1000000',
+    amountDisplay: '1.000000',
+    status: 'queued',
+    createdAt: new Date('2026-05-03T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-03T00:05:00.000Z'),
+    retries: 1,
+    lastError: 'temporary provider outage at internal dependency',
+  }));
+  t.after(() => lookupMock.mock.restore());
+
+  const req = {
+    params: { withdrawalId: 'withdrawal-3' },
+    user: { id: 'user-1' },
+  };
+  const res = createResponseMock();
+
+  await getWithdrawalStatusHandler(req as any, res as any);
+
+  assert.equal('lastError' in (res.payload as object), false);
 });
 
 test('transaction schema declares createdAt index for admin chronological listing', () => {

@@ -7,6 +7,7 @@ import { createApp } from './app.ts';
 import { getSocketAllowRequest, getSocketCorsOptions } from './config/cors.ts';
 import { connectDB, disconnectDB } from './config/db.ts';
 import { getEnv } from './config/env.ts';
+import { getSecurityHelmetOptions } from './http/security-headers.ts';
 import { setupIndexes } from './lib/setup-db.ts';
 import { logger } from './utils/logger.ts';
 import { GameRoomRegistry } from './services/game-room-registry.service.ts';
@@ -66,10 +67,7 @@ export async function startServer() {
     socketAdapterSubClient = pubClient.duplicate();
     io.adapter(createAdapter(pubClient, socketAdapterSubClient));
   }
-  io.engine.use(helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
-  }));
+  io.engine.use(helmet(getSecurityHelmetOptions(env)));
 
   registerPublicMatchEvents(io);
 

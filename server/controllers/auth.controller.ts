@@ -49,6 +49,9 @@ import type {
 } from '../validation/request-schemas.ts';
 
 const DUMMY_PASSWORD_HASH = 'argon2id$v=1$m=65536,t=3,p=1$eJYB4S783mlIXTG5Q6ppGQ$0OFAdBFpP9j0xgjajtEEzmCw26b8w4QmSBSkAtDefy8';
+const GOOGLE_ACCOUNT_VERIFICATION_REQUIRED_CODE = 'GOOGLE_ACCOUNT_VERIFICATION_REQUIRED';
+const GOOGLE_ACCOUNT_VERIFICATION_REQUIRED_REDIRECT = '/auth/login?error=google_account_verification_required';
+const REGISTER_PENDING_MESSAGE = 'If this account can be created, a verification email is on the way.';
 
 function getRequestMetadata(req: Request) {
   return {
@@ -88,6 +91,10 @@ function buildPostAuthRedirect(username?: string | null): string {
   return username && username.trim().length > 0 ? '/play' : '/auth/complete-profile';
 }
 
+function hasLocalPasswordCredential(user: IUser): boolean {
+  return typeof user.passwordHash === 'string' && user.passwordHash.length > 0;
+}
+
 function buildPendingEmailVerificationRedirect(email?: string): string {
   const search = new URLSearchParams();
   if (email) {
@@ -116,6 +123,15 @@ function buildSuspiciousLoginRedirect(email?: string): string {
 
   const query = search.toString();
   return query ? `/auth/approve-login?${query}` : '/auth/approve-login';
+}
+
+function sendPendingRegistrationResponse(res: Response, email: string): void {
+  res.status(202).json({
+    status: 'pending_email_verification',
+    message: REGISTER_PENDING_MESSAGE,
+    email,
+    redirectTo: buildPendingEmailVerificationRedirect(email),
+  });
 }
 
 async function findPasswordLoginUser(identifier: string): Promise<IUser | null> {
@@ -224,20 +240,14 @@ export class AuthController {
               errorMessage: error instanceof Error ? error.message : String(error),
             });
           });
-        res.status(202).json({
-          status: 'pending_email_verification',
-          message: 'Verify your email to continue.',
-          email: existingUser.email,
-          redirectTo: buildPendingEmailVerificationRedirect(existingUser.email),
-        });
-        return;
       }
-
-      throw conflict('Email already exists', 'EMAIL_ALREADY_EXISTS', { field: 'email' });
+      sendPendingRegistrationResponse(res, email);
+      return;
     }
 
     if (existingUsername) {
-      throw conflict('Username already exists', 'USERNAME_ALREADY_EXISTS', { field: 'username' });
+      sendPendingRegistrationResponse(res, email);
+      return;
     }
 
     const passwordHash = await hashPassword(body.password);
@@ -265,12 +275,7 @@ export class AuthController {
           errorMessage: error instanceof Error ? error.message : String(error),
         });
       });
-    res.status(202).json({
-      status: 'pending_email_verification',
-      message: 'Verify your email to continue.',
-      email: user.email,
-      redirectTo: buildPendingEmailVerificationRedirect(user.email),
-    });
+    sendPendingRegistrationResponse(res, user.email);
   }
 
   static async loginPassword(req: Request, res: Response): Promise<void> {
@@ -483,6 +488,18 @@ export class AuthController {
       if (!user) {
         const existingByEmail = await UserService.findByEmail(googleProfile.email);
         if (existingByEmail) {
+          if (!existingByEmail.emailVerifiedAt) {
+            throw conflict(
+              'Verify or recover the existing account before using Google sign-in.',
+              GOOGLE_ACCOUNT_VERIFICATION_REQUIRED_CODE,
+              {
+                operation: 'linkGoogleAccount',
+                userId: existingByEmail._id.toString(),
+                recipientDomain: getRecipientDomain(existingByEmail.email),
+                hasPasswordCredential: hasLocalPasswordCredential(existingByEmail),
+              },
+            );
+          }
           user = await UserService.linkGoogleAccount(existingByEmail._id.toString(), googleProfile.googleSubject);
         } else {
           user = await UserService.createUser({
@@ -520,6 +537,29 @@ export class AuthController {
         && typeof (err as { details?: { operation?: unknown } }).details?.operation === 'string'
         ? (err as { details: { operation: string } }).details.operation
         : 'handleGoogleCallback';
+      const rawSecurityDetails = typeof err === 'object'
+        && err !== null
+        && 'details' in err
+        && err.details
+        && typeof err.details === 'object'
+        ? {
+            userId: 'userId' in err.details && typeof err.details.userId === 'string'
+              ? err.details.userId
+              : undefined,
+            recipientDomain: 'recipientDomain' in err.details && typeof err.details.recipientDomain === 'string'
+              ? err.details.recipientDomain
+              : undefined,
+            hasPasswordCredential: 'hasPasswordCredential' in err.details
+              && typeof err.details.hasPasswordCredential === 'boolean'
+              ? err.details.hasPasswordCredential
+              : undefined,
+          }
+        : undefined;
+      const securityDetails = rawSecurityDetails
+        ? Object.fromEntries(
+          Object.entries(rawSecurityDetails).filter(([, value]) => value !== undefined),
+        )
+        : undefined;
 
       const sanitizedError = err && typeof err === 'object'
         ? {
@@ -530,11 +570,19 @@ export class AuthController {
           }
         : { message: String(err) };
 
-      logger.error('auth.google_callback_failed', {
+      const logPayload = {
         errorCode,
         operation,
         error: sanitizedError,
-      });
+        ...(securityDetails && Object.keys(securityDetails).length > 0 ? { securityDetails } : {}),
+      };
+      if (errorCode === GOOGLE_ACCOUNT_VERIFICATION_REQUIRED_CODE) {
+        logger.warn('auth.google_callback_rejected', logPayload);
+        res.redirect(302, GOOGLE_ACCOUNT_VERIFICATION_REQUIRED_REDIRECT);
+        return;
+      }
+
+      logger.error('auth.google_callback_failed', logPayload);
       res.redirect(302, '/auth/login?error=google');
     }
   }
