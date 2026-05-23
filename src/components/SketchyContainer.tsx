@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { drawRoughRectangle } from '../canvas/drawRoughRectangle';
+import { resolveCanvasColor } from '../canvas/resolveCanvasColor';
 import { useElementSize } from '../hooks/useElementSize';
 import { cn } from '../utils/cn';
 
@@ -24,6 +25,8 @@ export const SketchyContainer = ({
 }: SketchyContainerProps) => {
   const { elementRef, size } = useElementSize<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const resolvedFill = resolveCanvasColor(fill, 'transparent');
+  const resolvedStroke = resolveCanvasColor(stroke, '#1a1a1a');
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -36,15 +39,15 @@ export const SketchyContainer = ({
       y: 5,
       width: size.width - 10,
       height: size.height - 10,
-      fill,
+      fill: resolvedFill,
       fillStyle,
       fillWeight: 1,
       hachureGap: 6,
       roughness,
-      stroke,
+      stroke: resolvedStroke,
       strokeWidth,
     });
-  }, [fill, fillStyle, roughness, size.height, size.width, stroke, strokeWidth]);
+  }, [fillStyle, resolvedFill, resolvedStroke, roughness, size.height, size.width, strokeWidth]);
 
   return (
     <div ref={elementRef} className={cn("relative p-4", className)}>

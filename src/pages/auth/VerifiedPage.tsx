@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { RouteLoading } from '../../app/RouteLoading';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useAuth } from '../../app/AuthProvider';
 import { AuthNotice, AuthShell } from '../../features/auth/AuthShell';
 import { getPostAuthPath } from '../../features/auth/auth-routing';
+import { getVerifiedPageState, getVerifiedPostAuthResponse } from './verified-page-state';
 
 export default function VerifiedPage() {
   const navigate = useNavigate();
@@ -16,11 +18,7 @@ export default function VerifiedPage() {
 
     const timeoutId = window.setTimeout(() => {
       navigate(
-        getPostAuthPath({
-          status: authStatus === 'profile_incomplete' ? 'profile_incomplete' : 'authenticated',
-          user: userData,
-          ...(authStatus === 'profile_incomplete' ? { nextStep: 'complete_profile' as const } : {}),
-        }),
+        getPostAuthPath(getVerifiedPostAuthResponse(authStatus, userData)),
         { replace: true },
       );
     }, 1600);
@@ -29,6 +27,16 @@ export default function VerifiedPage() {
       window.clearTimeout(timeoutId);
     };
   }, [authStatus, loading, navigate, userData]);
+
+  const pageState = getVerifiedPageState({ loading, userData });
+
+  if (pageState === 'loading') {
+    return <RouteLoading message="Checking verification..." />;
+  }
+
+  if (pageState === 'redirect_login') {
+    return <Navigate replace to="/auth/login" />;
+  }
 
   return (
     <AuthShell

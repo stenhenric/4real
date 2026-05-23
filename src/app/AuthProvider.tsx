@@ -3,6 +3,7 @@ import { getCurrentUser, logout as logoutRequest } from '../services/auth.servic
 import { ApiClientError } from '../services/api/apiClient';
 import { shouldClearAuthAfterRefreshError } from '../features/auth/refresh-error';
 import { isAbortError } from '../utils/isAbortError';
+import { resolveCurrentSession } from './auth-state';
 import type { AuthResponseDTO, AuthStatus, SessionListItemDTO, UserDTO } from '../types/api';
 
 interface AuthUser {
@@ -64,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setUser(mapAuthUser(response.user));
     setUserData(response.user);
-    setCurrentSession(response.session ?? null);
+    setCurrentSession((previousSession) => resolveCurrentSession(previousSession, response));
     setAuthStatus(normalizeAuthStatus(response));
   }, []);
 

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, History, Landmark, Store } from 'lucide-react';
 import { RouteLoading } from '../app/RouteLoading';
 import { useToast } from '../app/ToastProvider';
@@ -8,6 +8,11 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { StatusBadge, statusToneFromStatus } from '../components/ui/StatusBadge';
 import { formatDateTime } from '../features/merchant/format';
 import { getTransactionAccentClass, isCreditTransaction } from '../features/bank/transactionPresentation';
+import {
+  BANK_TRANSACTION_PAGE_SIZE,
+  getHasMoreTransactions,
+  mergeTransactionPages,
+} from '../features/bank/transactionPagination';
 import { getTransactions } from '../services/transactions.service';
 import { isAbortError } from '../utils/isAbortError';
 import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
@@ -43,8 +48,76 @@ const WithdrawPanel = lazy(() => import('../features/bank/WithdrawPanel'));
 const BankPage = () => {
   const [activeView, setActiveView] = useState<BankView>('portal');
   const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
+  const [transactionPage, setTransactionPage] = useState(0);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [nextTransactionsLoading, setNextTransactionsLoading] = useState(false);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [nextTransactionsError, setNextTransactionsError] = useState<string | null>(null);
+  const transactionRequestRef = useRef(0);
   const { error: showError } = useToast();
+
+  const fetchTransactionsPage = useCallback(async (
+    page: number,
+    options: { replace: boolean; signal?: AbortSignal },
+  ) => {
+    const requestId = transactionRequestRef.current + 1;
+    transactionRequestRef.current = requestId;
+
+    if (options.replace) {
+      setTransactionsLoading(true);
+      setTransactionsError(null);
+    } else {
+      setNextTransactionsLoading(true);
+      setNextTransactionsError(null);
+    }
+
+    try {
+      const transactionQuery: { page: number; pageSize: number; signal?: AbortSignal } = {
+        page,
+        pageSize: BANK_TRANSACTION_PAGE_SIZE,
+      };
+      if (options.signal) {
+        transactionQuery.signal = options.signal;
+      }
+
+      const data = await getTransactions(transactionQuery);
+
+      if (options.signal?.aborted || transactionRequestRef.current !== requestId) {
+        return;
+      }
+
+      setTransactions((currentTransactions) => (
+        options.replace
+          ? mergeTransactionPages([], data.items)
+          : mergeTransactionPages(currentTransactions, data.items)
+      ));
+      setTransactionPage(data.page);
+      setHasMoreTransactions(getHasMoreTransactions(data));
+      setTransactionsError(null);
+      setNextTransactionsError(null);
+    } catch (error) {
+      if (isAbortError(error, options.signal)) {
+        return;
+      }
+
+      const message = 'Failed to fetch transactions.';
+      if (options.replace) {
+        setTransactionsError(message);
+      } else {
+        setNextTransactionsError('Could not load more transactions. Your current history is still shown.');
+      }
+      showError(message);
+    } finally {
+      if (transactionRequestRef.current === requestId) {
+        if (options.replace) {
+          setTransactionsLoading(false);
+        } else {
+          setNextTransactionsLoading(false);
+        }
+      }
+    }
+  }, [showError]);
 
   useEffect(() => {
     if (activeView !== 'portal') {
@@ -53,29 +126,26 @@ const BankPage = () => {
 
     const controller = new AbortController();
 
-    const fetchTransactions = async () => {
-      try {
-        const data = await getTransactions({ signal: controller.signal });
-        if (!controller.signal.aborted) {
-          setTransactions(data.items);
-          setTransactionsError(null);
-        }
-      } catch (error) {
-        if (isAbortError(error, controller.signal)) {
-          return;
-        }
-
-        setTransactionsError('Failed to fetch transactions.');
-        showError('Failed to fetch transactions.');
-      }
-    };
-
-    void fetchTransactions();
+    void fetchTransactionsPage(1, { replace: true, signal: controller.signal });
 
     return () => {
       controller.abort();
     };
-  }, [activeView, showError]);
+  }, [activeView, fetchTransactionsPage]);
+
+  const handleLoadMoreTransactions = useCallback(() => {
+    if (transactionsLoading || nextTransactionsLoading || !hasMoreTransactions) {
+      return;
+    }
+
+    void fetchTransactionsPage(transactionPage + 1, { replace: false });
+  }, [
+    fetchTransactionsPage,
+    hasMoreTransactions,
+    nextTransactionsLoading,
+    transactionPage,
+    transactionsLoading,
+  ]);
 
   if (activeView !== 'portal') {
     const ActivePanel =
@@ -168,7 +238,9 @@ const BankPage = () => {
         </div>
 
         <div className="space-y-4">
-          {transactionsError ? (
+          {transactionsLoading && transactions.length === 0 ? (
+            <EmptyState>Loading transactions...</EmptyState>
+          ) : transactionsError && transactions.length === 0 ? (
             <EmptyState>{transactionsError}</EmptyState>
           ) : transactions.length === 0 ? (
             <EmptyState>No ink has been spilled yet.</EmptyState>
@@ -208,6 +280,25 @@ const BankPage = () => {
               </div>
             ))
           )}
+
+          {transactions.length > 0 ? (
+            <div className="flex flex-col items-center gap-3 pt-2">
+              {nextTransactionsError ? (
+                <p className="text-center text-sm font-semibold text-red-700" role="alert">
+                  {nextTransactionsError}
+                </p>
+              ) : null}
+              {hasMoreTransactions ? (
+                <SketchyButton
+                  disabled={transactionsLoading || nextTransactionsLoading}
+                  onClick={handleLoadMoreTransactions}
+                  type="button"
+                >
+                  {nextTransactionsLoading ? 'Loading...' : 'Load more'}
+                </SketchyButton>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import type * as React from 'react';
 import { useState } from 'react';
+import { resolveCanvasColor } from '../canvas/resolveCanvasColor';
 import { cn } from '../utils/cn';
 
 type SketchyButtonProps = React.ComponentProps<'button'> & {
@@ -37,15 +38,6 @@ const VARIANT_COLORS: Record<NonNullable<SketchyButtonProps['variant']>, {
   },
 };
 
-function resolveCssColor(value: string, fallback: string) {
-  if (typeof document === 'undefined' || !value.startsWith('var(')) {
-    return value;
-  }
-
-  const [tokenName = '', tokenFallback] = value.slice(4, -1).split(',', 2).map((part) => part.trim());
-  return getComputedStyle(document.documentElement).getPropertyValue(tokenName).trim() || tokenFallback || fallback;
-}
-
 export const SketchyButton = ({ 
   children, 
   className,
@@ -66,7 +58,7 @@ export const SketchyButton = ({
   const resolvedStroke = stroke ?? variantColors.stroke;
   const resolvedActiveColor = activeColor ?? variantColors.activeColor;
   const currentFill = hovered ? resolvedActiveColor : resolvedFill;
-  const resolvedBorderColor = resolveCssColor(resolvedStroke, '#1a1a1a');
+  const resolvedBorderColor = resolveCanvasColor(resolvedStroke, '#1a1a1a');
 
   return (
     <button

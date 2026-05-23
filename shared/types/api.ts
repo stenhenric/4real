@@ -88,7 +88,7 @@ export interface AuthResponseDTO {
   status: AuthStatus;
   message?: string;
   user?: UserDTO;
-  session?: SessionListItemDTO;
+  session?: SessionListItemDTO | null;
   sessions?: SessionListItemDTO[];
   nextStep?: 'verify_email' | 'mfa_challenge' | 'complete_profile';
   challengeId?: string;

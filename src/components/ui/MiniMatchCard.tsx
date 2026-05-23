@@ -1,20 +1,21 @@
 import { cn } from '../../utils/cn';
 import type { MatchDTO } from '../../types/api';
-
-const MINI_BOARD_SLOTS = Array.from({ length: 14 }, (_, index) => index);
+import { buildMiniMatchBoardCells, getMiniMatchDiscClass } from './miniMatchBoard';
 
 function MiniBoardPreview({ match }: { match: MatchDTO }) {
+  const cells = buildMiniMatchBoardCells(match.moveHistory, match.player1Id, match.player2Id);
+
   return (
     <div
       aria-hidden="true"
-      className="grid aspect-[7/2] w-full max-w-[8.5rem] shrink-0 grid-cols-7 gap-1 border-2 border-black/10 bg-black/5 p-1 sm:max-w-[9.5rem]"
+      className="grid aspect-[7/6] w-full max-w-[8.5rem] shrink-0 grid-cols-7 gap-1 border-2 border-black/10 bg-black/5 p-1 sm:max-w-[9.5rem]"
     >
-      {MINI_BOARD_SLOTS.map((slot) => (
+      {cells.map((cell) => (
         <div
-          key={slot}
+          key={`${cell.row}-${cell.col}`}
           className={cn(
             'aspect-square rounded-full border border-ink-blue/50',
-            match.moveHistory?.[slot] && (slot % 2 === 0 ? 'disc-red border-0' : 'disc-blue border-0'),
+            getMiniMatchDiscClass(cell.owner),
           )}
         />
       ))}
