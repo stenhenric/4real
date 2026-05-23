@@ -44,10 +44,10 @@ test('keeps merchant admin routes protected and lets ops review a submitted buy 
     await expect(admin.page.getByRole('heading', { name: /treasury overview/i })).toBeVisible();
     await admin.page.getByRole('link', { name: /review queue/i }).click();
     await expect(admin.page).toHaveURL(/\/merchant\/orders$/);
-    await expect(admin.page.getByText(/player-one/i)).toBeVisible();
+    await expect(admin.page.getByRole('link', { name: 'player-one' })).toBeVisible();
     await admin.page.getByRole('button', { name: /approve/i }).click();
     await expectToast(admin.page, /order marked done/i);
-    await expect(admin.page.getByText(/no orders match the current filters/i)).toBeVisible();
+    await expect(admin.page.getByRole('cell', { name: /no orders match the current filters/i })).toBeVisible();
   } finally {
     await closeContext(customer.context);
     await closeContext(admin.context);

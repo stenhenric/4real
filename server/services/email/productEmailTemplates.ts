@@ -75,6 +75,11 @@ export interface MerchantAlertEmailParams {
   actionUrl?: string;
 }
 
+export interface SecurityAlertEmailParams {
+  subject: string;
+  summary: string;
+}
+
 interface EmailRow {
   label: string;
   value: string;
@@ -94,23 +99,38 @@ function renderProductEmail(params: {
   heading: string;
   summary: string;
   rows: EmailRow[];
+  actionUrl?: string | undefined;
+  actionLabel?: string | undefined;
 }): string {
   const rows = params.rows
     .map(
       (row) =>
-        `<tr><th style="text-align:left;padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#374151;">${escapeHtml(row.label)}</th><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${renderHtmlValue(row)}</td></tr>`,
+        `<tr><th style="text-align:left;padding:10px 12px;border-bottom:1px solid #d1d5db;color:#1A365D;width:38%;vertical-align:top;">${escapeHtml(row.label)}</th><td style="padding:10px 12px;border-bottom:1px solid #d1d5db;color:#1A1A1A;vertical-align:top;">${renderHtmlValue(row)}</td></tr>`,
     )
     .join('');
+  const table = rows
+    ? [
+      '<table style="border-collapse:collapse;width:100%;font-size:14px;background:#ffffff;border:1px solid #d1d5db;">',
+      '<tbody>',
+      rows,
+      '</tbody>',
+      '</table>',
+    ].join('')
+    : '';
+  const action = params.actionUrl
+    ? `<p style="margin:24px 0 0;"><a href="${escapeHtml(params.actionUrl)}" style="display:inline-block;background:#1A1A1A;color:#ffffff;padding:12px 18px;text-decoration:none;border:2px solid #1A1A1A;border-radius:8px;font-weight:700;">${escapeHtml(params.actionLabel ?? 'Open 4real')}</a></p>`
+    : '';
 
   return [
-    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;">',
-    `<h1 style="font-size:24px;margin:0 0 16px;">${escapeHtml(params.heading)}</h1>`,
-    `<p style="margin:0 0 16px;">${escapeHtml(params.summary)}</p>`,
-    '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:14px;">',
-    '<tbody>',
-    rows,
-    '</tbody>',
-    '</table>',
+    '<div style="margin:0;padding:24px;background:#F2EFE9;color:#1A1A1A;font-family:Arial,sans-serif;line-height:1.6;">',
+    '<div style="max-width:640px;margin:0 auto;background:#FBFAF7;border:2px solid #1A1A1A;border-radius:12px;padding:24px;box-shadow:4px 4px 0 rgba(26,26,26,0.10);">',
+    '<p style="margin:0 0 10px;color:#1A365D;font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">4real</p>',
+    `<h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#1A1A1A;">${escapeHtml(params.heading)}</h1>`,
+    `<p style="margin:0 0 18px;color:#374151;">${escapeHtml(params.summary)}</p>`,
+    table,
+    action,
+    '<p style="margin:24px 0 0;color:#6b7280;font-size:12px;">This notification was sent by 4real.</p>',
+    '</div>',
     '</div>',
   ].join('');
 }
@@ -140,8 +160,38 @@ function row(label: string, value: string | number | null | undefined, href?: st
   return [{ label, value: stringValue, href }];
 }
 
-function buildText(params: { summary: string; rows: EmailRow[] }): string {
-  return [params.summary, '', ...params.rows.map((item) => `${item.label}: ${item.value}`)].join('\n');
+function buildText(params: {
+  summary: string;
+  rows: EmailRow[];
+  actionUrl?: string | undefined;
+  actionLabel?: string | undefined;
+}): string {
+  return [
+    params.summary,
+    '',
+    ...params.rows.map((item) => `${item.label}: ${item.value}`),
+    ...(params.actionUrl ? ['', params.actionLabel ?? 'Open 4real', params.actionUrl] : []),
+  ].join('\n');
+}
+
+function content(params: {
+  subject: string;
+  summary: string;
+  rows: EmailRow[];
+  actionUrl?: string | undefined;
+  actionLabel?: string | undefined;
+}): ProductEmailContent {
+  return {
+    subject: params.subject,
+    text: buildText(params),
+    html: renderProductEmail({
+      heading: params.subject,
+      summary: params.summary,
+      rows: params.rows,
+      actionUrl: params.actionUrl,
+      actionLabel: params.actionLabel,
+    }),
+  };
 }
 
 export function buildOrderEmail(params: OrderEmailParams): ProductEmailContent {
@@ -152,9 +202,13 @@ export function buildOrderEmail(params: OrderEmailParams): ProductEmailContent {
     order_rejected_user: `Your ${params.orderType} order was rejected`,
   };
   const subject = subjectByScenario[params.scenario];
-  const summary = `${params.orderType} order update.`;
+  const summaryByScenario: Record<OrderEmailScenario, string> = {
+    order_created_user: `Your ${params.orderType} order is pending merchant review.`,
+    order_created_merchant: `A ${params.orderType} order was submitted and needs merchant review.`,
+    order_approved_user: `Your ${params.orderType} order has been approved.`,
+    order_rejected_user: `Your ${params.orderType} order was rejected. Any held balance has been released when applicable.`,
+  };
   const rows: EmailRow[] = [
-    ...row('Scenario', params.scenario),
     ...row('Order ID', params.orderId),
     ...row('Order type', params.orderType),
     ...row('Amount USDT', params.amountUsdt),
@@ -165,14 +219,15 @@ export function buildOrderEmail(params: OrderEmailParams): ProductEmailContent {
     ...row('M-Pesa Number', params.mpesaNumber),
     ...row('M-Pesa Name', params.mpesaName),
     ...row('Username', params.username),
-    ...row('Action', params.actionUrl, params.actionUrl),
   ];
 
-  return {
+  return content({
     subject,
-    text: buildText({ summary, rows }),
-    html: renderProductEmail({ heading: subject, summary, rows }),
-  };
+    summary: summaryByScenario[params.scenario],
+    rows,
+    actionUrl: params.actionUrl,
+    actionLabel: params.scenario === 'order_created_merchant' ? 'Open order desk' : 'View order',
+  });
 }
 
 export function buildDepositEmail(params: DepositEmailParams): ProductEmailContent {
@@ -184,9 +239,14 @@ export function buildDepositEmail(params: DepositEmailParams): ProductEmailConte
     deposit_rejected_merchant: 'Incoming deposit was rejected',
   };
   const subject = subjectByScenario[params.scenario];
-  const summary = 'Deposit update.';
+  const summaryByScenario: Record<DepositEmailScenario, string> = {
+    deposit_confirmed_user: 'Your USDT deposit was confirmed and credited to your 4real balance.',
+    deposit_unmatched_merchant: 'An incoming USDT transfer arrived without an active memo and needs merchant review.',
+    deposit_reconciled_user: 'A merchant reviewed your deposit and credited it to your 4real balance.',
+    deposit_dismissed_merchant: 'An unmatched deposit review item was dismissed.',
+    deposit_rejected_merchant: 'An incoming transfer was rejected during deposit ingestion.',
+  };
   const rows: EmailRow[] = [
-    ...row('Scenario', params.scenario),
     ...row('Tx hash', params.txHash),
     ...row('Amount USDT', params.amountUsdt),
     ...row('Memo', params.memo),
@@ -195,14 +255,15 @@ export function buildDepositEmail(params: DepositEmailParams): ProductEmailConte
     ...row('Sender address', params.senderAddress),
     ...row('Note', params.note),
     ...row('Reason', params.reason),
-    ...row('Action', params.actionUrl, params.actionUrl),
   ];
 
-  return {
+  return content({
     subject,
-    text: buildText({ summary, rows }),
-    html: renderProductEmail({ heading: subject, summary, rows }),
-  };
+    summary: summaryByScenario[params.scenario],
+    rows,
+    actionUrl: params.actionUrl,
+    actionLabel: params.scenario === 'deposit_unmatched_merchant' ? 'Review deposits' : 'Open deposits',
+  });
 }
 
 export function buildWithdrawalEmail(params: WithdrawalEmailParams): ProductEmailContent {
@@ -216,24 +277,32 @@ export function buildWithdrawalEmail(params: WithdrawalEmailParams): ProductEmai
     withdrawal_failed_merchant: 'Withdrawal failed permanently',
   };
   const subject = subjectByScenario[params.scenario];
-  const summary = 'Withdrawal update.';
+  const summaryByScenario: Record<WithdrawalEmailScenario, string> = {
+    withdrawal_queued_user: 'Your withdrawal request is queued for processing.',
+    withdrawal_sent_user: 'Your withdrawal was submitted to the TON network and is waiting for confirmation.',
+    withdrawal_confirmed_user: 'Your withdrawal was confirmed on-chain.',
+    withdrawal_stuck_user: 'Your withdrawal is taking longer than expected and is being reviewed.',
+    withdrawal_failed_user: 'Your withdrawal could not be completed and the held balance was refunded.',
+    withdrawal_stuck_merchant: 'A withdrawal is waiting on a definitive on-chain outcome and needs review.',
+    withdrawal_failed_merchant: 'A withdrawal exhausted retries and was refunded to the user.',
+  };
+  const isMerchantScenario = params.scenario.endsWith('_merchant');
   const rows: EmailRow[] = [
-    ...row('Scenario', params.scenario),
     ...row('Withdrawal ID', params.withdrawalId),
     ...row('Amount USDT', params.amountUsdt),
     ...row('To address', params.toAddress),
-    ...row('Status URL', params.statusUrl),
-    ...row('Seqno', params.seqno),
+    ...(isMerchantScenario ? row('Seqno', params.seqno) : []),
     ...row('Tx hash', params.txHash),
-    ...row('Last error', params.lastError),
-    ...row('Action', params.actionUrl, params.actionUrl),
+    ...(isMerchantScenario ? row('Last error', params.lastError) : []),
   ];
 
-  return {
+  return content({
     subject,
-    text: buildText({ summary, rows }),
-    html: renderProductEmail({ heading: subject, summary, rows }),
-  };
+    summary: summaryByScenario[params.scenario],
+    rows,
+    actionUrl: params.actionUrl ?? params.statusUrl,
+    actionLabel: isMerchantScenario ? 'Open withdrawal review' : 'View withdrawal',
+  });
 }
 
 export function buildMerchantAlertEmail(params: MerchantAlertEmailParams): ProductEmailContent {
@@ -251,12 +320,21 @@ export function buildMerchantAlertEmail(params: MerchantAlertEmailParams): Produ
     ...row('Title', params.title),
     ...row('Description', params.description),
     ...row('Metric', params.metric),
-    ...row('Action', params.actionUrl, params.actionUrl),
   ];
 
-  return {
+  return content({
     subject,
-    text: buildText({ summary, rows }),
-    html: renderProductEmail({ heading: subject, summary, rows }),
-  };
+    summary,
+    rows,
+    actionUrl: params.actionUrl,
+    actionLabel: 'Open merchant alerts',
+  });
+}
+
+export function buildSecurityAlertEmail(params: SecurityAlertEmailParams): ProductEmailContent {
+  return content({
+    subject: params.subject,
+    summary: params.summary,
+    rows: [],
+  });
 }

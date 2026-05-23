@@ -113,13 +113,13 @@ test('public routes when opened anonymously render their primary surfaces withou
   });
   const routes: RouteExpectation[] = [
     { path: '/', heading: /get real\.\s*connect\s*4/i },
-    { path: '/auth/login?error=session', heading: /sign in without friction/i },
-    { path: '/auth/register', heading: /enter with a verified identity/i },
-    { path: '/auth/forgot-password', heading: /reset access without exposing account state/i },
-    { path: '/auth/reset-password?error=expired', heading: /replace your password and revoke old sessions/i },
-    { path: '/auth/verify-email?email=audit-user@example.com', heading: /activate your account before you play/i },
-    { path: '/auth/magic-link?email=audit-user@example.com', heading: /finish sign-in in this browser/i },
-    { path: '/auth/approve-login?email=audit-user@example.com', heading: /approve the blocked sign-in/i },
+    { path: '/auth/login?error=session', heading: /welcome back/i },
+    { path: '/auth/register', heading: /create your account/i },
+    { path: '/auth/forgot-password', heading: /reset your password/i },
+    { path: '/auth/reset-password?error=expired', heading: /choose a new password/i },
+    { path: '/auth/verify-email?email=audit-user@example.com', heading: /verify your email/i },
+    { path: '/auth/magic-link?email=audit-user@example.com', heading: /finish signing in/i },
+    { path: '/auth/approve-login?email=audit-user@example.com', heading: /approve your sign-in/i },
     { path: '/auth/verified', heading: /your account is active/i },
   ];
 
@@ -204,6 +204,8 @@ test('play lobby does not load TonConnect assets before wallet routes need them'
 
     await page.goto('/bank');
     await expect(page.getByRole('heading', { name: /the bank/i })).toBeVisible();
+    await page.getByRole('button', { name: /deposit usdt/i }).click();
+    await expect(page.getByText(/use tonconnect/i)).toBeVisible();
     await page.waitForLoadState('networkidle');
 
     expect(requestedAssetPaths.some((path) => /\/assets\/tonconnect.*\.js/i.test(path))).toBe(true);

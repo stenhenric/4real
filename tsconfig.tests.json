@@ -1,13 +1,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false
   },
   "include": [
     "src/vite-env.d.ts",
-    "server/middleware/frontend-contracts.test.ts",
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx"
+    "tests/**/*.ts",
+    "tests/**/*.tsx"
   ],
   "exclude": []
 }

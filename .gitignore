@@ -13,3 +13,4 @@ test-results/
 !.env.example
 GEMINI_API_KEY
 .clawpatch
+docs/

@@ -9,10 +9,11 @@
     "build": "npm run clean && tsc --noEmit && vite build && tsc --project tsconfig.server.json",
     "preview": "vite preview",
     "test": "npm run typecheck:tests && npm run test:unit && npm run test:integration",
-    "test:unit": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/config/env.test.ts server/repositories/processed-transaction.repository.test.ts server/services/email/gmail-service.test.ts server/services/email/product-email-templates.test.ts server/services/auth-email.service.test.ts server/services/one-time-token.service.test.ts server/services/google-oauth.service.test.ts server/services/product-email-notification.service.test.ts server/services/auth-session.service.test.ts src/**/*.test.ts",
-    "test:integration": "node --import ./server/test/setup-env.js --test --experimental-strip-types server/middleware/*.test.ts",
+    "test:unit": "node --import ./tests/setup/setup-env.js --test --experimental-strip-types tests/unit/server/config/env.test.ts tests/unit/server/repositories/processed-transaction.repository.test.ts tests/unit/server/services/email/gmail-service.test.ts tests/unit/server/services/email/product-email-templates.test.ts tests/unit/server/services/auth-email.service.test.ts tests/unit/server/services/one-time-token.service.test.ts tests/unit/server/services/google-oauth.service.test.ts tests/unit/server/services/product-email-notification.service.test.ts tests/unit/server/services/auth-session.service.test.ts tests/unit/server/utils/money.test.ts tests/unit/src/features/auth/AuthTurnstile.test.ts tests/unit/src/pages/auth/session-device-label.test.ts tests/unit/src/services/api/apiClient.test.ts tests/unit/src/utils/exact-money.test.ts tests/unit/src/utils/idempotency.test.ts",
+    "test:integration": "node --import ./tests/setup/setup-env.js --test --experimental-strip-types tests/integration/server/middleware/*.test.ts",
     "test:e2e": "npm run build && playwright test",
     "test:all": "npm run lint && npm run test:unit && npm run test:integration && npm run test:e2e",
+    "test:coverage": "node --import ./tests/setup/setup-env.js --test --experimental-strip-types --experimental-test-coverage --test-coverage-include=server/**/*.ts --test-coverage-include=src/**/*.ts --test-coverage-include=src/**/*.tsx --test-coverage-include=shared/**/*.ts --test-coverage-exclude=tests/** --test-coverage-exclude=node_modules/** --test-coverage-exclude=dist/** --test-coverage-exclude=build/** --test-coverage-exclude=coverage/** tests/unit/server/config/env.test.ts tests/unit/server/repositories/processed-transaction.repository.test.ts tests/unit/server/services/email/gmail-service.test.ts tests/unit/server/services/email/product-email-templates.test.ts tests/unit/server/services/auth-email.service.test.ts tests/unit/server/services/one-time-token.service.test.ts tests/unit/server/services/google-oauth.service.test.ts tests/unit/server/services/product-email-notification.service.test.ts tests/unit/server/services/auth-session.service.test.ts tests/unit/server/utils/money.test.ts tests/unit/src/features/auth/AuthTurnstile.test.ts tests/unit/src/pages/auth/session-device-label.test.ts tests/unit/src/services/api/apiClient.test.ts tests/unit/src/utils/exact-money.test.ts tests/unit/src/utils/idempotency.test.ts tests/integration/server/middleware/*.test.ts",
     "typecheck:tests": "tsc --project tsconfig.tests.json --noEmit",
     "gmail:authorize": "tsx scripts/gmail-authorize.ts",
     "docs:architecture": "node scripts/generate-architecture-map.mjs",
@@ -46,8 +47,8 @@
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "express-rate-limit": "^8.5.1",
-    "googleapis": "^171.4.0",
     "google-auth-library": "^10.6.2",
+    "googleapis": "^171.4.0",
     "helmet": "^8.1.0",
     "ioredis": "^5.10.1",
     "lucide-react": "^0.546.0",
@@ -71,6 +72,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@types/compression": "^1.8.1",
     "typescript": "^6.0.3"
   }
 }

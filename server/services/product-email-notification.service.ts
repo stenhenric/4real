@@ -6,6 +6,7 @@ import {
   buildDepositEmail,
   buildMerchantAlertEmail,
   buildOrderEmail,
+  buildSecurityAlertEmail,
   buildWithdrawalEmail,
   type DepositEmailParams,
   type MerchantAlertEmailParams,
@@ -227,10 +228,7 @@ export class ProductEmailNotificationService {
     await sendToVerifiedUser({
       scenario: 'security_alert_user',
       userId: params.userId,
-      render: () => ({
-        subject: params.subject,
-        text: params.summary,
-      }),
+      render: () => buildSecurityAlertEmail(params),
     });
   }
 

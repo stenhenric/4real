@@ -287,11 +287,15 @@ function buildActionEmailHtml(params: {
   actionUrl: string;
 }): string {
   return [
-    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;">',
-    `<h1 style="font-size:24px;margin-bottom:16px;">${escapeHtml(params.heading)}</h1>`,
-    `<p style="margin:0 0 16px;">${escapeHtml(params.body)}</p>`,
-    `<p style="margin:0 0 24px;"><a href="${escapeHtml(params.actionUrl)}" style="display:inline-block;background:#111827;color:#ffffff;padding:12px 20px;text-decoration:none;border-radius:8px;">${escapeHtml(params.actionLabel)}</a></p>`,
+    '<div style="margin:0;padding:24px;background:#F2EFE9;color:#1A1A1A;font-family:Arial,sans-serif;line-height:1.6;">',
+    '<div style="max-width:640px;margin:0 auto;background:#FBFAF7;border:2px solid #1A1A1A;border-radius:12px;padding:24px;box-shadow:4px 4px 0 rgba(26,26,26,0.10);">',
+    '<p style="margin:0 0 10px;color:#1A365D;font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">4real</p>',
+    `<h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#1A1A1A;">${escapeHtml(params.heading)}</h1>`,
+    `<p style="margin:0 0 20px;color:#374151;">${escapeHtml(params.body)}</p>`,
+    `<p style="margin:0 0 24px;"><a href="${escapeHtml(params.actionUrl)}" style="display:inline-block;background:#1A1A1A;color:#ffffff;padding:12px 18px;text-decoration:none;border:2px solid #1A1A1A;border-radius:8px;font-weight:700;">${escapeHtml(params.actionLabel)}</a></p>`,
     `<p style="margin:0;color:#6b7280;font-size:14px;">If the button does not work, copy this URL into your browser: ${escapeHtml(params.actionUrl)}</p>`,
+    '<p style="margin:18px 0 0;color:#6b7280;font-size:12px;">This security link was sent by 4real.</p>',
+    '</div>',
     '</div>',
   ].join('');
 }
