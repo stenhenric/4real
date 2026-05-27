@@ -9,6 +9,15 @@ import { serializeOrder } from '../serializers/api.ts';
 import { CacheKeys, invalidateCacheKeys } from '../services/cache.service.ts';
 import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
 import { getMerchantConfig } from '../services/merchant-config.service.ts';
+import {
+  clearMpesaCodeAttempts,
+  getMpesaCodeAttemptLock,
+  hashMpesaTransactionCode,
+  recordFailedMpesaCodeAttempt,
+  validateMpesaTransactionCode,
+  type MpesaCodeValidationReasonCode,
+  type MpesaCodeValidationResult,
+} from '../services/mpesa-code-validation.service.ts';
 import { OrderService } from '../services/order.service.ts';
 import { enqueueOrderProofRelay, settleOrderProofRelay } from '../services/order-proof-relay.service.ts';
 import { UserService } from '../services/user.service.ts';
@@ -31,8 +40,54 @@ import {
   type UpdateOrderStatusRequest,
 } from '../validation/request-schemas.ts';
 
+const MPESA_TRANSACTION_CODE_GENERIC_MESSAGE =
+  "We couldn't match this transaction code to the expected payment time. Please check the code and try again.";
+const MPESA_TRANSACTION_CODE_LOCKED_MESSAGE =
+  'Too many transaction code attempts. Please wait and try again, or contact support for manual review.';
+
 function createMerchantActionUrl(): string {
   return new URL('/merchant/orders', getPublicAppOrigin()).toString();
+}
+
+function createMpesaCodeAttemptContext(params: {
+  userId: string;
+  amount: string;
+  fiatCurrency: string;
+  fiatTotal: string;
+}): string {
+  return [
+    'mpesa-code',
+    params.userId,
+    'BUY',
+    params.amount,
+    params.fiatCurrency,
+    params.fiatTotal,
+  ].join(':');
+}
+
+async function rejectManualMpesaCodeSubmission(params: {
+  reasonCode: MpesaCodeValidationReasonCode;
+  userId: string;
+  requestId?: string | undefined;
+  attemptContext: string;
+  normalizedCode?: string | undefined;
+}): Promise<never> {
+  const attemptResult = await recordFailedMpesaCodeAttempt(params.attemptContext);
+  const locked = attemptResult.lockedUntil !== undefined;
+
+  logger.warn('mpesa_code.validation_rejected', {
+    userId: params.userId,
+    requestId: params.requestId,
+    reasonCode: params.reasonCode,
+    attemptCount: attemptResult.count,
+    lockedUntil: attemptResult.lockedUntil?.toISOString(),
+    ...(params.normalizedCode ? { mpesaCodeHash: hashMpesaTransactionCode(params.normalizedCode) } : {}),
+  });
+
+  throw badRequest(
+    locked ? MPESA_TRANSACTION_CODE_LOCKED_MESSAGE : MPESA_TRANSACTION_CODE_GENERIC_MESSAGE,
+    locked ? 'MPESA_TRANSACTION_CODE_LOCKED' : 'MPESA_TRANSACTION_CODE_INVALID',
+  );
 }
 
 export class OrderController {
@@ -58,6 +113,9 @@ export class OrderController {
     const merchantConfig = await getMerchantConfig();
     const proofImage = files.proofImage;
     const amountRaw = parseUsdtAmount(parsedBody.amount);
+    const rawTransactionCode = fields.transactionCode ?? parsedBody.transactionCode ?? '';
+    let mpesaValidation: MpesaCodeValidationResult | undefined;
+    let mpesaCodeAttemptContext: string | undefined;
 
     if (parsedBody.type === 'BUY' && amountRaw < parseUsdtAmount('1')) {
       throw badRequest('Minimum BUY amount is 1 USDT', 'BUY_ORDER_MINIMUM_NOT_MET');
@@ -109,11 +167,6 @@ export class OrderController {
       throw serviceUnavailable('Merchant rate is not configured', 'MERCHANT_RATE_NOT_CONFIGURED');
     }
 
-    const user = await UserService.findById(userId);
-    if (!user) {
-      throw notFound('User not found', 'USER_NOT_FOUND');
-    }
-
     const fiatTotal = formatKesAmount(multiplyScaledAmounts({
       leftRaw: amountRaw,
       leftScale: USDT_SCALE,
@@ -121,6 +174,47 @@ export class OrderController {
       rightScale: RATE_SCALE,
       resultScale: KES_SCALE,
     }));
+
+    if (parsedBody.type === 'BUY') {
+      mpesaCodeAttemptContext = createMpesaCodeAttemptContext({
+        userId,
+        amount: parsedBody.amount,
+        fiatCurrency: merchantConfig.fiatCurrency,
+        fiatTotal,
+      });
+
+      const existingLock = await getMpesaCodeAttemptLock(mpesaCodeAttemptContext);
+      if (existingLock) {
+        logger.warn('mpesa_code.validation_rejected', {
+          userId,
+          requestId: res.locals.requestId,
+          reasonCode: 'TOO_MANY_ATTEMPTS',
+          attemptCount: existingLock.count,
+          lockedUntil: existingLock.lockedUntil?.toISOString(),
+        });
+        throw badRequest(MPESA_TRANSACTION_CODE_LOCKED_MESSAGE, 'MPESA_TRANSACTION_CODE_LOCKED');
+      }
+
+      mpesaValidation = validateMpesaTransactionCode({
+        input: rawTransactionCode,
+      });
+
+      if (mpesaValidation.status !== 'valid') {
+        await rejectManualMpesaCodeSubmission({
+          reasonCode: mpesaValidation.reasonCode,
+          userId,
+          requestId: res.locals.requestId,
+          attemptContext: mpesaCodeAttemptContext,
+          normalizedCode: mpesaValidation.normalizedCode,
+        });
+      }
+    }
+
+    const user = await UserService.findById(userId);
+    if (!user) {
+      throw notFound('User not found', 'USER_NOT_FOUND');
+    }
+
     const proofDigest = proofImage
       ? crypto.createHash('sha256').update(proofImage.data).digest('hex')
       : undefined;
@@ -131,7 +225,7 @@ export class OrderController {
           fiatCurrency: merchantConfig.fiatCurrency,
           exchangeRate,
           fiatTotal,
-          transactionCode: parsedBody.transactionCode ?? '',
+          transactionCode: mpesaValidation?.normalizedCode ?? parsedBody.transactionCode ?? '',
           username: user.username ?? user.email.split('@')[0] ?? 'player',
           userId: user._id.toString(),
           mimeType: proofImage.contentType,
@@ -147,6 +241,7 @@ export class OrderController {
         type: parsedBody.type,
         amount: parsedBody.amount,
         transactionCode: parsedBody.transactionCode,
+        transactionCodeNormalized: mpesaValidation?.normalizedCode,
         fiatCurrency: merchantConfig.fiatCurrency,
         exchangeRate,
         fiatTotal,
@@ -156,12 +251,43 @@ export class OrderController {
         mpesaName: parsedBody.mpesaName,
       },
       execute: async ({ requestHash, session }: { requestHash: string; session: ClientSession }) => {
+        if (
+          parsedBody.type === 'BUY'
+          && mpesaValidation
+          && env.MPESA_CODE_DUPLICATE_POLICY === 'reject'
+        ) {
+          const existingOrder = await OrderService.findByNormalizedTransactionCode(
+            mpesaValidation.normalizedCode,
+            session,
+          );
+          if (existingOrder) {
+            await rejectManualMpesaCodeSubmission({
+              reasonCode: 'DUPLICATE_CODE',
+              userId,
+              requestId: res.locals.requestId,
+              attemptContext: mpesaCodeAttemptContext ?? createMpesaCodeAttemptContext({
+                userId,
+                amount: parsedBody.amount,
+                fiatCurrency: merchantConfig.fiatCurrency,
+                fiatTotal,
+              }),
+              normalizedCode: mpesaValidation.normalizedCode,
+            });
+          }
+        }
+
         const order = await OrderService.createOrder({
           userId: user._id,
           type: parsedBody.type,
           amount: parsedBody.amount,
           proofRelayQueued: Boolean(proofRelay),
-          ...(parsedBody.transactionCode ? { transactionCode: parsedBody.transactionCode } : {}),
+          ...(mpesaValidation ? {
+            transactionCode: mpesaValidation.normalizedCode,
+            transactionCodeOriginal: rawTransactionCode.trim(),
+            transactionCodeNormalized: mpesaValidation.normalizedCode,
+            mpesaCodeValidationReason: mpesaValidation.reasonCode,
+            ...(mpesaValidation.decodedDate ? { mpesaCodeDecodedDate: mpesaValidation.decodedDate } : {}),
+          } : parsedBody.transactionCode ? { transactionCode: parsedBody.transactionCode } : {}),
           ...(parsedBody.mpesaNumber ? { mpesaNumber: parsedBody.mpesaNumber } : {}),
           ...(parsedBody.mpesaName ? { mpesaName: parsedBody.mpesaName } : {}),
           fiatCurrency: merchantConfig.fiatCurrency,
@@ -170,6 +296,10 @@ export class OrderController {
           ...(res.locals.requestId ? { requestId: res.locals.requestId as string } : {}),
           session,
         });
+
+        if (mpesaCodeAttemptContext) {
+          await clearMpesaCodeAttempts(mpesaCodeAttemptContext);
+        }
 
         if (proofRelay) {
           await enqueueOrderProofRelay({

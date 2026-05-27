@@ -9,6 +9,11 @@ import { OrderService } from '../../../../server/services/order.service.ts';
 import { ProductEmailNotificationService } from '../../../../server/services/product-email-notification.service.ts';
 import { TransactionService } from '../../../../server/services/transaction.service.ts';
 import { UserService } from '../../../../server/services/user.service.ts';
+import {
+  resetMpesaCodeValidationForTests,
+  setMpesaCodeAttemptDependenciesForTests,
+} from '../../../../server/services/mpesa-code-validation.service.ts';
+import { OrderProofRelayRepository } from '../../../../server/repositories/order-proof-relay.repository.ts';
 
 function createSessionMock() {
   return {
@@ -40,6 +45,77 @@ function createResponseMock() {
       return this;
     },
   };
+}
+
+function createProofImage() {
+  return {
+    fieldName: 'proofImage',
+    filename: 'proof.png',
+    contentType: 'image/png',
+    data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]),
+    size: 9,
+  };
+}
+
+async function setupBuyOrderControllerTest(t: TestContext, transactionCode: string) {
+  resetMpesaCodeValidationForTests();
+  setMpesaCodeAttemptDependenciesForTests({
+    now: () => new Date('2026-05-27T09:00:00.000Z'),
+  });
+  t.after(() => {
+    resetMpesaCodeValidationForTests();
+  });
+
+  const multipart = await import('../../../../server/utils/multipart.ts');
+  multipart.setMultipartParserForTests(async () => ({
+    fields: {
+      type: 'BUY',
+      amount: '5.000000',
+      transactionCode,
+    },
+    files: {
+      proofImage: createProofImage(),
+    },
+  }));
+  t.after(() => {
+    multipart.resetMultipartParserForTests();
+  });
+
+  const merchantConfig = await import('../../../../server/services/merchant-config.service.ts');
+  merchantConfig.setMerchantConfigForTests({
+    mpesaNumber: '254700000000',
+    walletAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    instructions: 'Use exact amount.',
+    fiatCurrency: 'KES',
+    buyRateKesPerUsdt: '140.000000',
+    sellRateKesPerUsdt: '135.000000',
+  });
+  t.after(() => {
+    merchantConfig.resetMerchantConfigForTests();
+  });
+
+  const idempotency = await import('../../../../server/services/idempotency.service.ts');
+  idempotency.setIdempotencyV2ExecutorForTests(async (params: any) => {
+    const executed = await params.execute({
+      requestHash: 'hash-123',
+      session: createSessionMock(),
+    });
+
+    return {
+      ...executed,
+      replayed: false,
+      requestHash: 'hash-123',
+    };
+  });
+  t.after(() => {
+    idempotency.resetIdempotencyV2ExecutorForTests();
+  });
+
+  const cache = await import('../../../../server/services/cache.service.ts');
+  cache.setInvalidateCacheKeysForTests(async () => {});
+  t.after(() => {
+    cache.setInvalidateCacheKeysForTests(null);
+  });
 }
 
 test('getOrders always scopes results to the requesting user', async (t) => {
@@ -480,4 +556,179 @@ test('createOrder completes immediately and does not await/block on ProductEmail
   // Wait for background notification dispatch to complete
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(sendOrderCreatedResolved, true);
+});
+
+test('createOrder blocks implausible BUY M-Pesa codes before order creation or proof relay', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  await setupBuyOrderControllerTest(t, 'UEP1234567');
+
+  const findUserMock = mock.method(UserService, 'findById', async () => ({
+    _id: userId,
+    email: 'buyer@example.com',
+    username: 'buyer',
+  }) as any);
+  const createOrderMock = mock.method(OrderService, 'createOrder', async () => ({}) as any);
+  const sendOrderCreatedMock = mock.method(ProductEmailNotificationService, 'sendOrderCreated', async () => {});
+
+  t.after(() => findUserMock.mock.restore());
+  t.after(() => createOrderMock.mock.restore());
+  t.after(() => sendOrderCreatedMock.mock.restore());
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: false },
+    headers: { 'idempotency-key': 'key-12345678' },
+    get(name: string) {
+      return this.headers[name.toLowerCase()];
+    },
+  } as any;
+  const res = createResponseMock();
+
+  await assert.rejects(
+    OrderController.createOrder(req, res as any),
+    (error: any) => {
+      assert.equal(error.code, 'MPESA_TRANSACTION_CODE_INVALID');
+      assert.equal(
+        error.message,
+        "We couldn't match this transaction code to the expected payment time. Please check the code and try again.",
+      );
+      return true;
+    },
+  );
+
+  assert.equal(findUserMock.mock.callCount(), 0);
+  assert.equal(createOrderMock.mock.callCount(), 0);
+  assert.equal(sendOrderCreatedMock.mock.callCount(), 0);
+});
+
+test('createOrder accepts plausible BUY M-Pesa code but leaves order pending for manual review', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const orderId = new mongoose.Types.ObjectId();
+  let createOrderInput: Record<string, unknown> | undefined;
+  await setupBuyOrderControllerTest(t, 'u e r 1234567');
+
+  const findUserMock = mock.method(UserService, 'findById', async () => ({
+    _id: userId,
+    email: 'buyer@example.com',
+    username: 'buyer',
+  }) as any);
+  const duplicateMock = mock.method(OrderService, 'findByNormalizedTransactionCode', async () => null);
+  const createOrderMock = mock.method(OrderService, 'createOrder', async (input) => {
+    createOrderInput = input as Record<string, unknown>;
+    return {
+      _id: orderId,
+      userId,
+      type: 'BUY',
+      amount: '5.000000',
+      status: 'PENDING',
+      transactionCode: 'UER1234567',
+      transactionCodeOriginal: 'u e r 1234567',
+      transactionCodeNormalized: 'UER1234567',
+      mpesaCodeValidationReason: 'VALID_PLAUSIBLE',
+      fiatCurrency: 'KES',
+      exchangeRate: '140.000000',
+      fiatTotal: '700.00',
+      createdAt: new Date('2026-05-27T09:00:00.000Z'),
+    } as any;
+  });
+  let relayCreated = false;
+  const relayFindMock = mock.method(OrderProofRelayRepository, 'findByRequest', async () => null);
+  const relayCreateMock = mock.method(OrderProofRelayRepository, 'createPending', async () => {
+    relayCreated = true;
+  });
+  const relayClaimMock = mock.method(OrderProofRelayRepository, 'claimPendingByRequest', async () => null);
+  const sendOrderCreatedMock = mock.method(ProductEmailNotificationService, 'sendOrderCreated', async () => {});
+
+  t.after(() => findUserMock.mock.restore());
+  t.after(() => duplicateMock.mock.restore());
+  t.after(() => createOrderMock.mock.restore());
+  t.after(() => relayFindMock.mock.restore());
+  t.after(() => relayCreateMock.mock.restore());
+  t.after(() => relayClaimMock.mock.restore());
+  t.after(() => sendOrderCreatedMock.mock.restore());
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: false },
+    headers: { 'idempotency-key': 'key-12345678' },
+    get(name: string) {
+      return this.headers[name.toLowerCase()];
+    },
+  } as any;
+  const res = createResponseMock();
+
+  await OrderController.createOrder(req, res as any);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal((res.jsonBody as { status: string }).status, 'PENDING');
+  assert.equal(createOrderInput?.transactionCode, 'UER1234567');
+  assert.equal(createOrderInput?.transactionCodeOriginal, 'u e r 1234567');
+  assert.equal(createOrderInput?.transactionCodeNormalized, 'UER1234567');
+  assert.equal(createOrderInput?.mpesaCodeValidationReason, 'VALID_PLAUSIBLE');
+  assert.equal(createOrderMock.mock.callCount(), 1);
+  assert.equal(relayCreated, true);
+  assert.equal(sendOrderCreatedMock.mock.callCount(), 1);
+});
+
+test('createOrder rejects duplicate normalized M-Pesa transaction codes', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  await setupBuyOrderControllerTest(t, 'UER1234567');
+
+  const findUserMock = mock.method(UserService, 'findById', async () => ({
+    _id: userId,
+    email: 'buyer@example.com',
+    username: 'buyer',
+  }) as any);
+  const duplicateMock = mock.method(OrderService, 'findByNormalizedTransactionCode', async () => ({
+    _id: new mongoose.Types.ObjectId(),
+  }) as any);
+  const createOrderMock = mock.method(OrderService, 'createOrder', async () => ({}) as any);
+
+  t.after(() => findUserMock.mock.restore());
+  t.after(() => duplicateMock.mock.restore());
+  t.after(() => createOrderMock.mock.restore());
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: false },
+    headers: { 'idempotency-key': 'key-12345678' },
+    get(name: string) {
+      return this.headers[name.toLowerCase()];
+    },
+  } as any;
+  const res = createResponseMock();
+
+  await assert.rejects(
+    OrderController.createOrder(req, res as any),
+    (error: any) => {
+      assert.equal(error.code, 'MPESA_TRANSACTION_CODE_INVALID');
+      return true;
+    },
+  );
+
+  assert.equal(createOrderMock.mock.callCount(), 0);
+});
+
+test('createOrder locks repeated failed M-Pesa code attempts with a generic message', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  await setupBuyOrderControllerTest(t, 'UEP1234567');
+
+  const req = {
+    user: { id: userId.toString(), isAdmin: false },
+    headers: { 'idempotency-key': 'key-12345678' },
+    get(name: string) {
+      return this.headers[name.toLowerCase()];
+    },
+  } as any;
+
+  await assert.rejects(OrderController.createOrder(req, createResponseMock() as any));
+  await assert.rejects(OrderController.createOrder(req, createResponseMock() as any));
+  await assert.rejects(
+    OrderController.createOrder(req, createResponseMock() as any),
+    (error: any) => {
+      assert.equal(error.code, 'MPESA_TRANSACTION_CODE_LOCKED');
+      assert.equal(
+        error.message,
+        'Too many transaction code attempts. Please wait and try again, or contact support for manual review.',
+      );
+      return true;
+    },
+  );
 });

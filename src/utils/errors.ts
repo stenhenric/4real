@@ -28,6 +28,9 @@ const USER_SAFE_CODES = new Set([
   'DEPOSIT_MEMO_NOT_FOUND',
   'DEPOSIT_MEMO_ALREADY_USED',
   'DEPOSIT_MEMO_EXPIRED',
+  'MPESA_TRANSACTION_CODE_INVALID',
+  'MPESA_TRANSACTION_CODE_LOCKED',
+  'OPERATION_RATE_LIMITED',
   'DAILY_WITHDRAWAL_LIMIT_EXCEEDED',
   'HOT_WALLET_NOT_CONFIGURED',
 ]);
@@ -55,6 +58,9 @@ const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
   DEPOSIT_MEMO_NOT_FOUND: 'These payment details could not be found. Generate new details and try again.',
   DEPOSIT_MEMO_ALREADY_USED: 'This memo has already been used. Generate new payment details.',
   DEPOSIT_MEMO_EXPIRED: 'These payment details expired. Generate new details and try again.',
+  MPESA_TRANSACTION_CODE_INVALID: "We couldn't match this transaction code to the expected payment time. Please check the code and try again.",
+  MPESA_TRANSACTION_CODE_LOCKED: 'Too many transaction code attempts. Please wait and try again, or contact support for manual review.',
+  OPERATION_RATE_LIMITED: 'Too many requests for this operation. Please try again later.',
   DAILY_WITHDRAWAL_LIMIT_EXCEEDED: 'This withdrawal exceeds your daily withdrawal limit.',
   HOT_WALLET_NOT_CONFIGURED: 'Deposits are temporarily unavailable. Please try again later.',
 };

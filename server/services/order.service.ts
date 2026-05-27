@@ -25,6 +25,12 @@ export class OrderService {
     proof,
     proofRelayQueued,
     transactionCode,
+    transactionCodeOriginal,
+    transactionCodeNormalized,
+    mpesaCodeValidationReason,
+    mpesaCodeDecodedDate,
+    mpesaCodeAttemptCount,
+    mpesaCodeLockedUntil,
     mpesaNumber,
     mpesaName,
     fiatCurrency,
@@ -39,6 +45,12 @@ export class OrderService {
     proof?: TelegramOrderProof | undefined;
     proofRelayQueued?: boolean | undefined;
     transactionCode?: string | undefined;
+    transactionCodeOriginal?: string | undefined;
+    transactionCodeNormalized?: string | undefined;
+    mpesaCodeValidationReason?: string | undefined;
+    mpesaCodeDecodedDate?: Date | undefined;
+    mpesaCodeAttemptCount?: number | undefined;
+    mpesaCodeLockedUntil?: Date | undefined;
     mpesaNumber?: string | undefined;
     mpesaName?: string | undefined;
     fiatCurrency: 'KES';
@@ -72,6 +84,12 @@ export class OrderService {
         status: 'PENDING',
         ...(proof ? { proof } : {}),
         ...(transactionCode ? { transactionCode } : {}),
+        ...(transactionCodeOriginal ? { transactionCodeOriginal } : {}),
+        ...(transactionCodeNormalized ? { transactionCodeNormalized } : {}),
+        ...(mpesaCodeValidationReason ? { mpesaCodeValidationReason } : {}),
+        ...(mpesaCodeDecodedDate ? { mpesaCodeDecodedDate } : {}),
+        ...(mpesaCodeAttemptCount !== undefined ? { mpesaCodeAttemptCount } : {}),
+        ...(mpesaCodeLockedUntil ? { mpesaCodeLockedUntil } : {}),
         ...(type === 'SELL' && mpesaNumber ? { mpesaNumber } : {}),
         ...(type === 'SELL' && mpesaName ? { mpesaName } : {}),
       }], { session: activeSession });
@@ -103,6 +121,10 @@ export class OrderService {
           type: savedOrder.type,
           amount: savedOrder.amount,
           transactionCode: savedOrder.transactionCode,
+          transactionCodeNormalized: savedOrder.transactionCodeNormalized,
+          mpesaCodeValidationReason: savedOrder.mpesaCodeValidationReason,
+          mpesaCodeDecodedDate: savedOrder.mpesaCodeDecodedDate?.toISOString(),
+          mpesaCodeAttemptCount: savedOrder.mpesaCodeAttemptCount,
           fiatCurrency: savedOrder.fiatCurrency,
           exchangeRate: savedOrder.exchangeRate,
           fiatTotal: savedOrder.fiatTotal,
@@ -139,6 +161,20 @@ export class OrderService {
   static async getOrders(userId: string): Promise<IOrder[]> {
     const filter = { userId: new mongoose.Types.ObjectId(userId) };
     return Order.find(filter).sort({ createdAt: -1 }).populate('userId', 'username').select('-__v');
+  }
+
+  static async findByNormalizedTransactionCode(
+    transactionCodeNormalized: string,
+    session?: mongoose.ClientSession | undefined,
+  ): Promise<IOrder | null> {
+    return Order.findOne(
+      {
+        type: 'BUY',
+        transactionCodeNormalized,
+      },
+      undefined,
+      session ? { session } : undefined,
+    );
   }
 
   static async updateOrderStatus(

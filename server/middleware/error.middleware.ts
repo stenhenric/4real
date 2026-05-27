@@ -39,6 +39,13 @@ function getDuplicateKeyHttpError(error: { keyPattern?: Record<string, unknown>;
     return conflict('That username is already taken.', 'USERNAME_ALREADY_EXISTS', { field });
   }
 
+  if (field === 'transactionCodeNormalized') {
+    return badRequest(
+      "We couldn't match this transaction code to the expected payment time. Please check the code and try again.",
+      'MPESA_TRANSACTION_CODE_INVALID',
+    );
+  }
+
   return conflict('That resource already exists.', 'RESOURCE_ALREADY_EXISTS', field ? { field } : undefined);
 }
 

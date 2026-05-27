@@ -14,6 +14,12 @@ export interface IOrder extends Document {
   status: 'PENDING' | 'DONE' | 'REJECTED';
   proof?: TelegramOrderProof;
   transactionCode?: string;
+  transactionCodeOriginal?: string;
+  transactionCodeNormalized?: string;
+  mpesaCodeValidationReason?: string;
+  mpesaCodeDecodedDate?: Date;
+  mpesaCodeAttemptCount?: number;
+  mpesaCodeLockedUntil?: Date;
   fiatCurrency?: 'KES';
   exchangeRate?: string;
   fiatTotal?: string;
@@ -29,6 +35,12 @@ const OrderSchema: Schema = new Schema({
   amount: { type: String, required: true, match: /^\d+\.\d{6}$/ },
   status: { type: String, enum: ['PENDING', 'DONE', 'REJECTED'], default: 'PENDING', index: true },
   transactionCode: { type: String, trim: true },
+  transactionCodeOriginal: { type: String, trim: true },
+  transactionCodeNormalized: { type: String, trim: true, uppercase: true },
+  mpesaCodeValidationReason: { type: String, trim: true },
+  mpesaCodeDecodedDate: { type: Date },
+  mpesaCodeAttemptCount: { type: Number, min: 0 },
+  mpesaCodeLockedUntil: { type: Date },
   fiatCurrency: { type: String, enum: ['KES'], trim: true },
   exchangeRate: { type: String, match: /^\d+\.\d{6}$/ },
   fiatTotal: { type: String, match: /^\d+\.\d{2}$/ },
@@ -52,5 +64,15 @@ OrderSchema.index({ status: 1, createdAt: -1 });
 OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ type: 1, createdAt: -1 });
 OrderSchema.index({ status: 1, type: 1, createdAt: -1 });
+OrderSchema.index(
+  { transactionCodeNormalized: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: 'BUY',
+      transactionCodeNormalized: { $type: 'string' },
+    },
+  },
+);
 
 export const Order = mongoose.model<IOrder>('Order', OrderSchema);

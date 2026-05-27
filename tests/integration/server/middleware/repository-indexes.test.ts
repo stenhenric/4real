@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 
 import { REQUIRED_DATABASE_INDEXES } from '../../../../server/lib/setup-db.ts';
+import { Order } from '../../../../server/models/Order.ts';
 import { FailedDepositIngestionRepository } from '../../../../server/repositories/failed-deposit-ingestion.repository.ts';
 import { WithdrawalRepository } from '../../../../server/repositories/withdrawal.repository.ts';
 
@@ -73,10 +74,24 @@ test('startup index verification covers staging-required query indexes', () => {
       'failed_deposit_ingestions.status_1_resolvedAt_1_transferData.transaction_now_1',
       'orders.createdAt_-1',
       'orders.status_1_type_1_createdAt_-1',
+      'orders.transactionCodeNormalized_1',
       'orders.type_1_createdAt_-1',
       'transactions.createdAt_-1__id_-1',
       'users.leaderboard_public_by_elo',
       'withdrawals.status_1_startedAt_1',
     ],
   );
+});
+
+test('order schema declares unique normalized M-Pesa code index for BUY orders', () => {
+  const normalizedCodeIndex = Order.schema.indexes().find(([key]) => (
+    (key as Record<string, unknown>).transactionCodeNormalized === 1
+  ));
+
+  assert.ok(normalizedCodeIndex);
+  assert.equal(normalizedCodeIndex[1]?.unique, true);
+  assert.deepEqual(normalizedCodeIndex[1]?.partialFilterExpression, {
+    type: 'BUY',
+    transactionCodeNormalized: { $type: 'string' },
+  });
 });

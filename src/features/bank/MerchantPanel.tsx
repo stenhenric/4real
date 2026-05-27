@@ -541,8 +541,10 @@ const MerchantPanel = () => {
                   <input
                     className="w-full text-lg font-mono bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors uppercase"
                     id={MERCHANT_TRANSACTION_CODE_ID}
+                    inputMode="text"
+                    maxLength={13}
                     onChange={(event) => setTransactionCode(event.target.value)}
-                    placeholder="QWE123ABC"
+                    placeholder="10-character code"
                     required
                     type="text"
                     value={transactionCode}
