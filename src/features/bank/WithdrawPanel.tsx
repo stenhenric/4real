@@ -1,37 +1,156 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { TonConnectButton, useTonAddress, useTonWallet } from '@tonconnect/ui-react';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Clock } from 'lucide-react';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
+import { CopyField } from '../../components/ui/CopyField';
+import { ReadonlyField } from '../../components/ui/ReadonlyField';
+import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
-import { createWithdrawal } from '../../services/transactions.service';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
+import { createWithdrawal, getWithdrawalStatus } from '../../services/transactions.service';
+import type { WithdrawalRequestAcceptedDTO, WithdrawalStatusDTO } from '../../types/api';
 import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
 const WITHDRAW_ADDRESS_ID = 'withdraw-address';
+const WITHDRAW_DESTINATION_REVIEW_ID = 'withdraw-destination-review';
 
-const WithdrawPanel = () => {
+type WithdrawStep = 'form' | 'review' | 'status';
+
+interface WithdrawPanelProps {
+  onBackToBank: () => void;
+  onViewHistory: () => void;
+}
+
+interface WithdrawalFieldErrors {
+  amount?: string;
+  toAddress?: string;
+}
+
+const WITHDRAWAL_STATUS_LABELS: Record<WithdrawalStatusDTO['status'], string> = {
+  queued: 'Withdrawal queued',
+  processing: 'Processing withdrawal',
+  sent: 'Sent to network',
+  confirmed: 'Confirmed',
+  stuck: 'Delayed',
+  failed: 'Failed',
+};
+
+function formatAddressPreview(address: string) {
+  if (address.length <= 18) {
+    return address;
+  }
+
+  return `${address.slice(0, 8)}...${address.slice(-6)}`;
+}
+
+function validateTonAddress(value: string) {
+  return /^(?:EQ|UQ)[A-Za-z0-9_-]{46}$/.test(value.trim());
+}
+
+function getStatusMessage(status: WithdrawalStatusDTO['status']) {
+  switch (status) {
+    case 'queued':
+      return 'Your balance has been reserved and the withdrawal is waiting for processing.';
+    case 'processing':
+      return 'We are preparing your withdrawal for the TON network.';
+    case 'sent':
+      return 'Your withdrawal was sent to the TON network and is waiting for final confirmation.';
+    case 'confirmed':
+      return 'Your withdrawal is confirmed.';
+    case 'stuck':
+      return 'This withdrawal is taking longer than expected and is under review.';
+    case 'failed':
+      return 'This withdrawal failed. Any held balance was refunded.';
+    default:
+      return 'We are tracking this withdrawal.';
+  }
+}
+
+const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
   const { userData, refreshUser } = useAuth();
   const { addToast } = useToast();
   const wallet = useTonWallet();
   const connectedWalletAddress = useTonAddress();
+  const copyToClipboard = useCopyToClipboard();
+  const [step, setStep] = useState<WithdrawStep>('form');
   const [amount, setAmount] = useState('');
   const [toAddress, setToAddress] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<WithdrawalFieldErrors>({});
+  const [reviewAmount, setReviewAmount] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [acceptedWithdrawal, setAcceptedWithdrawal] = useState<WithdrawalRequestAcceptedDTO | null>(null);
+  const [withdrawalStatus, setWithdrawalStatus] = useState<WithdrawalStatusDTO | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (connectedWalletAddress) {
+    panelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [step]);
+
+  useEffect(() => {
+    if (connectedWalletAddress && step === 'form' && toAddress.trim().length === 0) {
       setToAddress(connectedWalletAddress);
     }
-  }, [connectedWalletAddress]);
+  }, [connectedWalletAddress, step, toAddress]);
 
-  const handleWithdraw = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  useEffect(() => {
+    if (!acceptedWithdrawal) {
+      return undefined;
+    }
 
-    let normalizedAmount: string;
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const refreshStatus = async () => {
+      try {
+        const nextStatus = await getWithdrawalStatus(acceptedWithdrawal.withdrawalId, controller.signal);
+        if (cancelled) {
+          return;
+        }
+        setWithdrawalStatus(nextStatus);
+        setStatusError(null);
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) {
+          return;
+        }
+        setStatusError(getApiErrorMessage(error, 'Status updates are temporarily unavailable.'));
+      }
+    };
+
+    void refreshStatus();
+    const intervalId = window.setInterval(() => {
+      const currentStatus = withdrawalStatus?.status;
+      if (currentStatus && ['confirmed', 'failed', 'stuck'].includes(currentStatus)) {
+        return;
+      }
+      void refreshStatus();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearInterval(intervalId);
+    };
+  }, [acceptedWithdrawal, withdrawalStatus?.status]);
+
+  const normalizedDestination = toAddress.trim();
+  const statusForDisplay = withdrawalStatus ?? (acceptedWithdrawal && reviewAmount ? {
+    withdrawalId: acceptedWithdrawal.withdrawalId,
+    status: acceptedWithdrawal.status,
+    amountUsdt: reviewAmount,
+    toAddress: normalizedDestination,
+    createdAt: new Date().toISOString(),
+  } satisfies WithdrawalStatusDTO : null);
+
+  const validateForm = () => {
+    const nextErrors: WithdrawalFieldErrors = {};
+    let normalizedAmount: string | null = null;
+
     try {
       normalizedAmount = normalizeFixedScaleAmount(amount, {
         scale: 6,
@@ -39,22 +158,68 @@ const WithdrawPanel = () => {
         label: 'Withdrawal amount',
       });
     } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Enter a valid amount.', 'error');
+      nextErrors.amount = error instanceof Error ? error.message : 'Enter a valid withdrawal amount.';
+    }
+
+    if (!normalizedDestination) {
+      nextErrors.toAddress = 'Enter a TON destination address.';
+    } else if (!validateTonAddress(normalizedDestination)) {
+      nextErrors.toAddress = 'Enter a valid TON address.';
+    }
+
+    setFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0 && normalizedAmount
+      ? normalizedAmount
+      : null;
+  };
+
+  const handleReviewWithdrawal = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedAmount = validateForm();
+    if (!normalizedAmount) {
       return;
     }
 
-    if (!toAddress) {
-      addToast('Enter a valid TON address.', 'error');
+    setReviewAmount(normalizedAmount);
+    setStep('review');
+  };
+
+  const handleFieldChange = (field: 'amount' | 'toAddress', value: string) => {
+    if (field === 'amount') {
+      setAmount(value);
+    } else {
+      setToAddress(value);
+    }
+
+    setFieldErrors((currentErrors) => ({ ...currentErrors, [field]: undefined }));
+    if (step !== 'form') {
+      setAcceptedWithdrawal(null);
+      setWithdrawalStatus(null);
+      setStep('form');
+    }
+  };
+
+  const handleConfirmWithdrawal = async () => {
+    const normalizedAmount = reviewAmount ?? validateForm();
+    if (!normalizedAmount) {
+      setStep('form');
       return;
     }
 
     setLoading(true);
 
     try {
-      await createWithdrawal({ amountUsdt: normalizedAmount, toAddress });
+      const response = await createWithdrawal({ amountUsdt: normalizedAmount, toAddress: normalizedDestination });
+      setAcceptedWithdrawal(response);
+      setWithdrawalStatus({
+        withdrawalId: response.withdrawalId,
+        status: response.status,
+        amountUsdt: normalizedAmount,
+        toAddress: normalizedDestination,
+        createdAt: new Date().toISOString(),
+      });
+      setStep('status');
       addToast('Withdrawal queued.', 'success');
-      setAmount('');
-      setToAddress(connectedWalletAddress || '');
       await refreshUser();
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
@@ -67,8 +232,207 @@ const WithdrawPanel = () => {
     }
   };
 
+  const balanceLabel = useMemo(() => formatMoneyValue(userData?.balance), [userData?.balance]);
+
+  const renderFormStep = () => (
+    <form className="space-y-6" onSubmit={handleReviewWithdrawal}>
+      <div>
+        <label
+          className="mb-1 ml-1 block text-xs font-bold uppercase tracking-widest opacity-50"
+          htmlFor={WITHDRAW_AMOUNT_ID}
+        >
+          Withdrawal Amount (USDT)
+        </label>
+        <div className="relative">
+          <input
+            className="w-full border-b-2 border-black/20 bg-transparent p-2 pr-20 text-4xl font-bold transition-colors focus:border-black"
+            id={WITHDRAW_AMOUNT_ID}
+            inputMode="decimal"
+            onChange={(event) => handleFieldChange('amount', event.target.value)}
+            placeholder="0.00"
+            type="text"
+            value={amount}
+          />
+          <span className="absolute bottom-3 right-2 text-xl font-bold opacity-30">USDT</span>
+        </div>
+        {fieldErrors.amount ? (
+          <p className="mt-2 text-sm font-bold text-danger-text" role="alert">
+            {fieldErrors.amount}
+          </p>
+        ) : null}
+      </div>
+
+      <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <label
+            className="mb-1 ml-1 block text-xs font-bold uppercase tracking-widest opacity-50"
+            htmlFor={WITHDRAW_ADDRESS_ID}
+          >
+            Destination TON Address
+          </label>
+          {wallet && connectedWalletAddress ? (
+            <SketchyButton
+              className="mb-1 px-2 py-1 text-[10px] font-bold uppercase text-white"
+              fill="var(--color-ink-blue)"
+              onClick={() => handleFieldChange('toAddress', connectedWalletAddress)}
+              type="button"
+            >
+              Auto-fill connected wallet
+            </SketchyButton>
+          ) : null}
+        </div>
+        <input
+          className="w-full border-b-2 border-black/20 bg-transparent p-2 font-mono text-lg transition-colors focus:border-black"
+          id={WITHDRAW_ADDRESS_ID}
+          onChange={(event) => handleFieldChange('toAddress', event.target.value)}
+          placeholder="EQ..."
+          type="text"
+          value={toAddress}
+        />
+        {fieldErrors.toAddress ? (
+          <p className="mt-2 text-sm font-bold text-danger-text" role="alert">
+            {fieldErrors.toAddress}
+          </p>
+        ) : null}
+      </div>
+
+      <SketchyButton className="mt-4 w-full py-4 text-xl" type="submit">
+        Review Withdrawal
+      </SketchyButton>
+    </form>
+  );
+
+  const renderReviewStep = () => {
+    if (!reviewAmount) {
+      return renderFormStep();
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <StatusBadge tone="info">Ready to review</StatusBadge>
+            <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Confirm withdrawal</h3>
+          </div>
+          <SketchyButton onClick={() => setStep('form')} type="button" variant="secondary">
+            Edit details
+          </SketchyButton>
+        </div>
+
+        <div className="grid gap-3 bg-black/5 p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
+            <p className="text-2xl font-bold text-ink-blue">{reviewAmount} USDT</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Network</p>
+            <p className="text-xl font-bold">TON</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Asset</p>
+            <p className="text-xl font-bold">USDT</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Destination</p>
+            <p className="font-mono text-lg font-bold">{formatAddressPreview(normalizedDestination)}</p>
+          </div>
+        </div>
+
+        <CopyField
+          id={WITHDRAW_DESTINATION_REVIEW_ID}
+          label="Destination address"
+          onCopy={() => void copyToClipboard(normalizedDestination)}
+          value={normalizedDestination}
+        />
+
+        <div className="space-y-3 bg-white p-4 shadow-sm border-2 border-black/10">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-bold uppercase tracking-widest opacity-60">Network fee</span>
+            <span className="font-bold">Covered by platform</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-bold uppercase tracking-widest opacity-60">Total deducted</span>
+            <span className="font-bold">{reviewAmount} USDT</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-bold uppercase tracking-widest opacity-60">Estimated received</span>
+            <span className="font-bold">{reviewAmount} USDT</span>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SketchyButton className="w-full py-4 text-lg" disabled={loading} onClick={handleConfirmWithdrawal} type="button">
+            {loading ? 'Confirming...' : 'Confirm Withdrawal'}
+          </SketchyButton>
+          <SketchyButton className="w-full py-4 text-lg" onClick={onBackToBank} type="button" variant="secondary">
+            Cancel
+          </SketchyButton>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStatusStep = () => {
+    if (!statusForDisplay || !acceptedWithdrawal) {
+      return renderFormStep();
+    }
+
+    const label = WITHDRAWAL_STATUS_LABELS[statusForDisplay.status];
+
+    return (
+      <div className="space-y-6 text-center">
+        <div className="mx-auto rough-border flex size-16 items-center justify-center bg-warning-bg">
+          <Clock size={32} className="text-warning-text" />
+        </div>
+        <div>
+          <StatusBadge tone={statusToneFromStatus(statusForDisplay.status)}>{label}</StatusBadge>
+          <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">{label}</h3>
+          <p className="mt-2 text-sm font-bold opacity-70">{getStatusMessage(statusForDisplay.status)}</p>
+          {statusForDisplay.lastError ? (
+            <p className="mt-2 text-sm font-bold text-danger-text" role="alert">
+              {statusForDisplay.lastError}
+            </p>
+          ) : null}
+          {statusError ? (
+            <p className="mt-2 text-sm font-bold text-warning-text" role="status">
+              {statusError}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="grid gap-3 bg-black/5 p-4 text-left sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
+            <p className="text-xl font-bold text-ink-blue">{statusForDisplay.amountUsdt} USDT</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Destination</p>
+            <p className="font-mono text-lg font-bold">{formatAddressPreview(statusForDisplay.toAddress)}</p>
+          </div>
+        </div>
+
+        <ReadonlyField label="Withdrawal ID" value={statusForDisplay.withdrawalId} />
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <a
+            className="sketchy-border inline-flex min-w-0 items-center justify-center px-4 py-3 font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
+            href={acceptedWithdrawal.statusUrl}
+          >
+            View status
+          </a>
+          <SketchyButton className="w-full py-3" onClick={onViewHistory} type="button">
+            View transaction history
+          </SketchyButton>
+          <SketchyButton className="w-full py-3" onClick={onBackToBank} type="button" variant="secondary">
+            Return to Bank
+          </SketchyButton>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="mx-auto max-w-2xl scroll-mt-24" ref={panelRef}>
       <div className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
@@ -76,8 +440,8 @@ const WithdrawPanel = () => {
               <ArrowUpRight size={32} className="text-danger-text" />
             </div>
             <div>
-              <h2 className="text-3xl font-semibold italic tracking-tighter uppercase">Withdraw USDT</h2>
-              <p className="text-sm font-mono opacity-60">Send USDT from your balance to a TON wallet address</p>
+              <h2 className="text-3xl font-semibold italic uppercase tracking-tighter">Withdraw USDT</h2>
+              <p className="text-sm font-mono opacity-60">Send USDT from your balance to a TON wallet</p>
             </div>
           </div>
           <div className="shrink-0 sm:pt-1">
@@ -85,71 +449,14 @@ const WithdrawPanel = () => {
           </div>
         </div>
 
-        <div className="mb-8 p-4 bg-black/5 border border-black/10 flex justify-between items-center">
-          <span className="font-bold uppercase tracking-widest text-sm opacity-60">Available Balance:</span>
-          <span className="text-2xl font-bold font-mono text-ink-blue">
-            {formatMoneyValue(userData?.balance)} USDT
-          </span>
+        <div className="mb-8 flex items-center justify-between bg-black/5 p-4 border border-black/10">
+          <span className="text-sm font-bold uppercase tracking-widest opacity-60">Available Balance:</span>
+          <span className="font-mono text-2xl font-bold text-ink-blue">{balanceLabel} USDT</span>
         </div>
 
-        <form className="space-y-6" onSubmit={handleWithdraw}>
-          <div>
-            <label
-              className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
-              htmlFor={WITHDRAW_AMOUNT_ID}
-            >
-              Withdrawal Amount (USDT)
-            </label>
-            <div className="relative">
-              <input
-                className="w-full text-4xl font-bold bg-transparent border-b-2 border-black/20 focus:border-black p-2 transition-colors"
-                id={WITHDRAW_AMOUNT_ID}
-                min="0.01"
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="0.00"
-                required
-                step="0.01"
-                type="number"
-                value={amount}
-              />
-              <span className="absolute right-2 bottom-3 text-xl opacity-30 font-bold">USDT</span>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between items-end">
-              <label
-                className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
-                htmlFor={WITHDRAW_ADDRESS_ID}
-              >
-                Destination TON Address
-              </label>
-              {wallet && (
-                <SketchyButton
-                  className="text-[10px] font-bold uppercase text-white px-2 py-1 mb-1"
-                  fill="var(--color-ink-blue)"
-                  onClick={() => setToAddress(connectedWalletAddress)}
-                  type="button"
-                >
-                  Auto-fill connected wallet
-                </SketchyButton>
-              )}
-            </div>
-            <input
-              className="w-full text-lg font-mono bg-transparent border-b-2 border-black/20 focus:border-black p-2 transition-colors"
-              id={WITHDRAW_ADDRESS_ID}
-              onChange={(event) => setToAddress(event.target.value)}
-              placeholder="EQ…"
-              required
-              type="text"
-              value={toAddress}
-            />
-          </div>
-
-          <SketchyButton className="w-full text-xl py-4 mt-4" disabled={loading} type="submit">
-            {loading ? 'Processing…' : 'Request Withdrawal'}
-          </SketchyButton>
-        </form>
+        {step === 'form' ? renderFormStep() : null}
+        {step === 'review' ? renderReviewStep() : null}
+        {step === 'status' ? renderStatusStep() : null}
       </div>
     </div>
   );

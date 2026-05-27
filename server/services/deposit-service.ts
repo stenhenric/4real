@@ -13,11 +13,12 @@ export async function generateDepositMemo(userId: string) {
   const normalizedHotWalletAddress = Address.parse(hotWalletAddress).toString({ bounceable: true });
 
   const memo = `d-${userId}-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+  const expiresAt = new Date(Date.now() + 24 * 3600_000);
   await DepositMemoRepository.create({
     memo,
     userId,
     createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 24 * 3600_000),
+    expiresAt,
     used: false,
   });
 
@@ -26,5 +27,6 @@ export async function generateDepositMemo(userId: string) {
     address: normalizedHotWalletAddress,
     instructions: `Send USDT to ${normalizedHotWalletAddress} with comment: ${memo}`,
     expiresIn: '24 hours',
+    expiresAt: expiresAt.toISOString(),
   };
 }

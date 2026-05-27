@@ -148,13 +148,13 @@ const BankPage = () => {
   ]);
 
   if (activeView !== 'portal') {
-    const ActivePanel =
-      activeView === 'merchant'
-        ? MerchantPanel
-        : activeView === 'deposit'
-          ? DepositPanel
-          : WithdrawPanel;
-    const activePanel = <ActivePanel />;
+    const handleReturnToBank = () => setActiveView('portal');
+    const handleViewHistory = () => setActiveView('portal');
+    const activePanel = activeView === 'merchant'
+      ? <MerchantPanel />
+      : activeView === 'deposit'
+        ? <DepositPanel onBackToBank={handleReturnToBank} onViewHistory={handleViewHistory} />
+        : <WithdrawPanel onBackToBank={handleReturnToBank} onViewHistory={handleViewHistory} />;
     const panelContent = activeView === 'merchant'
       ? activePanel
       : <TonConnectRouteProvider>{activePanel}</TonConnectRouteProvider>;

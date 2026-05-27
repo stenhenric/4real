@@ -214,6 +214,74 @@ test('play lobby does not load TonConnect assets before wallet routes need them'
   }
 });
 
+test('bank USDT flows collect intent before payment details and show withdrawal status', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  await stubTonConnectWallets(page);
+  const health = installErrorCollectors(page, {
+    ignorePageErrors: [/socket\.io\/.*due to access control checks\./i],
+  });
+
+  try {
+    await page.goto('/bank');
+    await expect(page.getByRole('heading', { name: /the bank/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /deposit usdt/i }).click();
+    await expect(page.getByLabel(/deposit amount/i)).toBeVisible();
+    await expect(page.locator('#deposit-address')).toHaveCount(0);
+
+    await page.getByLabel(/deposit amount/i).fill('0');
+    await page.getByRole('button', { name: /review deposit/i }).click();
+    await expect(page.getByText(/deposit amount must be greater than 0/i)).toBeVisible();
+
+    await page.getByLabel(/deposit amount/i).fill('12.34');
+    await page.getByRole('button', { name: /review deposit/i }).click();
+    await expect(page.getByText(/review deposit/i)).toBeVisible();
+    await expect(page.getByText(/12\.340000 usdt/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /generate payment details/i }).click();
+    await expect(page.getByText('Payment details ready', { exact: true })).toBeVisible();
+    await expect(page.locator('input[value="EQ-DEMO-WALLET"]')).toBeVisible();
+    await expect(page.locator('input[value="memo-user-player-one"]')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /send exactly 12\.340000 usdt/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /pay with tonconnect/i })).toBeDisabled();
+
+    await page.getByRole('button', { name: /change amount/i }).click();
+    await expect(page.getByLabel(/deposit amount/i)).toHaveValue('12.34');
+    await expect(page.getByText('Payment details ready', { exact: true })).toHaveCount(0);
+    await expect(page.locator('#deposit-address')).toHaveCount(0);
+
+    await page.getByRole('button', { name: /back to bank/i }).click();
+    await page.getByRole('button', { name: /withdraw usdt/i }).click();
+    await expect(page.getByLabel(/withdrawal amount/i)).toBeVisible();
+
+    await page.getByLabel(/withdrawal amount/i).fill('0');
+    await page.getByLabel(/destination ton address/i).fill('not-a-ton-address');
+    await page.getByRole('button', { name: /review withdrawal/i }).click();
+    await expect(page.getByText(/withdrawal amount must be greater than 0/i)).toBeVisible();
+    await expect(page.getByText(/enter a valid ton address/i)).toBeVisible();
+
+    await page.getByLabel(/withdrawal amount/i).fill('5');
+    await page.getByLabel(/destination ton address/i).fill('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
+    await page.getByRole('button', { name: /review withdrawal/i }).click();
+    await expect(page.getByText(/ready to review/i)).toBeVisible();
+    await expect(page.getByText('5.000000 USDT', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/network fee/i)).toBeVisible();
+    await expect(page.getByText(/covered by platform/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /confirm withdrawal/i }).click();
+    await expect(page.getByRole('heading', { name: /withdrawal queued/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /view status/i })).toHaveAttribute(
+      'href',
+      '/api/transactions/withdrawals/mock-withdrawal',
+    );
+    await expect(page.getByText(/balance has been reserved/i)).toBeVisible();
+
+    await health.assertHealthy();
+  } finally {
+    await closeContext(context);
+  }
+});
+
 test.describe('mobile merchant shell', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

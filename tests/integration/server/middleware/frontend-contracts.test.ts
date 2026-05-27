@@ -326,6 +326,21 @@ test('bank withdraw panel renders the TonConnect wallet button for connected-wal
   assert.match(withdrawSource, /<TonConnectButton\b/);
 });
 
+test('bank USDT panels use intent-first copy and expose withdrawal status support', () => {
+  const depositSource = readFileSync(join('src', 'features', 'bank', 'DepositPanel.tsx'), 'utf8');
+  const withdrawSource = readFileSync(join('src', 'features', 'bank', 'WithdrawPanel.tsx'), 'utf8');
+  const transactionServiceSource = readFileSync(join('src', 'services', 'transactions.service.ts'), 'utf8');
+
+  assert.doesNotMatch(depositSource, /USDT jetton comments/i);
+  assert.doesNotMatch(depositSource, /funds will be lost/i);
+  assert.match(depositSource, /required memo\/comment/i);
+  assert.match(depositSource, /Change amount/);
+  assert.match(withdrawSource, /Network fee/);
+  assert.match(withdrawSource, /Covered by platform/);
+  assert.match(withdrawSource, /View status/);
+  assert.match(transactionServiceSource, /getWithdrawalStatus/);
+});
+
 test('element size hook measures the border box so SketchyContainer borders fit padded cards', () => {
   const hookSource = readFileSync(join('src', 'hooks', 'useElementSize.ts'), 'utf8');
 

@@ -24,6 +24,12 @@ const USER_SAFE_CODES = new Set([
   'RESOURCE_ALREADY_EXISTS',
   'INVALID_IDENTIFIER',
   'VALIDATION_FAILED',
+  'INVALID_TON_ADDRESS',
+  'DEPOSIT_MEMO_NOT_FOUND',
+  'DEPOSIT_MEMO_ALREADY_USED',
+  'DEPOSIT_MEMO_EXPIRED',
+  'DAILY_WITHDRAWAL_LIMIT_EXCEEDED',
+  'HOT_WALLET_NOT_CONFIGURED',
 ]);
 
 const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
@@ -45,6 +51,12 @@ const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
   RESOURCE_ALREADY_EXISTS: 'This item already exists.',
   INVALID_IDENTIFIER: 'Incorrect username or email format.',
   VALIDATION_FAILED: 'Please check your details and try again.',
+  INVALID_TON_ADDRESS: 'Enter a valid TON address.',
+  DEPOSIT_MEMO_NOT_FOUND: 'These payment details could not be found. Generate new details and try again.',
+  DEPOSIT_MEMO_ALREADY_USED: 'This memo has already been used. Generate new payment details.',
+  DEPOSIT_MEMO_EXPIRED: 'These payment details expired. Generate new details and try again.',
+  DAILY_WITHDRAWAL_LIMIT_EXCEEDED: 'This withdrawal exceeds your daily withdrawal limit.',
+  HOT_WALLET_NOT_CONFIGURED: 'Deposits are temporarily unavailable. Please try again later.',
 };
 
 /**

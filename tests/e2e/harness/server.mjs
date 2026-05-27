@@ -1241,6 +1241,7 @@ function createApp() {
       address: 'EQ-DEMO-WALLET',
       instructions: 'Send USDT on TON to the displayed wallet address with this memo.',
       expiresIn: '15 minutes',
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
     });
   });
 
@@ -1285,6 +1286,17 @@ function createApp() {
       status: 'queued',
       withdrawalId: `wd-${Date.now()}`,
       statusUrl: '/api/transactions/withdrawals/mock-withdrawal',
+    });
+  });
+
+  app.get('/api/transactions/withdrawals/:withdrawalId', requireAuth, (req, res) => {
+    res.json({
+      withdrawalId: req.params.withdrawalId,
+      status: 'queued',
+      amountUsdt: '5.000000',
+      toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
     });
   });
 

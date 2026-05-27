@@ -6,6 +6,7 @@ import type {
   TransactionFeedDTO,
   WithdrawRequestDTO,
   WithdrawalRequestAcceptedDTO,
+  WithdrawalStatusDTO,
 } from '../types/api';
 
 interface PrepareTonConnectDepositPayload {
@@ -54,4 +55,11 @@ export function createWithdrawal(payload: WithdrawRequestDTO) {
     },
     body: JSON.stringify(payload),
   });
+}
+
+export function getWithdrawalStatus(withdrawalId: string, signal?: AbortSignal) {
+  return request<WithdrawalStatusDTO>(
+    `/transactions/withdrawals/${encodeURIComponent(withdrawalId)}`,
+    signal ? { signal } : undefined,
+  );
 }

@@ -263,6 +263,7 @@ export interface DepositMemoDTO {
   address: string;
   instructions: string;
   expiresIn: string;
+  expiresAt?: string;
 }
 
 export interface WithdrawRequestDTO {
