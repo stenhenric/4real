@@ -10,10 +10,10 @@
 
 | Category | Files Moved | Tests |
 |---|---|---|
-| `tests/unit/` | 13 | 65 |
-| `tests/integration/` | 30 | ~370+ |
+| `tests/unit/` | 13 | 112 |
+| `tests/integration/` | 30 | 264 |
 | `tests/e2e/` | 0 (already in place) | 4 Playwright spec files |
-| **Total** | **43** | **435+** |
+| **Total** | **43** | **376** |
 
 ---
 
@@ -168,8 +168,8 @@ These test files were previously excluded from `tsconfig.tests.json` and ran via
 | Check | Result |
 |---|---|
 | `npm run typecheck:tests` | ✅ PASS (0 errors) |
-| `npm run test:unit` | ✅ PASS — 65 tests, 65 pass, 0 fail |
-| `npm run test:integration` | ⏳ Running |
-| `npm run lint` | ⏳ Running |
+| `npm run test:unit` | ✅ PASS — 112 tests, 112 pass, 0 fail |
+| `npm run test:integration` | ✅ PASS — 264 tests, 264 pass, 0 fail |
+| `npm run lint` | ✅ PASS (0 errors) |
 | Old test files remain in `server/` or `src/` | ✅ None found |
 | Import paths resolve correctly | ✅ Spot-checked across all file groups |

@@ -235,3 +235,66 @@ test('getEnv allows cleartext Redis URLs outside production', () => {
     assert.equal(getEnv().REDIS_URL, 'redis://127.0.0.1:6379');
   });
 });
+
+test('getEnv exposes disabled-by-default TON streaming and official Jetton notification defaults', () => {
+  withEnv({
+    TON_STREAMING_ENABLED: undefined,
+    TON_API_V3_FALLBACK_ENABLED: undefined,
+    TON_JETTON_TRANSFER_ATTACHED_AMOUNT: undefined,
+    TON_JETTON_FORWARD_AMOUNT: undefined,
+    TON_JETTON_EXCESS_BUFFER: undefined,
+  }, () => {
+    const env = getEnv();
+
+    assert.equal(env.TON_STREAMING_ENABLED, false);
+    assert.equal(env.TON_API_V3_FALLBACK_ENABLED, true);
+    assert.equal(env.TON_STREAMING_MIN_FINALITY, 'pending');
+    assert.equal(env.TON_JETTON_TRANSFER_ATTACHED_AMOUNT, '0.05');
+    assert.equal(env.TON_JETTON_FORWARD_AMOUNT, '0.000000001');
+    assert.equal(env.TON_JETTON_EXCESS_BUFFER, '0.07');
+    assert.equal(env.TON_WITHDRAW_FEE_MODE, 'platform_pays');
+    assert.equal(env.TON_WITHDRAWAL_SERVICE_FEE, '0');
+  });
+});
+
+test('getEnv allows TON Center streaming endpoint and buffer overrides', () => {
+  withEnv({
+    TON_STREAMING_ENABLED: 'true',
+    TON_STREAMING_PROVIDER: 'toncenter',
+    TON_STREAMING_TESTNET_WS: 'wss://example.test/stream/ws',
+    TON_STREAMING_MIN_FINALITY: 'confirmed',
+    TON_STREAMING_RECONNECT_MIN_MS: '250',
+    TON_STREAMING_RECONNECT_MAX_MS: '5000',
+    TON_STREAMING_FALLBACK_POLL_AFTER_MS: '10000',
+    TON_STREAMING_FINALITY_TIMEOUT_MS: '60000',
+    TON_JETTON_TRANSFER_ATTACHED_AMOUNT: '0.06',
+    TON_JETTON_FORWARD_AMOUNT: '0.02',
+    TON_JETTON_EXCESS_BUFFER: '0.08',
+    TON_MIN_TREASURY_GAS_BUFFER: '1.5',
+    TON_WITHDRAWAL_SERVICE_FEE: '0.25',
+  }, () => {
+    const env = getEnv();
+
+    assert.equal(env.TON_STREAMING_ENABLED, true);
+    assert.equal(env.TON_STREAMING_PROVIDER, 'toncenter');
+    assert.equal(env.TON_STREAMING_TESTNET_WS, 'wss://example.test/stream/ws');
+    assert.equal(env.TON_STREAMING_MIN_FINALITY, 'confirmed');
+    assert.equal(env.TON_STREAMING_RECONNECT_MIN_MS, 250);
+    assert.equal(env.TON_STREAMING_RECONNECT_MAX_MS, 5000);
+    assert.equal(env.TON_STREAMING_FALLBACK_POLL_AFTER_MS, 10000);
+    assert.equal(env.TON_STREAMING_FINALITY_TIMEOUT_MS, 60000);
+    assert.equal(env.TON_JETTON_TRANSFER_ATTACHED_AMOUNT, '0.06');
+    assert.equal(env.TON_JETTON_FORWARD_AMOUNT, '0.02');
+    assert.equal(env.TON_JETTON_EXCESS_BUFFER, '0.08');
+    assert.equal(env.TON_MIN_TREASURY_GAS_BUFFER, '1.5');
+    assert.equal(env.TON_WITHDRAWAL_SERVICE_FEE, '0.25');
+  });
+});
+
+test('getEnv rejects unsupported TON streaming providers', () => {
+  withEnv({
+    TON_STREAMING_PROVIDER: 'tonapi',
+  }, () => {
+    assert.throws(() => getEnv(), /expected "toncenter"/);
+  });
+});

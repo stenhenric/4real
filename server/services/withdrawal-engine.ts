@@ -36,7 +36,13 @@ async function recordProviderCall<T>(
   }
 }
 
-export function buildJettonTransferBody(amountRaw: string, destination: string, responseAddress: Address, comment: string) {
+export function buildJettonTransferBody(
+  amountRaw: string,
+  destination: string,
+  responseAddress: Address,
+  comment: string,
+  forwardAmountTon = getEnv().TON_JETTON_FORWARD_AMOUNT,
+) {
   const forwardPayload = beginCell()
     .storeUint(0, 32)
     .storeStringTail(comment)
@@ -49,7 +55,8 @@ export function buildJettonTransferBody(amountRaw: string, destination: string, 
     .storeAddress(Address.parse(destination))
     .storeAddress(responseAddress)
     .storeBit(0)
-    .storeCoins(toNano('0.05'))
+    // This is an attached Jetton forwarding buffer and may be partly refunded by wallet excess handling.
+    .storeCoins(toNano(forwardAmountTon))
     .storeBit(1)
     .storeRef(forwardPayload)
     .endCell();
@@ -76,11 +83,13 @@ export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, h
         const client = createTonClient();
         const contract = client.open(wallet);
 
+        const env = getEnv();
         const body = buildJettonTransferBody(
           amountRaw,
           toAddress,
           wallet.address,
           `wd-${withdrawalId}`,
+          env.TON_JETTON_FORWARD_AMOUNT,
         );
 
         const seqno = await contract.getSeqno();
@@ -94,7 +103,8 @@ export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, h
           messages: [
             internal({
               to: Address.parse(hotJettonWallet),
-              value: toNano('0.07'),
+              // This attached TON value is a service-side execution/excess buffer, not the final burned fee.
+              value: toNano(env.TON_JETTON_EXCESS_BUFFER),
               bounce: true,
               body,
             }),

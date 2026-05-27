@@ -16,6 +16,11 @@ import {
   runWithdrawalWorker as runWithdrawalWorkerTask,
 } from '../workers/withdrawal-worker.ts';
 import { startBullmqBackgroundJobs, type BullmqBackgroundJobRuntime } from './bullmq-jobs.service.ts';
+import {
+  createConfiguredTonStreamingClient,
+  createTonFinalityWatcher,
+  type TonFinalityWatcher,
+} from './ton-streaming.service.ts';
 import { logger } from '../utils/logger.ts';
 
 export interface JobSnapshot {
@@ -97,7 +102,14 @@ function createJobRunner(name: keyof BackgroundJobState, state: BackgroundJobSta
 export async function startBackgroundJobs(): Promise<BackgroundJobController> {
   const env = getEnv();
   const useBullmqSchedulers = Boolean(env.FEATURE_BULLMQ_JOBS && env.REDIS_URL);
-  await initializeHotWalletRuntime();
+  const hotWalletRuntime = await initializeHotWalletRuntime();
+  const fallbackPollingEnabled = env.TON_API_V3_FALLBACK_ENABLED;
+  const depositPollIntervalMs = env.TON_STREAMING_ENABLED
+    ? env.TON_STREAMING_FALLBACK_POLL_AFTER_MS
+    : 15_000;
+  const withdrawalConfirmIntervalMs = env.TON_STREAMING_ENABLED
+    ? env.TON_STREAMING_FALLBACK_POLL_AFTER_MS
+    : 20_000;
 
   const state: BackgroundJobState = {
     depositPoller: { enabled: true },
@@ -144,14 +156,17 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
   });
 
   let bullmqRuntime: BullmqBackgroundJobRuntime | null = null;
+  const bullmqJobs: Parameters<typeof backgroundJobDependencies.startBullmqBackgroundJobs>[0] = [];
   if (useBullmqSchedulers) {
-    bullmqRuntime = await backgroundJobDependencies.startBullmqBackgroundJobs([
-      {
+    if (fallbackPollingEnabled) {
+      bullmqJobs.push({
         queueName: 'deposit-poll',
         jobName: 'deposit-poll',
-        repeatEveryMs: 15_000,
+        repeatEveryMs: depositPollIntervalMs,
         processor: runDepositPoller,
-      },
+      });
+    }
+    bullmqJobs.push(
       {
         queueName: 'order-proof-relay',
         jobName: 'order-proof-relay',
@@ -164,12 +179,18 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
         repeatEveryMs: 5_000,
         processor: runWithdrawalWorker,
       },
+    );
+    if (fallbackPollingEnabled) {
+      bullmqJobs.push(
       {
         queueName: 'withdrawal-confirm',
         jobName: 'withdrawal-confirm',
-        repeatEveryMs: 20_000,
+        repeatEveryMs: withdrawalConfirmIntervalMs,
         processor: runWithdrawalConfirmation,
       },
+      );
+    }
+    bullmqJobs.push(
       {
         queueName: 'hot-wallet-monitor',
         jobName: 'hot-wallet-monitor',
@@ -182,14 +203,57 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
         repeatEveryMs: 30_000,
         processor: runStaleMatchExpiry,
       },
-    ]);
+    );
+    bullmqRuntime = await backgroundJobDependencies.startBullmqBackgroundJobs(bullmqJobs);
   }
 
-  const depositHandle = useBullmqSchedulers
+  let tonStreamingWatcher: TonFinalityWatcher | null = null;
+  if (env.TON_STREAMING_ENABLED) {
+    tonStreamingWatcher = createTonFinalityWatcher({
+      addresses: [...new Set([hotWalletRuntime.hotWalletAddress, hotWalletRuntime.hotJettonWallet])],
+      client: createConfiguredTonStreamingClient(),
+      fallbackEnabled: fallbackPollingEnabled,
+      finalityTimeoutMs: env.TON_STREAMING_FINALITY_TIMEOUT_MS,
+      onDepositReconcile: async (reason) => {
+        logger.info('ton_streaming.deposit_reconcile', { reason });
+        await runDepositPoller();
+      },
+      onWithdrawalReconcile: async (reason) => {
+        logger.info('ton_streaming.withdrawal_reconcile', { reason });
+        await runWithdrawalConfirmation();
+      },
+      onFallbackReconcile: async (reason) => {
+        logger.warn('ton_streaming.fallback_reconcile', { reason });
+        await runDepositPoller();
+        await runWithdrawalConfirmation();
+      },
+      onFeeTelemetry: (telemetry) => {
+        logger.info('ton_fee.telemetry', {
+          ...telemetry,
+          configuredDepositAttachedAmountTon: env.TON_JETTON_TRANSFER_ATTACHED_AMOUNT,
+          configuredForwardAmountTon: env.TON_JETTON_FORWARD_AMOUNT,
+          configuredWithdrawalExcessBufferTon: env.TON_JETTON_EXCESS_BUFFER,
+        });
+      },
+    });
+
+    try {
+      await tonStreamingWatcher.start();
+    } catch (error) {
+      logger.error('ton_streaming.start_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (!fallbackPollingEnabled) {
+        throw error;
+      }
+    }
+  }
+
+  const depositHandle = useBullmqSchedulers || !fallbackPollingEnabled
     ? null
     : setInterval(() => {
         void runDepositPoller();
-      }, 15_000);
+      }, depositPollIntervalMs);
   depositHandle?.unref?.();
 
   const withdrawalHandle = useBullmqSchedulers
@@ -206,11 +270,11 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
       }, 15_000);
   orderProofRelayHandle?.unref?.();
 
-  const confirmationHandle = useBullmqSchedulers
+  const confirmationHandle = useBullmqSchedulers || !fallbackPollingEnabled
     ? null
     : setInterval(() => {
         void runWithdrawalConfirmation();
-      }, 20_000);
+      }, withdrawalConfirmIntervalMs);
   confirmationHandle?.unref?.();
 
   const monitorHandle = useBullmqSchedulers
@@ -255,6 +319,7 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
       if (staleMatchHandle) {
         clearInterval(staleMatchHandle);
       }
+      await tonStreamingWatcher?.stop();
       await bullmqRuntime?.stop();
     },
   };

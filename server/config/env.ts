@@ -3,6 +3,18 @@ import { z } from 'zod';
 
 dotenv.config();
 
+const booleanFromEnv = z
+  .union([z.boolean(), z.string(), z.number()])
+  .optional()
+  .transform((value) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+    return false;
+  });
+
+const tonAmountString = z.string().trim().regex(/^\d+(?:\.\d{1,9})?$/);
+
 const rawEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -48,6 +60,34 @@ const rawEnvSchema = z.object({
     }),
   NETWORK: z.enum(['mainnet', 'testnet']).default('mainnet'),
   TONCENTER_API_KEY: z.string().trim().optional(),
+  TON_STREAMING_ENABLED: booleanFromEnv.default(false),
+  TON_STREAMING_PROVIDER: z.enum(['toncenter']).default('toncenter'),
+  TON_STREAMING_MAINNET_WS: z.string().trim().url().default('wss://toncenter.com/api/streaming/v2/ws'),
+  TON_STREAMING_TESTNET_WS: z.string().trim().url().default('wss://testnet.toncenter.com/api/streaming/v2/ws'),
+  TON_STREAMING_MAINNET_SSE: z.string().trim().url().default('https://toncenter.com/api/streaming/v2/sse'),
+  TON_STREAMING_TESTNET_SSE: z.string().trim().url().default('https://testnet.toncenter.com/api/streaming/v2/sse'),
+  TON_STREAMING_API_KEY: z.string().trim().optional(),
+  TON_STREAMING_MIN_FINALITY: z.enum(['pending', 'confirmed', 'finalized']).default('pending'),
+  TON_STREAMING_RECONNECT_MIN_MS: z.coerce.number().int().positive().default(1_000),
+  TON_STREAMING_RECONNECT_MAX_MS: z.coerce.number().int().positive().default(30_000),
+  TON_STREAMING_FALLBACK_POLL_AFTER_MS: z.coerce.number().int().positive().default(30_000),
+  TON_STREAMING_FINALITY_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  TON_API_V3_FALLBACK_ENABLED: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+      return true;
+    })
+    .default(true),
+  TON_JETTON_TRANSFER_ATTACHED_AMOUNT: tonAmountString.default('0.05'),
+  TON_JETTON_FORWARD_AMOUNT: tonAmountString.default('0.000000001'),
+  TON_JETTON_EXCESS_BUFFER: tonAmountString.default('0.07'),
+  TON_MIN_TREASURY_GAS_BUFFER: tonAmountString.default('1'),
+  TON_WITHDRAW_FEE_MODE: z.enum(['platform_pays']).default('platform_pays'),
+  TON_WITHDRAWAL_SERVICE_FEE: tonAmountString.default('0'),
   HOT_WALLET_MNEMONIC: z.string().trim().optional(),
   HOT_WALLET_VERSION: z.enum(['V4', 'V5R1']).default('V5R1'),
   HOT_WALLET_ADDRESS: z.string().trim().optional(),

@@ -6,19 +6,19 @@ import { badRequest, notFound, serviceUnavailable } from '../utils/http-error.ts
 import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 
 const TONCONNECT_TRANSACTION_TTL_SECONDS = 360;
-const TONCONNECT_GAS_AMOUNT = '0.05';
-const TONCONNECT_FORWARD_AMOUNT = '0.01';
 
 function buildTonConnectPayload({
   amountRaw,
   destinationAddress,
   responseAddress,
   memo,
+  forwardAmountTon,
 }: {
   amountRaw: string;
   destinationAddress: string;
   responseAddress: string;
   memo: string;
+  forwardAmountTon: string;
 }) {
   const forwardPayload = beginCell()
     .storeUint(0, 32)
@@ -32,7 +32,8 @@ function buildTonConnectPayload({
     .storeAddress(Address.parse(destinationAddress))
     .storeAddress(Address.parse(responseAddress))
     .storeBit(0)
-    .storeCoins(toNano(TONCONNECT_FORWARD_AMOUNT))
+    // This is a Jetton transfer forwarding buffer, not a promise that the full amount is burned as fee.
+    .storeCoins(toNano(forwardAmountTon))
     .storeBit(1)
     .storeRef(forwardPayload)
     .endCell();
@@ -65,7 +66,11 @@ export async function prepareTonConnectDeposit({
   walletAddress: string;
   amountUsdt: string;
 }): Promise<PreparedTonConnectDeposit> {
-  const { HOT_WALLET_ADDRESS: hotWalletAddress } = getEnv();
+  const {
+    HOT_WALLET_ADDRESS: hotWalletAddress,
+    TON_JETTON_TRANSFER_ATTACHED_AMOUNT: attachedAmountTon,
+    TON_JETTON_FORWARD_AMOUNT: forwardAmountTon,
+  } = getEnv();
   if (!hotWalletAddress) {
     throw serviceUnavailable('HOT_WALLET_ADDRESS is not configured', 'HOT_WALLET_NOT_CONFIGURED');
   }
@@ -90,6 +95,7 @@ export async function prepareTonConnectDeposit({
     destinationAddress: normalizedHotWallet,
     responseAddress: ownerAddress,
     memo,
+    forwardAmountTon,
   });
 
   return {
@@ -103,7 +109,8 @@ export async function prepareTonConnectDeposit({
       messages: [
         {
           address: userJettonWalletAddress,
-          amount: toNano(TONCONNECT_GAS_AMOUNT).toString(),
+          // Attached TON is an execution buffer for the user's Jetton wallet; trace fee telemetry decides if this can be lowered.
+          amount: toNano(attachedAmountTon).toString(),
           payload: payload.toBoc().toString('base64'),
         },
       ],

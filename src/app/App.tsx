@@ -51,6 +51,11 @@ function AuthIndexRoute() {
   return <Navigate replace to="/auth/login" />;
 }
 
+// DEV-ONLY: Preview the BankPage without auth
+const DevBankPreview = import.meta.env.DEV
+  ? lazy(() => import('../pages/BankPage'))
+  : null;
+
 export default function App() {
   return (
     <AppProviders>
@@ -78,6 +83,9 @@ export default function App() {
           </Route>
 
           <Route element={<AppLayout />}>
+            {import.meta.env.DEV && DevBankPreview && (
+              <Route path="/dev/bank" element={<DevBankPreview />} />
+            )}
             <Route path="/auth/security" element={<ProtectedRoute><SecuritySettingsPage /></ProtectedRoute>} />
 
             <Route path="/merchant" element={<ProtectedRoute requireAdmin={true} redirectTo="/bank" />}>
