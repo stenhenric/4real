@@ -45,5 +45,8 @@ test('money display helpers fail closed for missing or invalid values', () => {
   assert.equal(moneyToNumber(Number.POSITIVE_INFINITY), 0);
   assert.equal(isPositiveMoney('0.000001'), true);
   assert.equal(isPositiveMoney('0'), false);
-  assert.equal(formatMoneyValue('12.5', 2), '12.50');
+  assert.equal(formatMoneyValue('12.5', 2), '12.5');
+  assert.equal(formatMoneyValue('0.200000', 6), '0.2');
+  assert.equal(formatMoneyValue('1.234567', 3), '1.235');
+  assert.equal(formatMoneyValue('5.000000', 6), '5');
 });

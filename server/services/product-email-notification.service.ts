@@ -68,6 +68,10 @@ function buildMerchantActionUrl(path: string): string {
   return new URL(path, getPublicAppOrigin()).toString();
 }
 
+function buildUserBankUrl(): string {
+  return new URL('/bank', getPublicAppOrigin()).toString();
+}
+
 function getUserId(user: ProductEmailUser): string | undefined {
   return user.id ?? user._id?.toString();
 }
@@ -291,21 +295,17 @@ export class ProductEmailNotificationService {
   }
 
   static async sendWithdrawalQueued(params: SendWithdrawalQueuedParams): Promise<void> {
-    await sendToVerifiedUser({
-      scenario: 'withdrawal_queued_user',
-      userId: params.userId,
-      render: () => buildWithdrawalEmail({
-        ...params,
-        scenario: 'withdrawal_queued_user',
-      }),
-    });
+    void params;
   }
 
   static async sendWithdrawalTransition(params: SendWithdrawalTransitionParams): Promise<void> {
     await sendToVerifiedUser({
       scenario: params.scenario,
       userId: params.userId,
-      render: () => buildWithdrawalEmail(params),
+      render: () => buildWithdrawalEmail({
+        ...params,
+        actionUrl: params.actionUrl ?? buildUserBankUrl(),
+      }),
     });
   }
 

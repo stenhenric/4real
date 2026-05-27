@@ -1,3 +1,5 @@
+import { formatUserFacingDecimal } from '../../utils/money.ts';
+
 export interface ProductEmailContent {
   subject: string;
   text: string;
@@ -147,6 +149,31 @@ function hasValue(value: string | number | null | undefined): value is string | 
   return value !== undefined && value !== null && String(value).trim() !== '';
 }
 
+function abbreviateAddress(value: string | null | undefined): string | null | undefined {
+  if (!hasValue(value)) {
+    return value;
+  }
+
+  const address = String(value).trim();
+  if (address.length <= 18) {
+    return address;
+  }
+
+  return `${address.slice(0, 8)}...${address.slice(-6)}`;
+}
+
+function formatDisplayDecimal(value: string | number | null | undefined): string | number | null | undefined {
+  if (!hasValue(value)) {
+    return value;
+  }
+
+  try {
+    return formatUserFacingDecimal(value);
+  } catch {
+    return value;
+  }
+}
+
 function row(label: string, value: string | number | null | undefined, href?: string): EmailRow[] {
   if (!hasValue(value)) {
     return [];
@@ -211,10 +238,10 @@ export function buildOrderEmail(params: OrderEmailParams): ProductEmailContent {
   const rows: EmailRow[] = [
     ...row('Order ID', params.orderId),
     ...row('Order type', params.orderType),
-    ...row('Amount USDT', params.amountUsdt),
+    ...row('Amount USDT', formatDisplayDecimal(params.amountUsdt)),
     ...row('Fiat currency', params.fiatCurrency),
-    ...row('Fiat total', params.fiatTotal),
-    ...row('Exchange rate', params.exchangeRate),
+    ...row('Fiat total', formatDisplayDecimal(params.fiatTotal)),
+    ...row('Exchange rate', formatDisplayDecimal(params.exchangeRate)),
     ...row('Transaction code', params.transactionCode),
     ...row('M-Pesa Number', params.mpesaNumber),
     ...row('M-Pesa Name', params.mpesaName),
@@ -248,11 +275,11 @@ export function buildDepositEmail(params: DepositEmailParams): ProductEmailConte
   };
   const rows: EmailRow[] = [
     ...row('Tx hash', params.txHash),
-    ...row('Amount USDT', params.amountUsdt),
+    ...row('Amount USDT', formatDisplayDecimal(params.amountUsdt)),
     ...row('Memo', params.memo),
     ...row('Memo status', params.memoStatus),
     ...row('Username', params.username),
-    ...row('Sender address', params.senderAddress),
+    ...row('Sender address', abbreviateAddress(params.senderAddress)),
     ...row('Note', params.note),
     ...row('Reason', params.reason),
   ];
@@ -289,7 +316,7 @@ export function buildWithdrawalEmail(params: WithdrawalEmailParams): ProductEmai
   const isMerchantScenario = params.scenario.endsWith('_merchant');
   const rows: EmailRow[] = [
     ...row('Withdrawal ID', params.withdrawalId),
-    ...row('Amount USDT', params.amountUsdt),
+    ...row('Amount USDT', formatDisplayDecimal(params.amountUsdt)),
     ...row('To address', params.toAddress),
     ...(isMerchantScenario ? row('Seqno', params.seqno) : []),
     ...row('Tx hash', params.txHash),
@@ -300,7 +327,7 @@ export function buildWithdrawalEmail(params: WithdrawalEmailParams): ProductEmai
     subject,
     summary: summaryByScenario[params.scenario],
     rows,
-    actionUrl: params.actionUrl ?? params.statusUrl,
+    actionUrl: params.actionUrl,
     actionLabel: isMerchantScenario ? 'Open withdrawal review' : 'View withdrawal',
   });
 }

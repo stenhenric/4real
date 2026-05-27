@@ -1073,7 +1073,7 @@ test('requestWithdrawal queues a withdrawal atomically with balance deduction', 
   assert.equal((createQueuedMock.mock.calls[0].arguments[0] as { withdrawalId: string }).withdrawalId, 'wd-2');
 });
 
-test('requestWithdrawalHandler sends queued notification after dashboard cache invalidation and suppresses replay', async (t) => {
+test('requestWithdrawalHandler invalidates dashboard cache but does not email queued withdrawals', async (t) => {
   registerBaseCleanup(t);
   resetCacheServiceForTests();
 
@@ -1096,19 +1096,7 @@ test('requestWithdrawalHandler sends queued notification after dashboard cache i
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-handler' } as any));
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
   const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
-  const queuedEmailMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalQueued', async () => {
-    const cacheRead = await getOrPopulateJson({
-      key: merchantDashboardKey,
-      ttlSeconds: 60,
-      loader: async () => {
-        cacheLoaderCalls += 1;
-        return { version: cacheLoaderCalls };
-      },
-    });
-
-    assert.equal(cacheRead.cacheStatus, 'miss');
-    assert.deepEqual(cacheRead.value, { version: 2 });
-  });
+  const queuedEmailMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalQueued', async () => {});
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => claimMock.mock.restore());
@@ -1126,9 +1114,18 @@ test('requestWithdrawalHandler sends queued notification after dashboard cache i
   } as any, firstResponse as any);
 
   assert.equal(firstResponse.statusCode, 202);
-  assert.equal(queuedEmailMock.mock.callCount(), 1);
+  assert.equal(queuedEmailMock.mock.callCount(), 0);
+  const cacheRead = await getOrPopulateJson({
+    key: merchantDashboardKey,
+    ttlSeconds: 60,
+    loader: async () => {
+      cacheLoaderCalls += 1;
+      return { version: cacheLoaderCalls };
+    },
+  });
+  assert.equal(cacheRead.cacheStatus, 'miss');
+  assert.deepEqual(cacheRead.value, { version: 2 });
   assert.equal(cacheLoaderCalls, 2);
-  assert.equal((queuedEmailMock.mock.calls[0].arguments[0] as { userId: string }).userId, 'user-handler');
   const replayBody = firstResponse.body;
 
   replayExisting = {
@@ -1153,7 +1150,7 @@ test('requestWithdrawalHandler sends queued notification after dashboard cache i
 
   assert.equal(replayResponse.statusCode, 202);
   assert.deepEqual(replayResponse.body, replayBody);
-  assert.equal(queuedEmailMock.mock.callCount(), 1);
+  assert.equal(queuedEmailMock.mock.callCount(), 0);
   assert.equal(createQueuedMock.mock.callCount(), 1);
 });
 

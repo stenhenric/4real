@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   divideRounded,
+  formatUserFacingDecimal,
   formatKesAmount,
   formatRate,
   formatUsdtAmount,
@@ -74,4 +75,13 @@ test('display formatting keeps raw blockchain amounts at six decimals', () => {
   assert.equal(rawAmountToDisplayString('0'), '0.000000');
   assert.equal(rawAmountToDisplayString('42'), '0.000042');
   assert.equal(rawAmountToDisplayString(42_000_000n), '42.000000');
+});
+
+test('user-facing decimal formatting trims insignificant zeros and caps precision', () => {
+  assert.equal(formatUserFacingDecimal('0.200000'), '0.2');
+  assert.equal(formatUserFacingDecimal('1.000000'), '1');
+  assert.equal(formatUserFacingDecimal('12.340000'), '12.34');
+  assert.equal(formatUserFacingDecimal('12.3456'), '12.346');
+  assert.equal(formatUserFacingDecimal('0.0005'), '0.001');
+  assert.equal(formatUserFacingDecimal('-2.500000'), '-2.5');
 });

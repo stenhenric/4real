@@ -277,6 +277,8 @@ test('merchant formatters use unavailable fallback for missing money and invalid
   assert.equal(formatMoney(null), 'Unavailable');
   assert.equal(formatMoney(undefined), 'Unavailable');
   assert.equal(formatMoney('not-a-number'), 'Unavailable');
+  assert.equal(formatMoney('0.200000'), '0.2');
+  assert.equal(formatMoney('1.234500'), '1.235');
   assert.equal(formatDateTime(undefined), 'Unavailable');
   assert.equal(formatDateTime(''), 'Unavailable');
   assert.equal(formatDateTime('not-a-date'), 'Unavailable');
@@ -337,7 +339,8 @@ test('bank USDT panels use intent-first copy and expose withdrawal status suppor
   assert.match(depositSource, /Change amount/);
   assert.match(withdrawSource, /Network fee/);
   assert.match(withdrawSource, /Covered by platform/);
-  assert.match(withdrawSource, /View status/);
+  assert.match(withdrawSource, /Refresh status/);
+  assert.doesNotMatch(withdrawSource, /href=\{acceptedWithdrawal\.statusUrl\}/);
   assert.match(transactionServiceSource, /getWithdrawalStatus/);
 });
 

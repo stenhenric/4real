@@ -264,16 +264,13 @@ test('bank USDT flows collect intent before payment details and show withdrawal 
     await page.getByLabel(/destination ton address/i).fill('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
     await page.getByRole('button', { name: /review withdrawal/i }).click();
     await expect(page.getByText(/ready to review/i)).toBeVisible();
-    await expect(page.getByText('5.000000 USDT', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('5 USDT', { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/network fee/i)).toBeVisible();
     await expect(page.getByText(/covered by platform/i)).toBeVisible();
 
     await page.getByRole('button', { name: /confirm withdrawal/i }).click();
     await expect(page.getByRole('heading', { name: /withdrawal queued/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /view status/i })).toHaveAttribute(
-      'href',
-      '/api/transactions/withdrawals/mock-withdrawal',
-    );
+    await expect(page.getByRole('button', { name: /refresh status/i })).toBeVisible();
     await expect(page.getByText(/balance has been reserved/i)).toBeVisible();
 
     await health.assertHealthy();

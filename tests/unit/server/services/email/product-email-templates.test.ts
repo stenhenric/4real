@@ -116,6 +116,66 @@ test('product emails render action links as CTA copy, not detail fields', () => 
   assert.doesNotMatch(depositEmail.html, />Action</);
 });
 
+test('product emails render compact user-facing money amounts', () => {
+  const orderEmail = buildOrderEmail({
+    scenario: 'order_created_user',
+    orderType: 'BUY',
+    orderId: 'order-compact',
+    amountUsdt: '0.200000',
+    fiatCurrency: 'KES',
+    fiatTotal: '26.000000',
+    exchangeRate: '130.000000',
+  });
+  assert.match(orderEmail.text, /Amount USDT: 0\.2/);
+  assert.match(orderEmail.text, /Fiat total: 26/);
+  assert.match(orderEmail.text, /Exchange rate: 130/);
+  assert.doesNotMatch(orderEmail.text, /0\.200000|26\.000000|130\.000000/);
+
+  const depositEmail = buildDepositEmail({
+    scenario: 'deposit_confirmed_user',
+    txHash: 'tx-compact',
+    amountUsdt: '1.234500',
+  });
+  assert.match(depositEmail.text, /Amount USDT: 1\.235/);
+
+  const withdrawalEmail = buildWithdrawalEmail({
+    scenario: 'withdrawal_confirmed_user',
+    withdrawalId: 'withdrawal-compact',
+    amountUsdt: '2.500000',
+    toAddress: 'EQ-address',
+  });
+  assert.match(withdrawalEmail.text, /Amount USDT: 2\.5/);
+});
+
+test('deposit emails abbreviate raw sender addresses', () => {
+  const senderAddress = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const depositEmail = buildDepositEmail({
+    scenario: 'deposit_confirmed_user',
+    txHash: 'tx-raw-sender',
+    amountUsdt: '25',
+    senderAddress,
+  });
+
+  assert.match(depositEmail.text, /Sender address: EQAAAAAA...AAAAAA/);
+  assert.match(depositEmail.html, /EQAAAAAA\.\.\.AAAAAA/);
+  assert.doesNotMatch(depositEmail.text, new RegExp(senderAddress));
+  assert.doesNotMatch(depositEmail.html, new RegExp(senderAddress));
+});
+
+test('withdrawal emails do not render API status URLs as customer CTAs', () => {
+  const withdrawalEmail = buildWithdrawalEmail({
+    scenario: 'withdrawal_sent_user',
+    withdrawalId: 'withdrawal-api-link',
+    amountUsdt: '45',
+    toAddress: 'EQ-address-2',
+    statusUrl: '/api/transactions/withdrawals/withdrawal-api-link',
+  });
+
+  assert.doesNotMatch(withdrawalEmail.text, /\/api\/transactions\/withdrawals/);
+  assert.doesNotMatch(withdrawalEmail.html, /\/api\/transactions\/withdrawals/);
+  assert.doesNotMatch(withdrawalEmail.text, /View withdrawal/);
+});
+
 test('buildDepositEmail formats deposit notifications and escapes HTML fields', () => {
   const confirmedEmail = buildDepositEmail({
     scenario: 'deposit_confirmed_user',
@@ -131,6 +191,7 @@ test('buildDepositEmail formats deposit notifications and escapes HTML fields', 
   assert.match(confirmedEmail.text, /75/);
   assert.match(confirmedEmail.text, /memo-456/);
   assert.match(confirmedEmail.text, /Memo status: active/);
+  assert.match(confirmedEmail.text, /Sender address: EQ-sender/);
 
   const unmatchedEmail = buildDepositEmail({
     scenario: 'deposit_unmatched_merchant',
@@ -186,13 +247,13 @@ test('buildWithdrawalEmail formats withdrawal notifications and escapes HTML fie
     withdrawalId: 'withdrawal-123',
     amountUsdt: '40',
     toAddress: 'EQ-address',
-    statusUrl: 'https://example.com/withdrawals/withdrawal-123',
+    actionUrl: 'https://example.com/bank',
     seqno: 1,
   });
 
   assert.equal(queuedEmail.subject, 'Your withdrawal is queued');
   assert.match(queuedEmail.text, /withdrawal-123/);
-  assert.match(queuedEmail.text, /View withdrawal\nhttps:\/\/example\.com\/withdrawals\/withdrawal-123/);
+  assert.match(queuedEmail.text, /View withdrawal\nhttps:\/\/example\.com\/bank/);
   assert.doesNotMatch(queuedEmail.text, /^View withdrawal:/m);
   assert.doesNotMatch(queuedEmail.text, /Seqno:/);
 

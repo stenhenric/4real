@@ -49,6 +49,9 @@ export function isPositiveMoney(value: MoneyLike): boolean {
   return moneyToNumber(value) > 0;
 }
 
-export function formatMoneyValue(value: MoneyLike, fractionDigits = 2): string {
-  return moneyToNumber(value).toFixed(fractionDigits);
+export function formatMoneyValue(value: MoneyLike, maximumFractionDigits = 3): string {
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+  }).format(moneyToNumber(value));
 }

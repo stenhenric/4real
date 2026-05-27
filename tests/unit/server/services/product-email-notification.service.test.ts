@@ -130,19 +130,17 @@ test('sendOrderCreated skips unverified user but sends merchant notification to 
   assert.equal(skipLog?.context?.reason, 'email_unverified');
 });
 
-test('sendWithdrawalQueued swallows delivery failures and logs only recipient domain', async () => {
+test('sendWithdrawalQueued does not send queued withdrawal emails', async () => {
+  const sent: Array<{ to: string; subject: string; text: string; html?: string }> = [];
   const logs: LogEntry[] = [];
 
   await withProductEmailEnv(async () => {
     setProductEmailNotificationDependenciesForTests({
-      findUserById: async () => ({
-        id: 'user-2',
-        email: 'bob@example.com',
-        username: 'bob',
-        emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
-      }),
-      sendNotificationEmail: async () => {
-        throw new Error('gmail failure');
+      findUserById: async () => {
+        throw new Error('queued withdrawal should not load the user');
+      },
+      sendNotificationEmail: async (message) => {
+        sent.push(message);
       },
       logger: createTestLogger(logs),
     });
@@ -155,58 +153,40 @@ test('sendWithdrawalQueued swallows delivery failures and logs only recipient do
     });
   });
 
-  const failureLog = logs.find((entry) => entry.message === 'product_email.delivery_failed');
-  assert.equal(failureLog?.context?.scenario, 'withdrawal_queued_user');
-  assert.equal(failureLog?.context?.recipientDomain, 'example.com');
-  assert.equal(JSON.stringify(logs).includes('bob@example.com'), false);
+  assert.equal(sent.length, 0);
+  assert.equal(logs.length, 0);
 });
 
-test('sendWithdrawalQueued sanitizes delivery error details before logging', async () => {
-  const logs: LogEntry[] = [];
+test('sendWithdrawalTransition uses the customer bank page instead of API status URLs', async () => {
+  const sent: Array<{ to: string; subject: string; text: string; html?: string }> = [];
 
   await withProductEmailEnv(async () => {
     setProductEmailNotificationDependenciesForTests({
       findUserById: async () => ({
-        id: 'user-sensitive',
-        email: 'sensitive.user@example.com',
-        username: 'sensitive',
+        id: 'user-withdrawal',
+        email: 'withdrawal.user@example.com',
+        username: 'withdrawal',
         emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
       }),
-      sendNotificationEmail: async () => {
-        throw Object.assign(
-          new Error('Provider rejected sensitive.user@example.com with mailbox payload'),
-          {
-            code: 'EAUTH',
-            response: {
-              recipient: 'sensitive.user@example.com',
-              providerPayload: 'raw smtp payload',
-            },
-          },
-        );
+      sendNotificationEmail: async (message) => {
+        sent.push(message);
       },
-      logger: createTestLogger(logs),
     });
 
-    await ProductEmailNotificationService.sendWithdrawalQueued({
-      userId: 'user-sensitive',
-      withdrawalId: 'withdrawal-sensitive',
+    await ProductEmailNotificationService.sendWithdrawalTransition({
+      scenario: 'withdrawal_sent_user',
+      userId: 'user-withdrawal',
+      withdrawalId: 'withdrawal-link',
       amountUsdt: '5.000000',
       toAddress: 'EQDdestination',
+      statusUrl: '/api/transactions/withdrawals/withdrawal-link',
     });
   });
 
-  const failureLog = logs.find((entry) => entry.message === 'product_email.delivery_failed');
-  assert.equal(failureLog?.context?.recipientDomain, 'example.com');
-  assert.deepEqual(failureLog?.context?.error, {
-    name: 'Error',
-    code: 'EAUTH',
-  });
-
-  const serializedLog = JSON.stringify(logs);
-  assert.equal(serializedLog.includes('example.com'), true);
-  assert.equal(serializedLog.includes('sensitive.user@example.com'), false);
-  assert.equal(serializedLog.includes('Provider rejected'), false);
-  assert.equal(serializedLog.includes('raw smtp payload'), false);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0]?.text ?? '', /View withdrawal\nhttp:\/\/127\.0\.0\.1:3000\/bank/);
+  assert.doesNotMatch(sent[0]?.text ?? '', /\/api\/transactions\/withdrawals/);
+  assert.doesNotMatch(sent[0]?.html ?? '', /\/api\/transactions\/withdrawals/);
 });
 
 test('sendDeposit routes merchant scenarios to admins and user scenarios to verified user', async () => {

@@ -1,8 +1,8 @@
 import { moneyToNumber, type MoneyLike } from '../../utils/exact-money.ts';
 
 const moneyFormatter = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 3,
 });
 
 const compactNumberFormatter = new Intl.NumberFormat('en-US', {

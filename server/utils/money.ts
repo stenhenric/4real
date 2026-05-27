@@ -93,6 +93,30 @@ export function formatFixedScale(rawValue: FixedScaleInput, scale: number): stri
   return `${sign}${whole.toString()}.${fraction.toString().padStart(scale, '0')}`;
 }
 
+export function formatUserFacingDecimal(value: FixedScaleInput, maxFractionDigits = 3): string {
+  if (!Number.isInteger(maxFractionDigits) || maxFractionDigits < 0) {
+    throw new Error('Maximum fraction digits must be a non-negative integer');
+  }
+
+  const normalized = normalizeFixedScaleInput(value);
+  const match = normalized.match(/^([+-]?)(\d+)(?:\.(\d+))?$/);
+  if (!match) {
+    throw new Error(`Invalid decimal value "${normalized}"`);
+  }
+
+  const fractionalPart = match[3] ?? '';
+  const sourceScale = fractionalPart.length;
+  const sourceRaw = parseFixedScale(normalized, sourceScale);
+  const targetRaw = sourceScale > maxFractionDigits
+    ? divideRounded(sourceRaw, getScaleFactor(sourceScale - maxFractionDigits))
+    : sourceRaw * getScaleFactor(maxFractionDigits - sourceScale);
+  const fixed = formatFixedScale(targetRaw, maxFractionDigits);
+
+  return fixed
+    .replace(/(\.\d*?)0+$/, '$1')
+    .replace(/\.$/, '');
+}
+
 export function parseUsdtAmount(value: FixedScaleInput): bigint {
   return parseFixedScale(value, USDT_SCALE);
 }

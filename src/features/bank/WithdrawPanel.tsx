@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { TonConnectButton, useTonAddress, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowUpRight, Clock } from 'lucide-react';
 import { ApiClientError } from '../../services/api/apiClient';
@@ -98,24 +98,43 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     }
   }, [connectedWalletAddress, step, toAddress]);
 
+  const refreshWithdrawalStatus = useCallback(async (signal?: AbortSignal) => {
+    if (!acceptedWithdrawal) {
+      return;
+    }
+
+    try {
+      const nextStatus = await getWithdrawalStatus(acceptedWithdrawal.withdrawalId, signal);
+      if (signal?.aborted) {
+        return;
+      }
+      setWithdrawalStatus(nextStatus);
+      setStatusError(null);
+    } catch (error) {
+      if (signal?.aborted) {
+        return;
+      }
+      setStatusError(getApiErrorMessage(error, 'Status updates are temporarily unavailable.'));
+    }
+  }, [acceptedWithdrawal]);
+
   useEffect(() => {
     if (!acceptedWithdrawal) {
       return undefined;
     }
 
-    let cancelled = false;
     const controller = new AbortController();
 
     const refreshStatus = async () => {
       try {
         const nextStatus = await getWithdrawalStatus(acceptedWithdrawal.withdrawalId, controller.signal);
-        if (cancelled) {
+        if (controller.signal.aborted) {
           return;
         }
         setWithdrawalStatus(nextStatus);
         setStatusError(null);
       } catch (error) {
-        if (cancelled || controller.signal.aborted) {
+        if (controller.signal.aborted) {
           return;
         }
         setStatusError(getApiErrorMessage(error, 'Status updates are temporarily unavailable.'));
@@ -132,7 +151,6 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     }, 5000);
 
     return () => {
-      cancelled = true;
       controller.abort();
       window.clearInterval(intervalId);
     };
@@ -307,6 +325,8 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       return renderFormStep();
     }
 
+    const reviewAmountLabel = formatMoneyValue(reviewAmount, 6);
+
     return (
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -322,7 +342,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         <div className="grid gap-3 bg-black/5 p-4 sm:grid-cols-2">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
-            <p className="text-2xl font-bold text-ink-blue">{reviewAmount} USDT</p>
+            <p className="text-2xl font-bold text-ink-blue">{reviewAmountLabel} USDT</p>
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-widest opacity-50">Network</p>
@@ -352,11 +372,11 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-bold uppercase tracking-widest opacity-60">Total deducted</span>
-            <span className="font-bold">{reviewAmount} USDT</span>
+            <span className="font-bold">{reviewAmountLabel} USDT</span>
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-bold uppercase tracking-widest opacity-60">Estimated received</span>
-            <span className="font-bold">{reviewAmount} USDT</span>
+            <span className="font-bold">{reviewAmountLabel} USDT</span>
           </div>
         </div>
 
@@ -403,7 +423,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         <div className="grid gap-3 bg-black/5 p-4 text-left sm:grid-cols-2">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
-            <p className="text-xl font-bold text-ink-blue">{statusForDisplay.amountUsdt} USDT</p>
+            <p className="text-xl font-bold text-ink-blue">{formatMoneyValue(statusForDisplay.amountUsdt, 6)} USDT</p>
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-widest opacity-50">Destination</p>
@@ -414,12 +434,15 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         <ReadonlyField label="Withdrawal ID" value={statusForDisplay.withdrawalId} />
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <a
-            className="sketchy-border inline-flex min-w-0 items-center justify-center px-4 py-3 font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
-            href={acceptedWithdrawal.statusUrl}
+          <SketchyButton
+            className="w-full py-3"
+            onClick={() => {
+              void refreshWithdrawalStatus();
+            }}
+            type="button"
           >
-            View status
-          </a>
+            Refresh status
+          </SketchyButton>
           <SketchyButton className="w-full py-3" onClick={onViewHistory} type="button">
             View transaction history
           </SketchyButton>

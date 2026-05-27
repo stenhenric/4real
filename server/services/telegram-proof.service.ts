@@ -4,6 +4,7 @@ import { parseExternalResponse } from '../schemas/external/parse-external-respon
 import { telegramSendPhotoResponseSchema } from '../schemas/external/telegram-proof.schema.ts';
 import { createDependencyHttpError, runProtectedDependencyCall } from './dependency-resilience.service.ts';
 import { serviceUnavailable } from '../utils/http-error.ts';
+import { formatUserFacingDecimal } from '../utils/money.ts';
 
 function buildTelegramMessageUrl(chatId: string, messageId: string, username?: string): string {
   if (username) {
@@ -43,15 +44,14 @@ export async function relayOrderProofToTelegram(params: {
   }
 
   const caption = [
-    `4real merchant proof`,
-    `Type: ${params.orderType}`,
-    `Amount: ${params.amount} USDT`,
-    `Rate: ${params.exchangeRate} ${params.fiatCurrency}/USDT`,
-    `Fiat total: ${params.fiatTotal} ${params.fiatCurrency}`,
+    '4real order proof',
+    `${params.orderType} order from ${params.username}`,
+    `Amount: ${formatUserFacingDecimal(params.amount)} USDT`,
+    `Rate: ${formatUserFacingDecimal(params.exchangeRate)} ${params.fiatCurrency}/USDT`,
+    `Fiat total: ${formatUserFacingDecimal(params.fiatTotal)} ${params.fiatCurrency}`,
     `M-Pesa code: ${params.transactionCode}`,
-    `User: ${params.username}`,
     `User ID: ${params.userId}`,
-    `Submitted at: ${new Date().toISOString()}`,
+    `Submitted: ${new Date().toISOString()}`,
   ].join('\n');
 
   const form = new FormData();
