@@ -93,6 +93,7 @@ export interface AuthResponseDTO {
   nextStep?: 'verify_email' | 'mfa_challenge' | 'complete_profile';
   challengeId?: string;
   challengeReason?: 'suspicious_login' | 'sensitive_action';
+  withdrawalIntentId?: string;
   redirectTo?: string;
   email?: string;
   previewUrl?: string;
@@ -269,6 +270,7 @@ export interface DepositMemoDTO {
 export interface WithdrawRequestDTO {
   toAddress: string;
   amountUsdt: UsdtAmountString;
+  withdrawalIntentId?: string;
 }
 
 export interface WithdrawalRequestAcceptedDTO {

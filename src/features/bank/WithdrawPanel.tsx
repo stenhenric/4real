@@ -238,17 +238,24 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     normalizedAmount: string,
     destination: string,
     idempotencyKey: string,
+    withdrawalIntentId?: string,
   ) => {
     setLoading(true);
 
     try {
       const response = await createWithdrawal(
-        { amountUsdt: normalizedAmount, toAddress: destination },
+        { amountUsdt: normalizedAmount, toAddress: destination, withdrawalIntentId },
         { idempotencyKey },
       );
       const storage = getBrowserSessionStorage();
       if (storage) {
         clearWithdrawalResumeDraft(storage);
+        try {
+          sessionStorage.removeItem('withdrawal_draft_amount');
+          sessionStorage.removeItem('withdrawal_draft_address');
+        } catch {
+          // Ignore
+        }
       }
       setAcceptedWithdrawal(response);
       setWithdrawalStatus({
@@ -264,6 +271,12 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       await refreshUser();
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        try {
+          sessionStorage.setItem('withdrawal_draft_amount', normalizedAmount);
+          sessionStorage.setItem('withdrawal_draft_address', destination);
+        } catch {
+          // Ignore
+        }
         return;
       }
 
@@ -280,6 +293,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     }
 
     const resumeStatus = searchParams.get('mfa');
+    const withdrawalIntentId = searchParams.get('withdrawalIntentId');
     const clearResumeStatus = () => {
       if (!resumeStatus || !WITHDRAWAL_MFA_RESULTS.has(resumeStatus)) {
         return;
@@ -287,6 +301,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
 
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('mfa');
+      nextParams.delete('withdrawalIntentId');
       setSearchParams(nextParams, { replace: true });
     };
     const result = loadWithdrawalResumeDraft(storage);
@@ -327,7 +342,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       resumeAttemptedRef.current = true;
       clearResumeStatus();
       setStatusError(null);
-      void submitWithdrawal(draft.amountUsdt, draft.toAddress, draft.idempotencyKey);
+      void submitWithdrawal(draft.amountUsdt, draft.toAddress, draft.idempotencyKey, withdrawalIntentId || undefined);
     }
   }, [addToast, searchParams, setSearchParams, submitWithdrawal]);
 

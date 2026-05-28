@@ -21,11 +21,12 @@ interface StoredMfaSetup {
 
 interface StoredMfaChallenge {
   userId: string;
-  mode: 'login' | 'stepup';
+  mode: 'login' | 'stepup' | 'withdrawal';
   sessionId?: string;
   deviceId?: string;
   ipAddress?: string | null | undefined;
   userAgent?: string | null | undefined;
+  withdrawalIntentId?: string;
 }
 
 function getMfaSetupKey(setupToken: string): string {

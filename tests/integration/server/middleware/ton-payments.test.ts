@@ -28,6 +28,7 @@ import {
   setProductEmailNotificationDependenciesForTests,
 } from '../../../../server/services/product-email-notification.service.ts';
 import { TransactionService } from '../../../../server/services/transaction.service.ts';
+import { WithdrawalIntentService } from '../../../../server/services/withdrawal-intent.service.ts';
 import { requestWithdrawal } from '../../../../server/services/withdrawal-service.ts';
 import { LockUnavailableError } from '../../../../server/services/distributed-lock.service.ts';
 import type { JettonTransferEvent, TransferLookupContext } from '../../../../server/services/deposit-ingestion.service.ts';
@@ -1121,6 +1122,12 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
   const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
   const queuedEmailMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalQueued', async () => {});
+  const consumeIntentMock = mock.method(WithdrawalIntentService, 'consumeIntent', async () => ({
+    userId: 'user-handler',
+    toAddress: ZERO_ADDRESS,
+    amountUsdt: '1.5',
+    authorized: true,
+  }));
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => claimMock.mock.restore());
@@ -1129,11 +1136,12 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   t.after(() => createQueuedMock.mock.restore());
   t.after(() => dailyLimitMock.mock.restore());
   t.after(() => queuedEmailMock.mock.restore());
+  t.after(() => consumeIntentMock.mock.restore());
 
   const firstResponse = createResponseMock();
   await requestWithdrawalHandler({
-    user: { id: 'user-handler' },
-    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1.5' },
+    user: { id: 'user-handler', mfaEnabled: true },
+    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1.5', withdrawalIntentId: 'test-intent-id' },
     get: (name: string) => name.toLowerCase() === 'idempotency-key' ? 'idem-handler-1' : undefined,
   } as any, firstResponse as any);
 
@@ -1167,8 +1175,8 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
 
   const replayResponse = createResponseMock();
   await requestWithdrawalHandler({
-    user: { id: 'user-handler' },
-    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1.5' },
+    user: { id: 'user-handler', mfaEnabled: true },
+    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1.5', withdrawalIntentId: 'test-intent-id' },
     get: (name: string) => name.toLowerCase() === 'idempotency-key' ? 'idem-handler-1' : undefined,
   } as any, replayResponse as any);
 

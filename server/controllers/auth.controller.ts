@@ -30,6 +30,7 @@ import { assertValidPassword } from '../services/password-policy.service.ts';
 import { hashPassword, needsPasswordRehash, verifyPassword } from '../services/password-hash.service.ts';
 import { verifyTurnstileToken } from '../services/auth-turnstile.service.ts';
 import { UserService } from '../services/user.service.ts';
+import { WithdrawalIntentService } from '../services/withdrawal-intent.service.ts';
 import { HttpError, badRequest, conflict, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 import type {
@@ -850,6 +851,16 @@ export class AuthController {
       code: body.code,
       recoveryCode: body.recoveryCode,
     });
+
+    if (challenge.mode === 'withdrawal' && challenge.withdrawalIntentId) {
+      await WithdrawalIntentService.authorizeIntent(challenge.withdrawalIntentId);
+      res.json({
+        status: 'success',
+        message: 'Withdrawal verification complete.',
+        withdrawalIntentId: challenge.withdrawalIntentId,
+      });
+      return;
+    }
 
     if (challenge.mode === 'login') {
       const issuedSession = await AuthSessionService.createSession({

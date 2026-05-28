@@ -27,6 +27,7 @@ const ApproveLoginPage = lazy(() => import('../pages/auth/ApproveLoginPage'));
 const VerifiedPage = lazy(() => import('../pages/auth/VerifiedPage'));
 const CompleteProfilePage = lazy(() => import('../pages/auth/CompleteProfilePage'));
 const MfaChallengePage = lazy(() => import('../pages/auth/MfaChallengePage'));
+const WithdrawalMfaPage = lazy(() => import('../pages/auth/WithdrawalMfaPage'));
 const SecuritySettingsPage = lazy(() => import('../pages/auth/SecuritySettingsPage'));
 const MerchantLayout = lazy(() => import('../components/merchant/MerchantLayout').then((module) => ({
   default: module.MerchantLayout,
@@ -76,6 +77,7 @@ export default function App() {
             <Route path="/auth/approve-login" element={<ApproveLoginPage />} />
             <Route path="/auth/verified" element={<VerifiedPage />} />
             <Route path="/auth/mfa" element={<MfaChallengePage />} />
+            <Route path="/auth/withdrawal-mfa" element={<ProtectedRoute><WithdrawalMfaPage /></ProtectedRoute>} />
             <Route
               path="/auth/complete-profile"
               element={<ProtectedRoute allowIncompleteProfile={true}><CompleteProfilePage /></ProtectedRoute>}

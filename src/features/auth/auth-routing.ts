@@ -104,6 +104,21 @@ export function buildMfaChallengePath(params: {
   return `/auth/mfa?${search.toString()}`;
 }
 
+export function buildWithdrawalMfaChallengePath(params: {
+  challengeId: string;
+  withdrawalIntentId: string;
+  returnTo?: string | null;
+}) {
+  const search = new URLSearchParams();
+  search.set('challengeId', params.challengeId);
+  search.set('withdrawalIntentId', params.withdrawalIntentId);
+  const safeReturnTo = sanitizeInternalPath(params.returnTo);
+  if (safeReturnTo) {
+    search.set('returnTo', safeReturnTo);
+  }
+  return `/auth/withdrawal-mfa?${search.toString()}`;
+}
+
 export function addMfaResultFlag(path: string | null | undefined, result: 'verified' | 'failed' | 'cancelled') {
   const safePath = sanitizeInternalPath(path) ?? '/auth/security';
   const url = new URL(safePath, 'http://4real.local');

@@ -27,19 +27,27 @@ export function AuthNavigationHandler() {
       if (detail.code === 'MFA_REQUIRED' && detail.challengeId) {
         const returnTo = detail.returnTo ?? `${window.location.pathname}${window.location.search}`;
         const returnSearchParams = new URLSearchParams(returnTo.split('?')[1] ?? '');
-        const flow = returnSearchParams.get('flow') === 'withdrawal' || returnSearchParams.get('view') === 'withdraw'
+        const flow = returnSearchParams.get('flow') === 'withdrawal' || returnSearchParams.get('view') === 'withdraw' || detail.withdrawalIntentId
           ? 'withdrawal'
           : null;
 
-        navigate(
-          buildMfaChallengePath({
-            challengeId: detail.challengeId,
-            challengeReason: detail.challengeReason ?? 'sensitive_action',
-            returnTo,
-            flow,
-          }),
-          { replace: true },
-        );
+        if (flow === 'withdrawal') {
+          const withdrawalIntentId = detail.withdrawalIntentId || returnSearchParams.get('withdrawalIntentId') || '';
+          navigate(
+            `/auth/withdrawal-mfa?challengeId=${encodeURIComponent(detail.challengeId)}&withdrawalIntentId=${encodeURIComponent(withdrawalIntentId)}&returnTo=${encodeURIComponent(returnTo)}`,
+            { replace: true },
+          );
+        } else {
+          navigate(
+            buildMfaChallengePath({
+              challengeId: detail.challengeId,
+              challengeReason: detail.challengeReason ?? 'sensitive_action',
+              returnTo,
+              flow,
+            }),
+            { replace: true },
+          );
+        }
         return;
       }
 

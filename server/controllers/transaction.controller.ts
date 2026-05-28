@@ -13,8 +13,10 @@ import { CacheKeys, invalidateCacheKeys } from '../services/cache.service.ts';
 import { executeIdempotentMutationV2 } from '../services/idempotency.service.ts';
 import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
+import { badRequest, forbidden, notFound } from '../utils/http-error.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
-import { badRequest, notFound } from '../utils/http-error.ts';
+import { WithdrawalIntentService } from '../services/withdrawal-intent.service.ts';
+import { UserService } from '../services/user.service.ts';
 import type {
   PrepareTonConnectDepositRequest,
   WithdrawRequest,
@@ -68,7 +70,7 @@ export const prepareTonConnectDepositHandler = async (req: AuthRequest, res: Res
 export const requestWithdrawalHandler = async (req: AuthRequest, res: Response): Promise<void> => {
   assertAuthenticated(req);
   const userId = req.user.id;
-  const { toAddress, amountUsdt } = req.body as WithdrawRequest;
+  const { toAddress, amountUsdt, withdrawalIntentId } = req.body as WithdrawRequest;
   const idempotencyKey = getRequiredIdempotencyKey(req);
 
   try {
@@ -77,11 +79,52 @@ export const requestWithdrawalHandler = async (req: AuthRequest, res: Response):
     throw badRequest('Invalid TON destination address', 'INVALID_TON_ADDRESS');
   }
 
+  // First verify user has MFA enabled (otherwise throw 403 MFA_SETUP_REQUIRED)
+  if (!req.user || !req.user.mfaEnabled) {
+    throw forbidden('MFA is not set up on this account. Please set up MFA first.', 'MFA_SETUP_REQUIRED');
+  }
+
+  // If no withdrawalIntentId is provided, generate an intent and challenge, and throw 403 MFA_REQUIRED
+  if (!withdrawalIntentId) {
+    const { withdrawalIntentId: newIntentId, challengeId } = await WithdrawalIntentService.createIntent({
+      userId,
+      toAddress,
+      amountUsdt,
+      idempotencyKey,
+    });
+    
+    // Throw forbidden with MFA_REQUIRED and nextStep info
+    throw forbidden('Withdrawal confirmation requires MFA verification', 'MFA_REQUIRED', {
+      nextStep: 'withdrawal_mfa',
+      challengeId,
+      withdrawalIntentId: newIntentId,
+      amountUsdt,
+      toAddress,
+    });
+  }
+
+  // If withdrawalIntentId is provided, consume it
+  const intent = await WithdrawalIntentService.consumeIntent(withdrawalIntentId);
+  if (!intent) {
+    throw forbidden('Withdrawal intent expired, already consumed, or invalid', 'WITHDRAWAL_INTENT_EXPIRED');
+  }
+
+  // Validate that the intent matches user, amount, toAddress, and is authorized
+  if (
+    intent.userId !== userId ||
+    intent.toAddress !== toAddress ||
+    intent.amountUsdt !== amountUsdt ||
+    !intent.authorized
+  ) {
+    throw forbidden('Withdrawal intent invalid or not authorized', 'WITHDRAWAL_INTENT_INVALID');
+  }
+
+  // Proceed with executing the idempotent mutation
   const result = await executeIdempotentMutationV2({
     userId,
     routeKey: 'transactions:withdraw',
     idempotencyKey,
-    requestPayload: { toAddress, amountUsdt },
+    requestPayload: { toAddress, amountUsdt, withdrawalIntentId },
     execute: async ({ session }) => {
       const withdrawalId = uuidv4();
       await requestWithdrawal({ userId, toAddress, amountUsdt, withdrawalId, session });
@@ -120,7 +163,6 @@ export const requestWithdrawalHandler = async (req: AuthRequest, res: Response):
   }
   res.status(result.statusCode).json(result.body);
 };
-
 export const getWithdrawalStatusHandler = async (req: AuthRequest, res: Response): Promise<void> => {
   assertAuthenticated(req);
   const withdrawalId = req.params.withdrawalId;

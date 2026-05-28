@@ -495,7 +495,7 @@ async function revokeSessionDocuments(documents: IAuthSession[], reason: string)
 
   const revokedAt = new Date();
   await AuthSession.updateMany(
-    { _id: { $in: documents.map((document) => document._id) } },
+    trustFilter({ _id: { $in: documents.map((document) => document._id) } }),
     {
       $set: {
         revokedAt,

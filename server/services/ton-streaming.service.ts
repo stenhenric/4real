@@ -38,7 +38,7 @@ type WebSocketLike = {
   readyState: number;
   onopen: (() => void) | null;
   onmessage: ((event: { data: string }) => void) | null;
-  onclose: (() => void) | null;
+  onclose: ((event: any) => void) | null;
   onerror: ((event: unknown) => void) | null;
   send: (payload: string) => void;
   close: () => void;
@@ -74,6 +74,7 @@ export class TonStreamingClient implements TonStreamingClientLike {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private subscription: TonStreamingSubscription | null = null;
   private subscriptionCounter = 0;
+  private reconnectAttempts = 0;
   private eventHandlers: Array<(event: TonStreamingEvent) => void | Promise<void>> = [];
 
   constructor(options: TonStreamingClientOptions) {
@@ -120,21 +121,37 @@ export class TonStreamingClient implements TonStreamingClientLike {
 
     socket.onopen = () => {
       this.reconnectDelayMs = this.options.reconnectMinMs;
+      this.reconnectAttempts = 0;
       this.startPing();
       this.sendSubscriptionIfReady();
-      logger.info('ton_streaming.connected', { endpoint: this.options.endpoint });
+      logger.info('ton_streaming.connected', {
+        endpoint: this.options.endpoint,
+        subscriptionContext: this.subscription,
+      });
     };
     socket.onmessage = (message) => {
       this.handleMessage(message.data);
     };
     socket.onerror = (event) => {
-      logger.warn('ton_streaming.error', { event: String(event) });
+      logger.warn('ton_streaming.error', {
+        event: String(event),
+        endpoint: this.options.endpoint,
+        reconnectAttempts: this.reconnectAttempts,
+      });
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (this.pingTimer) {
         clearInterval(this.pingTimer);
         this.pingTimer = null;
       }
+      logger.warn('ton_streaming.close', {
+        code: event?.code,
+        reason: event?.reason,
+        wasClean: event?.wasClean,
+        reconnectAttempts: this.reconnectAttempts,
+        endpoint: this.options.endpoint,
+        subscriptionContext: this.subscription,
+      });
       if (!this.stopped) {
         this.scheduleReconnect();
       }
@@ -166,9 +183,14 @@ export class TonStreamingClient implements TonStreamingClientLike {
   }
 
   private scheduleReconnect(): void {
+    this.reconnectAttempts += 1;
     const delayMs = this.reconnectDelayMs;
     this.reconnectDelayMs = Math.min(this.options.reconnectMaxMs, this.reconnectDelayMs * 2);
-    logger.warn('ton_streaming.reconnect_scheduled', { delayMs });
+    logger.warn('ton_streaming.reconnect_scheduled', {
+      delayMs,
+      reconnectAttempts: this.reconnectAttempts,
+      endpoint: this.options.endpoint,
+    });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
@@ -297,6 +319,7 @@ export interface TonFinalityWatcher {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   handleEvent: (event: TonStreamingEvent) => Promise<void>;
+  isFallbackActive: () => boolean;
 }
 
 export function createTonFinalityWatcher({
@@ -391,14 +414,23 @@ export function createTonFinalityWatcher({
       await client.stop();
     },
     handleEvent,
+    isFallbackActive: () => fallbackTimer !== null,
   };
 
   function scheduleFallback(event: TonStreamingEvent): void {
     if (!fallbackEnabled || fallbackTimer) {
       return;
     }
+    logger.info('ton_streaming.fallback_scheduled', {
+      traceExternalHashNorm: event.trace_external_hash_norm,
+      finalityTimeoutMs,
+      fallbackActive: true,
+    });
     fallbackTimer = setTimeout(() => {
       fallbackTimer = null;
+      logger.warn('ton_streaming.fallback_triggered', {
+        traceExternalHashNorm: event.trace_external_hash_norm,
+      });
       void onFallbackReconcile('stream_finality_timeout', event);
     }, finalityTimeoutMs);
     fallbackTimer.unref?.();

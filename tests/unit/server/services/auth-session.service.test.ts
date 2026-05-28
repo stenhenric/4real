@@ -728,3 +728,43 @@ test('refreshSession wraps unexpected Redis failures with AUTH_SESSION_UNAVAILAB
       && (error as { details?: { operation?: string } }).details?.operation === 'refreshSession',
   );
 });
+
+test('revokeOtherSessionsForUser query does not throw CastError when globally sanitizeFilter is applied', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const sessions = [
+    createMockSession({
+      _id: new mongoose.Types.ObjectId(),
+      sessionId: 'session-old-1',
+      userId,
+      currentAccessTokenHash: 'access-old-1',
+      currentRefreshTokenHash: 'refresh-old-1',
+    }),
+  ];
+  
+  setAuthSessionDependenciesForTests({
+    getRedisClient: () => ({
+      del: async () => 1,
+      pipeline: () => {
+        const pipeline = {
+          setex: () => pipeline,
+          exec: async () => [],
+        };
+        return pipeline as any;
+      },
+    }) as any,
+  });
+  t.after(() => resetAuthSessionDependenciesForTests());
+
+  t.mock.method(AuthSession, 'find', async () => sessions);
+  const updateManyMock = t.mock.method(AuthSession, 'updateMany', async (filter: Record<string, any>) => {
+    mongoose.sanitizeFilter(filter);
+    return { acknowledged: true, matchedCount: 1, modifiedCount: 1 } as any;
+  });
+
+  await assert.doesNotReject(
+    () => AuthSessionService.revokeOtherSessionsForUser(userId.toString(), 'session-current')
+  );
+  
+  assert.equal(updateManyMock.mock.callCount(), 1);
+});
+

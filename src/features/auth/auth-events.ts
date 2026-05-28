@@ -13,6 +13,7 @@ export interface AuthRedirectEventDetail {
   nextStep?: string | undefined;
   challengeId?: string | undefined;
   challengeReason?: 'suspicious_login' | 'sensitive_action' | undefined;
+  withdrawalIntentId?: string | undefined;
   returnTo?: string | undefined;
 }
 

@@ -28,6 +28,6 @@ router.get('/all', requireAdmin, requireMfaStepUp, asyncHandler(getAllTransactio
 router.get('/withdrawals/:withdrawalId', asyncHandler(getWithdrawalStatusHandler));
 router.post('/deposit/memo', createDepositOperationRateLimiter(), asyncHandler(generateDepositMemoHandler));
 router.post('/deposit/prepare', createDepositOperationRateLimiter(), validateBody(prepareTonConnectDepositRequestSchema), asyncHandler(prepareTonConnectDepositHandler));
-router.post('/withdraw', requireMfaStepUp, createWithdrawalRateLimiter(), validateBody(withdrawRequestSchema), asyncHandler(requestWithdrawalHandler));
+router.post('/withdraw', createWithdrawalRateLimiter(), validateBody(withdrawRequestSchema), asyncHandler(requestWithdrawalHandler));
 
 export default router;

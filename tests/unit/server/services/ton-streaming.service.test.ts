@@ -308,3 +308,79 @@ function createManualClient() {
     },
   };
 }
+
+test('TonStreamingClient connection closed logs real CloseEvent properties and tracks reconnectAttempts', async (t) => {
+  FakeWebSocket.instances = [];
+  const warnMock = mock.method(logger, 'warn', () => {});
+  const infoMock = mock.method(logger, 'info', () => {});
+  t.after(() => {
+    warnMock.mock.restore();
+    infoMock.mock.restore();
+  });
+
+  const client = new TonStreamingClient({
+    endpoint: 'wss://testnet.toncenter.com/api/streaming/v2/ws',
+    minFinality: 'pending',
+    reconnectMinMs: 1_000,
+    reconnectMaxMs: 30_000,
+    WebSocketCtor: FakeWebSocket,
+  });
+
+  await client.start();
+  const socket = FakeWebSocket.instances[0] as any;
+  assert.ok(socket);
+
+  // Trigger open to reset reconnectAttempts
+  socket.onopen?.();
+  
+  // Trigger error
+  socket.onerror?.(new Error('connection failed'));
+
+  // Trigger close with precise code and reason
+  socket.onclose?.({
+    code: 1006,
+    reason: 'abrupt close',
+    wasClean: false,
+  });
+
+  const closeCalls = warnMock.mock.calls.filter((call) => call.arguments[0] === 'ton_streaming.close');
+  assert.equal(closeCalls.length, 1);
+  assert.deepEqual(closeCalls[0].arguments[1], {
+    code: 1006,
+    reason: 'abrupt close',
+    wasClean: false,
+    reconnectAttempts: 0,
+    endpoint: 'wss://testnet.toncenter.com/api/streaming/v2/ws',
+    subscriptionContext: null,
+  });
+
+  const reconnectCalls = warnMock.mock.calls.filter((call) => call.arguments[0] === 'ton_streaming.reconnect_scheduled');
+  assert.equal(reconnectCalls.length, 1);
+  const reconnectCallArg = reconnectCalls[0].arguments[1] as any;
+  assert.ok(reconnectCallArg);
+  assert.equal(reconnectCallArg.reconnectAttempts, 1);
+});
+
+test('createTonFinalityWatcher isFallbackActive works correctly', async () => {
+  const watcher = createTonFinalityWatcher({
+    addresses: ['EQ-HOT-WALLET'],
+    client: createManualClient(),
+    fallbackEnabled: true,
+    finalityTimeoutMs: 30_000,
+    onDepositReconcile: async () => {},
+    onWithdrawalReconcile: async () => {},
+    onFallbackReconcile: async () => {},
+    onFeeTelemetry: () => {},
+  });
+
+  assert.equal(watcher.isFallbackActive(), false);
+  await watcher.start();
+  
+  // Handled event that triggers fallback scheduling (non-finalized)
+  await watcher.handleEvent({ type: 'transactions', finality: 'pending', trace_external_hash_norm: 'trace-timeout' });
+  assert.equal(watcher.isFallbackActive(), true);
+  
+  await watcher.stop();
+  assert.equal(watcher.isFallbackActive(), false);
+});
+

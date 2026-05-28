@@ -151,6 +151,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
                 challengeId?: string;
                 challengeReason?: 'suspicious_login' | 'sensitive_action';
                 nextStep?: string;
+                withdrawalIntentId?: string;
               }
             : {}
         );
@@ -165,6 +166,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
           nextStep: details.nextStep,
           challengeId: details.challengeId,
           challengeReason: details.challengeReason,
+          withdrawalIntentId: details.withdrawalIntentId,
           returnTo:
             typeof window !== 'undefined'
               ? `${window.location.pathname}${window.location.search}`

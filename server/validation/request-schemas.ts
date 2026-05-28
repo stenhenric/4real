@@ -283,6 +283,7 @@ export const withdrawRequestSchema = z.object({
     (value) => parseUsdtAmount(value) <= parseUsdtAmount(getEnv().MAX_WITHDRAWAL_USDT),
     { message: 'Amount exceeds maximum withdrawal limit' },
   ),
+  withdrawalIntentId: z.string().trim().optional(),
 });
 
 export const prepareTonConnectDepositRequestSchema = z.object({
