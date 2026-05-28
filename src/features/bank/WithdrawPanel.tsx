@@ -12,7 +12,7 @@ import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBad
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { createWithdrawal, getWithdrawalStatus } from '../../services/transactions.service';
-import type { WithdrawalRequestAcceptedDTO, WithdrawalStatusDTO } from '../../types/api';
+import type { WithdrawRequestDTO, WithdrawalRequestAcceptedDTO, WithdrawalStatusDTO } from '../../types/api';
 import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 import { createIdempotencyKey } from '../../utils/idempotency';
@@ -243,8 +243,15 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     setLoading(true);
 
     try {
+      const payload: WithdrawRequestDTO = {
+        amountUsdt: normalizedAmount,
+        toAddress: destination,
+      };
+      if (withdrawalIntentId) {
+        payload.withdrawalIntentId = withdrawalIntentId;
+      }
       const response = await createWithdrawal(
-        { amountUsdt: normalizedAmount, toAddress: destination, withdrawalIntentId },
+        payload,
         { idempotencyKey },
       );
       const storage = getBrowserSessionStorage();
