@@ -39,6 +39,27 @@ test('normalizeFixedScaleAmount enforces positive-only flows when zero is disall
   );
 });
 
+test('normalizeFixedScaleAmount enforces a minimum amount when provided', () => {
+  assert.throws(
+    () => normalizeFixedScaleAmount('1.499999', {
+      scale: 6,
+      allowZero: false,
+      label: 'Withdrawal amount',
+      min: '1.500000',
+    }),
+    /at least 1.5/i,
+  );
+  assert.equal(
+    normalizeFixedScaleAmount('1.5', {
+      scale: 6,
+      allowZero: false,
+      label: 'Withdrawal amount',
+      min: '1.500000',
+    }),
+    '1.500000',
+  );
+});
+
 test('money display helpers fail closed for missing or invalid values', () => {
   assert.equal(moneyToNumber(undefined), 0);
   assert.equal(moneyToNumber('not-money'), 0);

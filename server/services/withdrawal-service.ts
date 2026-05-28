@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import type { ClientSession } from 'mongoose';
 
 import { getEnv } from '../config/env.ts';
+import { MIN_WITHDRAWAL_USDT } from '../config/withdrawal-limits.ts';
 import { ACCOUNTED_WITHDRAWAL_STATUSES, WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { badRequest } from '../utils/http-error.ts';
 import { recordWithdrawalBalanceHoldFailure } from './metrics.service.ts';
@@ -29,7 +30,13 @@ export async function requestWithdrawal({
   withdrawalId: string;
   session?: ClientSession;
 }) {
-  const amountRaw = parseUsdtAmount(amountUsdt).toString();
+  const amountRawBigInt = parseUsdtAmount(amountUsdt);
+  const minimumWithdrawalRaw = parseUsdtAmount(MIN_WITHDRAWAL_USDT);
+  if (amountRawBigInt < minimumWithdrawalRaw) {
+    throw badRequest(`Minimum withdrawal is ${MIN_WITHDRAWAL_USDT} USDT`, 'WITHDRAWAL_BELOW_MINIMUM');
+  }
+
+  const amountRaw = amountRawBigInt.toString();
 
   const executeWithdrawalMutation = async (activeSession: ClientSession) => {
     const updatedUser = await UserService.deductBalanceSafely(userId, amountUsdt, activeSession);

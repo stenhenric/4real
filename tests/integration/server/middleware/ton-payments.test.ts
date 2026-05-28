@@ -1044,11 +1044,35 @@ test('requestWithdrawal rejects insufficient balance', async (t) => {
   t.after(() => dailyLimitMock.mock.restore());
 
   await assert.rejects(
-    requestWithdrawal({ userId: 'user-4', toAddress: ZERO_ADDRESS, amountUsdt: '1.000000', withdrawalId: 'wd-1' }),
+    requestWithdrawal({ userId: 'user-4', toAddress: ZERO_ADDRESS, amountUsdt: '1.500000', withdrawalId: 'wd-1' }),
     /Insufficient balance/,
   );
 
   assert.equal(deductMock.mock.callCount(), 1);
+  assert.equal(createQueuedMock.mock.callCount(), 0);
+});
+
+test('requestWithdrawal rejects withdrawals below the minimum before deducting balance', async (t) => {
+  registerBaseCleanup(t);
+
+  const session = createSessionMock();
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
+  const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-minimum' } as any));
+  const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
+  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => deductMock.mock.restore());
+  t.after(() => createQueuedMock.mock.restore());
+  t.after(() => dailyLimitMock.mock.restore());
+
+  await assert.rejects(
+    requestWithdrawal({ userId: 'user-minimum', toAddress: ZERO_ADDRESS, amountUsdt: '1.499999', withdrawalId: 'wd-minimum' }),
+    /Minimum withdrawal is 1.5 USDT/,
+  );
+
+  assert.equal(deductMock.mock.callCount(), 0);
+  assert.equal(dailyLimitMock.mock.callCount(), 0);
   assert.equal(createQueuedMock.mock.callCount(), 0);
 });
 
@@ -1066,7 +1090,7 @@ test('requestWithdrawal queues a withdrawal atomically with balance deduction', 
   t.after(() => createQueuedMock.mock.restore());
   t.after(() => dailyLimitMock.mock.restore());
 
-  await requestWithdrawal({ userId: 'user-5', toAddress: ZERO_ADDRESS, amountUsdt: '1.000000', withdrawalId: 'wd-2' });
+  await requestWithdrawal({ userId: 'user-5', toAddress: ZERO_ADDRESS, amountUsdt: '1.500000', withdrawalId: 'wd-2' });
 
   assert.equal(deductMock.mock.callCount(), 1);
   assert.equal(createQueuedMock.mock.callCount(), 1);
@@ -1109,7 +1133,7 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   const firstResponse = createResponseMock();
   await requestWithdrawalHandler({
     user: { id: 'user-handler' },
-    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1' },
+    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1.5' },
     get: (name: string) => name.toLowerCase() === 'idempotency-key' ? 'idem-handler-1' : undefined,
   } as any, firstResponse as any);
 
@@ -1144,7 +1168,7 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   const replayResponse = createResponseMock();
   await requestWithdrawalHandler({
     user: { id: 'user-handler' },
-    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1' },
+    body: { toAddress: ZERO_ADDRESS, amountUsdt: '1.5' },
     get: (name: string) => name.toLowerCase() === 'idempotency-key' ? 'idem-handler-1' : undefined,
   } as any, replayResponse as any);
 

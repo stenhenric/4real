@@ -28,6 +28,7 @@ import {
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
 const WITHDRAW_ADDRESS_ID = 'withdraw-address';
 const WITHDRAW_DESTINATION_REVIEW_ID = 'withdraw-destination-review';
+const MIN_WITHDRAWAL_USDT = '1.500000';
 const WITHDRAWAL_MFA_RESULTS = new Set(['verified', 'failed', 'cancelled']);
 
 type WithdrawStep = 'form' | 'review' | 'status';
@@ -187,6 +188,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         scale: 6,
         allowZero: false,
         label: 'Withdrawal amount',
+        min: MIN_WITHDRAWAL_USDT,
       });
     } catch (error) {
       nextErrors.amount = error instanceof Error ? error.message : 'Enter a valid withdrawal amount.';
@@ -378,7 +380,11 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
           <p className="mt-2 text-sm font-bold text-danger-text" role="alert">
             {fieldErrors.amount}
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-2 text-xs font-bold uppercase tracking-widest opacity-50">
+            Minimum withdrawal: {formatMoneyValue(MIN_WITHDRAWAL_USDT, 6)} USDT
+          </p>
+        )}
       </div>
 
       <div>

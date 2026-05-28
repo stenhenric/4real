@@ -15,6 +15,7 @@ import { UserService } from './user.service.ts';
 const ACCESS_KEY_PREFIX = 'auth:access:';
 const USED_REFRESH_KEY_PREFIX = 'auth:refresh:used:';
 const MFA_STEPUP_KEY_PREFIX = 'auth:stepup:';
+const MAX_TRACKED_DEVICES_PER_USER = 5;
 
 export interface AuthenticatedPrincipal {
   id: string;
@@ -515,6 +516,39 @@ async function revokeSessionDocuments(documents: IAuthSession[], reason: string)
   }
 }
 
+function selectExcessTrackedDeviceSessions(sessions: IAuthSession[], keepSessionId?: string): IAuthSession[] {
+  if (sessions.length <= MAX_TRACKED_DEVICES_PER_USER) {
+    return [];
+  }
+
+  const protectedSessions = keepSessionId
+    ? sessions.filter((session) => session.sessionId === keepSessionId)
+    : [];
+  const candidateSessions = keepSessionId
+    ? sessions.filter((session) => session.sessionId !== keepSessionId)
+    : sessions;
+  const availableSlots = Math.max(0, MAX_TRACKED_DEVICES_PER_USER - protectedSessions.length);
+
+  return candidateSessions.slice(availableSlots);
+}
+
+async function pruneTrackedDevicesForUser(userId: unknown, keepSessionId?: string): Promise<IAuthSession[]> {
+  const sessions = await authSessionFindSorted<IAuthSession>('AuthSession.find.pruneTrackedDevicesForUser.sessions', {
+    userId,
+    ...buildActiveSessionQuery(),
+  }, { lastSeenAt: -1, createdAt: -1 });
+  const excessSessions = selectExcessTrackedDeviceSessions(sessions, keepSessionId);
+
+  await revokeSessionDocuments(excessSessions, 'tracked_device_limit_exceeded');
+
+  if (excessSessions.length === 0) {
+    return sessions;
+  }
+
+  const revokedSessionIds = new Set(excessSessions.map((session) => session.sessionId));
+  return sessions.filter((session) => !revokedSessionIds.has(session.sessionId));
+}
+
 export class AuthSessionService {
   static ensureDeviceId(existingValue?: string | null): string {
     if (typeof existingValue === 'string' && existingValue.trim().length >= 16) {
@@ -570,6 +604,8 @@ export class AuthSessionService {
         ipAddress: params.metadata.ipAddress ?? null,
         userAgent: params.metadata.userAgent ?? null,
       });
+
+      await pruneTrackedDevicesForUser(params.user._id, sessionId);
 
       return {
         accessToken,
@@ -782,10 +818,7 @@ export class AuthSessionService {
 
   static async listSessions(userId: string, currentSessionId?: string) {
     return withSessionStoreBoundary('listSessions', async () => {
-      const sessions = await authSessionFindSorted<IAuthSession>('AuthSession.find.listSessions.sessions', {
-        userId,
-        ...buildActiveSessionQuery(),
-      }, { lastSeenAt: -1 });
+      const sessions = await pruneTrackedDevicesForUser(userId, currentSessionId);
 
       return sessions.map((session) => ({
         id: session.sessionId,

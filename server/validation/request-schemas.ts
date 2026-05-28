@@ -2,6 +2,7 @@ import { Address } from '@ton/ton';
 import { z } from 'zod';
 
 import { getEnv } from '../config/env.ts';
+import { MIN_WITHDRAWAL_USDT } from '../config/withdrawal-limits.ts';
 import {
   formatKesAmount,
   formatRate,
@@ -87,6 +88,12 @@ const positiveUsdtSchema = createFixedScaleSchema({
   label: 'Amount',
   parse: (value) => parseUsdtAmount(value),
   format: (value) => formatUsdtAmount(value),
+});
+const withdrawalUsdtSchema = createFixedScaleSchema({
+  label: 'Amount',
+  parse: (value) => parseUsdtAmount(value),
+  format: (value) => formatUsdtAmount(value),
+  minRaw: parseUsdtAmount(MIN_WITHDRAWAL_USDT),
 });
 const nonNegativeUsdtSchema = createFixedScaleSchema({
   label: 'Wager',
@@ -272,7 +279,7 @@ export const withdrawRequestSchema = z.object({
     },
     { message: 'Invalid TON address format' },
   ),
-  amountUsdt: positiveUsdtSchema.refine(
+  amountUsdt: withdrawalUsdtSchema.refine(
     (value) => parseUsdtAmount(value) <= parseUsdtAmount(getEnv().MAX_WITHDRAWAL_USDT),
     { message: 'Amount exceeds maximum withdrawal limit' },
   ),

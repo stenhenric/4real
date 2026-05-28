@@ -4,11 +4,31 @@ interface NormalizeFixedScaleAmountOptions {
   scale: number;
   allowZero?: boolean;
   label?: string;
+  min?: string;
+}
+
+function fixedScaleRaw(value: string, scale: number, label: string): bigint {
+  if (!/^\d+(?:\.\d+)?$/.test(value)) {
+    throw new Error(`${label} must be a plain decimal amount.`);
+  }
+
+  const [integerPart = '', fractionPart = ''] = value.split('.');
+  if (fractionPart.length > scale) {
+    throw new Error(`${label} supports at most ${scale} decimal places.`);
+  }
+
+  return BigInt(`${integerPart}${fractionPart.padEnd(scale, '0')}`);
+}
+
+function trimFixedScaleDisplay(value: string): string {
+  return value
+    .replace(/(\.\d*?)0+$/, '$1')
+    .replace(/\.$/, '');
 }
 
 export function normalizeFixedScaleAmount(
   value: string,
-  { scale, allowZero = true, label = 'Amount' }: NormalizeFixedScaleAmountOptions,
+  { scale, allowZero = true, label = 'Amount', min }: NormalizeFixedScaleAmountOptions,
 ): string {
   const trimmed = value.trim();
 
@@ -27,6 +47,10 @@ export function normalizeFixedScaleAmount(
 
   if (!allowZero && /^0+$/.test(normalizedInteger) && /^0*$/.test(normalizedFraction)) {
     throw new Error(`${label} must be greater than 0.`);
+  }
+
+  if (min !== undefined && fixedScaleRaw(normalized, scale, label) < fixedScaleRaw(min, scale, `${label} minimum`)) {
+    throw new Error(`${label} must be at least ${trimFixedScaleDisplay(min)}.`);
   }
 
   return normalized;

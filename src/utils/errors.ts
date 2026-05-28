@@ -32,6 +32,7 @@ const USER_SAFE_CODES = new Set([
   'MPESA_TRANSACTION_CODE_LOCKED',
   'OPERATION_RATE_LIMITED',
   'DAILY_WITHDRAWAL_LIMIT_EXCEEDED',
+  'WITHDRAWAL_BELOW_MINIMUM',
   'HOT_WALLET_NOT_CONFIGURED',
 ]);
 
@@ -62,6 +63,7 @@ const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
   MPESA_TRANSACTION_CODE_LOCKED: 'Too many transaction code attempts. Please wait and try again, or contact support for manual review.',
   OPERATION_RATE_LIMITED: 'Too many requests for this operation. Please try again later.',
   DAILY_WITHDRAWAL_LIMIT_EXCEEDED: 'This withdrawal exceeds your daily withdrawal limit.',
+  WITHDRAWAL_BELOW_MINIMUM: 'Minimum withdrawal is 1.5 USDT.',
   HOT_WALLET_NOT_CONFIGURED: 'Deposits are temporarily unavailable. Please try again later.',
 };
 

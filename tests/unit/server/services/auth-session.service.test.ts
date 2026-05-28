@@ -130,6 +130,98 @@ test('createSession active-session operators survive mongoose sanitizeFilter', a
   );
 });
 
+test('createSession prunes oldest tracked devices above the per-user limit', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const user = createMockUser(userId);
+  const newSession = createMockSession({
+    _id: new mongoose.Types.ObjectId(),
+    sessionId: 'session-new',
+    userId,
+    deviceId: 'device-new',
+    currentAccessTokenHash: 'access-new',
+    currentRefreshTokenHash: 'refresh-new',
+    lastSeenAt: new Date('2026-05-06T00:06:00.000Z'),
+    createdAt: new Date('2026-05-06T00:06:00.000Z'),
+  });
+  const olderSessions = Array.from({ length: 5 }, (_, index) => createMockSession({
+    _id: new mongoose.Types.ObjectId(),
+    sessionId: `session-old-${index + 1}`,
+    userId,
+    deviceId: `device-old-${index + 1}`,
+    currentAccessTokenHash: `access-old-${index + 1}`,
+    currentRefreshTokenHash: `refresh-old-${index + 1}`,
+    lastSeenAt: new Date(Date.UTC(2026, 4, 6, 0, 5 - index, 0)),
+    createdAt: new Date(Date.UTC(2026, 4, 6, 0, 5 - index, 0)),
+  }));
+  const findFilters: Array<Record<string, any>> = [];
+  const redisCalls: Array<{ method: string; args: unknown[] }> = [];
+  let capturedSort: Record<string, 1 | -1> | undefined;
+  let capturedUpdateFilter: Record<string, any> | undefined;
+  let capturedUpdate: Record<string, any> | undefined;
+
+  setAuthSessionDependenciesForTests({
+    getRedisClient: () => ({
+      setex: async (...args: unknown[]) => {
+        redisCalls.push({ method: 'setex', args });
+        return 'OK';
+      },
+      del: async (...args: unknown[]) => {
+        redisCalls.push({ method: 'del', args });
+        return args.length;
+      },
+    }) as any,
+  });
+  t.after(() => resetAuthSessionDependenciesForTests());
+  t.mock.method(AuthSession, 'find', (filter: Record<string, any>) => {
+    findFilters.push(filter);
+    if (findFilters.length === 1) {
+      return [] as any;
+    }
+
+    return {
+      sort: (sort: Record<string, 1 | -1>) => {
+        capturedSort = sort;
+        return [newSession, ...olderSessions] as any;
+      },
+    } as any;
+  });
+  t.mock.method(AuthSession, 'create', async () => newSession);
+  t.mock.method(UserService, 'updateSecurityLogin', async () => undefined);
+  const updateManyMock = t.mock.method(AuthSession, 'updateMany', async (filter: Record<string, any>, update: Record<string, any>) => {
+    capturedUpdateFilter = filter;
+    capturedUpdate = update;
+    return { acknowledged: true, matchedCount: 1, modifiedCount: 1 } as any;
+  });
+
+  const result = await AuthSessionService.createSession({
+    user,
+    metadata: {
+      deviceId: 'device-new',
+      ipAddress: '127.0.0.1',
+      userAgent: 'test-agent',
+    },
+  });
+
+  assert.equal(result.session, newSession);
+  assert.equal(findFilters.length, 2);
+  assertActiveSessionFilter(findFilters[1], {
+    userId,
+  });
+  assert.deepEqual(capturedSort, { lastSeenAt: -1, createdAt: -1 });
+  assert.equal(updateManyMock.mock.callCount(), 1);
+  assert.deepEqual(capturedUpdateFilter?._id?.$in, [olderSessions[4]._id]);
+  assert.equal(capturedUpdate?.$set?.revokeReason, 'tracked_device_limit_exceeded');
+  assert.deepEqual(capturedUpdate?.$unset, {
+    currentAccessTokenHash: '',
+    currentRefreshTokenHash: '',
+  });
+  assert(redisCalls.some((entry) => (
+    entry.method === 'del'
+    && entry.args.length === 1
+    && entry.args[0] === 'auth:access:access-old-5'
+  )));
+});
+
 test('validateAccessToken queries the current session with an active-session filter', async (t) => {
   const accessToken = 'access-token';
   const accessTokenHash = hashOpaqueToken(accessToken);
@@ -433,6 +525,79 @@ test('revokeOtherSessionsForUser revokes matching sessions with one database upd
     args: ['auth:access:access-old-1', 'auth:access:access-old-2'],
   });
   assert.equal(pipelineCommands.length, 2);
+});
+
+test('listSessions prunes over-limit tracked devices while keeping the current session', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const visibleSessions = Array.from({ length: 5 }, (_, index) => createMockSession({
+    _id: new mongoose.Types.ObjectId(),
+    sessionId: `session-visible-${index + 1}`,
+    userId,
+    deviceId: `device-visible-${index + 1}`,
+    currentAccessTokenHash: `access-visible-${index + 1}`,
+    currentRefreshTokenHash: `refresh-visible-${index + 1}`,
+    lastSeenAt: new Date(Date.UTC(2026, 4, 6, 0, 10 - index, 0)),
+    createdAt: new Date(Date.UTC(2026, 4, 6, 0, 10 - index, 0)),
+  }));
+  const currentSession = createMockSession({
+    _id: new mongoose.Types.ObjectId(),
+    sessionId: 'session-current',
+    userId,
+    deviceId: 'device-current',
+    currentAccessTokenHash: 'access-current',
+    currentRefreshTokenHash: 'refresh-current',
+    lastSeenAt: new Date('2026-05-05T00:00:00.000Z'),
+    createdAt: new Date('2026-05-05T00:00:00.000Z'),
+  });
+  const sessions = [...visibleSessions, currentSession];
+  const redisCalls: Array<{ method: string; args: unknown[] }> = [];
+  let capturedFilter: Record<string, any> | undefined;
+  let capturedUpdateFilter: Record<string, any> | undefined;
+
+  setAuthSessionDependenciesForTests({
+    getRedisClient: () => ({
+      setex: async (...args: unknown[]) => {
+        redisCalls.push({ method: 'setex', args });
+        return 'OK';
+      },
+      del: async (...args: unknown[]) => {
+        redisCalls.push({ method: 'del', args });
+        return args.length;
+      },
+    }) as any,
+  });
+  t.after(() => resetAuthSessionDependenciesForTests());
+  t.mock.method(AuthSession, 'find', (filter: Record<string, any>) => {
+    capturedFilter = filter;
+    return {
+      sort: () => sessions as any,
+    } as any;
+  });
+  const updateManyMock = t.mock.method(AuthSession, 'updateMany', async (filter: Record<string, any>) => {
+    capturedUpdateFilter = filter;
+    return { acknowledged: true, matchedCount: 1, modifiedCount: 1 } as any;
+  });
+
+  const result = await AuthSessionService.listSessions(userId.toString(), 'session-current');
+
+  assert.equal(result.length, 5);
+  assert.deepEqual(result.map((session) => session.id), [
+    'session-visible-1',
+    'session-visible-2',
+    'session-visible-3',
+    'session-visible-4',
+    'session-current',
+  ]);
+  assertActiveSessionFilter(capturedFilter ?? {}, {
+    userId: userId.toString(),
+  });
+  assert.equal(updateManyMock.mock.callCount(), 1);
+  assert.deepEqual(capturedUpdateFilter?._id?.$in, [visibleSessions[4]._id]);
+  assert(redisCalls.some((entry) => (
+    entry.method === 'del'
+    && entry.args.length === 1
+    && entry.args[0] === 'auth:access:access-visible-5'
+  )));
 });
 
 test('ensureAuthSessionIndexes replaces the legacy sparse refresh-token index and legacy absoluteExpiresAt index', async (t) => {
