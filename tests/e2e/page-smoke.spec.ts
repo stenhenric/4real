@@ -85,6 +85,16 @@ async function installTurnstileStub(page: Page) {
   });
 }
 
+async function fillWithdrawalReview(page: Page) {
+  await page.goto('/bank');
+  await expect(page.getByRole('heading', { name: /the bank/i })).toBeVisible();
+  await page.getByRole('button', { name: /withdraw usdt/i }).click();
+  await page.getByLabel(/withdrawal amount/i).fill('5');
+  await page.getByLabel(/destination ton address/i).fill('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
+  await page.getByRole('button', { name: /review withdrawal/i }).click();
+  await expect(page.getByText(/ready to review/i)).toBeVisible();
+}
+
 async function expectRouteToRender(page: Page, route: RouteExpectation) {
   await page.goto(route.path);
 
@@ -120,7 +130,7 @@ test('public routes when opened anonymously render their primary surfaces withou
     { path: '/auth/verify-email?email=audit-user@example.com', heading: /verify your email/i },
     { path: '/auth/magic-link?email=audit-user@example.com', heading: /finish signing in/i },
     { path: '/auth/approve-login?email=audit-user@example.com', heading: /approve your sign-in/i },
-    { path: '/auth/verified', heading: /your account is active/i },
+    { path: '/auth/verified', heading: /welcome back/i },
   ];
 
   for (const route of routes) {
@@ -205,7 +215,7 @@ test('play lobby does not load TonConnect assets before wallet routes need them'
     await page.goto('/bank');
     await expect(page.getByRole('heading', { name: /the bank/i })).toBeVisible();
     await page.getByRole('button', { name: /deposit usdt/i }).click();
-    await expect(page.getByText(/use tonconnect/i)).toBeVisible();
+    await expect(page.getByLabel(/deposit amount/i)).toBeVisible();
     await page.waitForLoadState('networkidle');
 
     expect(requestedAssetPaths.some((path) => /\/assets\/tonconnect.*\.js/i.test(path))).toBe(true);
@@ -242,7 +252,7 @@ test('bank USDT flows collect intent before payment details and show withdrawal 
     await expect(page.getByText('Payment details ready', { exact: true })).toBeVisible();
     await expect(page.locator('input[value="EQ-DEMO-WALLET"]')).toBeVisible();
     await expect(page.locator('input[value="memo-user-player-one"]')).toBeVisible();
-    await expect(page.getByRole('heading', { name: /send exactly 12\.340000 usdt/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /send exactly 12\.34 usdt/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /pay with tonconnect/i })).toBeDisabled();
 
     await page.getByRole('button', { name: /change amount/i }).click();
@@ -274,6 +284,197 @@ test('bank USDT flows collect intent before payment details and show withdrawal 
     await expect(page.getByText(/balance has been reserved/i)).toBeVisible();
 
     await health.assertHealthy();
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('withdrawal MFA success returns to the interrupted review and queues through the backend', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  await stubTonConnectWallets(page);
+  const withdrawalRequests: Array<{ idempotencyKey: string | null; body: unknown }> = [];
+
+  await page.route('**/api/transactions/withdraw', async (route) => {
+    const request = route.request();
+    withdrawalRequests.push({
+      idempotencyKey: request.headers()['idempotency-key'] ?? null,
+      body: request.postDataJSON(),
+    });
+
+    if (withdrawalRequests.length === 1) {
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'MFA_REQUIRED',
+          message: 'Additional verification required',
+          details: {
+            challengeId: 'challenge-withdrawal-success',
+            challengeReason: 'sensitive_action',
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        message: 'Withdrawal queued successfully',
+        status: 'queued',
+        withdrawalId: 'wd-mfa-success',
+        statusUrl: '/api/transactions/withdrawals/wd-mfa-success',
+      }),
+    });
+  });
+
+  await page.route('**/api/auth/mfa/challenge', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'success',
+        message: 'Verification complete.',
+        session: {
+          id: 'session-player-one',
+          deviceId: '',
+          current: true,
+          userAgent: null,
+          ipAddress: null,
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          idleExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+          absoluteExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      }),
+    });
+  });
+
+  try {
+    await fillWithdrawalReview(page);
+    await page.getByRole('button', { name: /confirm withdrawal/i }).click();
+    await expect(page).toHaveURL(/\/auth\/mfa\?.*flow=withdrawal/);
+
+    await page.getByLabel(/authenticator code/i).fill('123456');
+    await page.getByRole('button', { name: /continue securely/i }).click();
+
+    await expect(page.getByRole('heading', { name: /withdrawal queued/i })).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
+    expect(withdrawalRequests).toHaveLength(2);
+    expect(withdrawalRequests[1]?.body).toEqual({
+      amountUsdt: '5.000000',
+      toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    });
+    expect(withdrawalRequests[1]?.idempotencyKey).toBe(withdrawalRequests[0]?.idempotencyKey);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('withdrawal MFA cancellation and failure return with inputs preserved', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  await stubTonConnectWallets(page);
+  let challengeShouldFail = false;
+  let withdrawalCalls = 0;
+
+  await page.route('**/api/transactions/withdraw', async (route) => {
+    withdrawalCalls += 1;
+    await route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'MFA_REQUIRED',
+        message: 'Additional verification required',
+        details: {
+          challengeId: `challenge-withdrawal-${withdrawalCalls}`,
+          challengeReason: 'sensitive_action',
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/auth/mfa/challenge', async (route) => {
+    await route.fulfill({
+      status: challengeShouldFail ? 400 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'INVALID_MFA_CODE',
+        message: 'Unable to complete verification.',
+      }),
+    });
+  });
+
+  try {
+    await fillWithdrawalReview(page);
+    await page.getByRole('button', { name: /confirm withdrawal/i }).click();
+    await expect(page).toHaveURL(/\/auth\/mfa\?.*flow=withdrawal/);
+    await page.getByRole('button', { name: /return to withdrawal/i }).click();
+    await expect(page.getByRole('main').getByText(/verification was cancelled/i)).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
+    await expect(page.getByText(/ready to review/i)).toBeVisible();
+    await expect(page.locator('#withdraw-destination-review')).toHaveValue('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
+    expect(withdrawalCalls).toBe(1);
+
+    challengeShouldFail = true;
+    await page.getByRole('button', { name: /confirm withdrawal/i }).click();
+    await expect(page).toHaveURL(/\/auth\/mfa\?.*flow=withdrawal/);
+    await page.getByLabel(/authenticator code/i).fill('000000');
+    await page.getByRole('button', { name: /continue securely/i }).click();
+    await expect(page.getByRole('main').getByText(/verification failed/i)).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
+    await expect(page.getByText(/ready to review/i)).toBeVisible();
+    await expect(page.locator('#withdraw-destination-review')).toHaveValue('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
+    expect(withdrawalCalls).toBe(2);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('manual withdrawal MFA return URL cannot queue without backend step-up', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  await stubTonConnectWallets(page);
+  let withdrawalCalls = 0;
+
+  await page.route('**/api/transactions/withdraw', async (route) => {
+    withdrawalCalls += 1;
+    await route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'MFA_REQUIRED',
+        message: 'Additional verification required',
+        details: {
+          challengeId: 'challenge-manual-return',
+          challengeReason: 'sensitive_action',
+        },
+      }),
+    });
+  });
+
+  try {
+    await page.goto('/bank');
+    await page.evaluate(() => {
+      window.sessionStorage.setItem('4real:withdrawal-resume-draft', JSON.stringify({
+        version: 1,
+        flow: 'withdrawal',
+        asset: 'USDT',
+        network: 'TON',
+        step: 'review',
+        amountUsdt: '5.000000',
+        toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+        idempotencyKey: 'manual-return-idempotency',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        resumeAfterMfa: true,
+      }));
+    });
+
+    await page.goto('/bank?view=withdraw&flow=withdrawal&mfa=verified');
+    await expect(page).toHaveURL(/\/auth\/mfa\?.*challenge-manual-return/);
+    await expect(page.getByRole('heading', { name: /confirm your identity/i })).toBeVisible();
+    expect(withdrawalCalls).toBe(1);
   } finally {
     await closeContext(context);
   }

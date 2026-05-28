@@ -25,11 +25,18 @@ export function AuthNavigationHandler() {
       }
 
       if (detail.code === 'MFA_REQUIRED' && detail.challengeId) {
+        const returnTo = detail.returnTo ?? `${window.location.pathname}${window.location.search}`;
+        const returnSearchParams = new URLSearchParams(returnTo.split('?')[1] ?? '');
+        const flow = returnSearchParams.get('flow') === 'withdrawal' || returnSearchParams.get('view') === 'withdraw'
+          ? 'withdrawal'
+          : null;
+
         navigate(
           buildMfaChallengePath({
             challengeId: detail.challengeId,
             challengeReason: detail.challengeReason ?? 'sensitive_action',
-            returnTo: detail.returnTo ?? `${window.location.pathname}${window.location.search}`,
+            returnTo,
+            flow,
           }),
           { replace: true },
         );

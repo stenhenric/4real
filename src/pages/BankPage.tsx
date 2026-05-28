@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowDownRight, ArrowUpRight, History, Landmark, Store } from 'lucide-react';
 import { RouteLoading } from '../app/RouteLoading';
 import { useToast } from '../app/ToastProvider';
@@ -8,6 +9,11 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { StatusBadge, statusToneFromStatus } from '../components/ui/StatusBadge';
 import { formatDateTime } from '../features/merchant/format';
 import { getTransactionAccentClass, isCreditTransaction } from '../features/bank/transactionPresentation';
+import {
+  getBankViewFromSearchParams,
+  updateBankViewSearch,
+  type BankView,
+} from '../features/bank/bankRouting';
 import {
   BANK_TRANSACTION_PAGE_SIZE,
   getHasMoreTransactions,
@@ -36,8 +42,6 @@ function formatTransactionType(type: string): string {
   return TRANSACTION_LABELS[type] ?? type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 }
 
-type BankView = 'portal' | 'merchant' | 'deposit' | 'withdraw';
-
 const DepositPanel = lazy(() => import('../features/bank/DepositPanel'));
 const MerchantPanel = lazy(() => import('../features/bank/MerchantPanel'));
 const TonConnectRouteProvider = lazy(() => import('../app/TonConnectRouteProvider').then((module) => ({
@@ -46,7 +50,8 @@ const TonConnectRouteProvider = lazy(() => import('../app/TonConnectRouteProvide
 const WithdrawPanel = lazy(() => import('../features/bank/WithdrawPanel'));
 
 const BankPage = () => {
-  const [activeView, setActiveView] = useState<BankView>('portal');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeView = getBankViewFromSearchParams(searchParams);
   const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
   const [transactionPage, setTransactionPage] = useState(0);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
@@ -56,6 +61,10 @@ const BankPage = () => {
   const [nextTransactionsError, setNextTransactionsError] = useState<string | null>(null);
   const transactionRequestRef = useRef(0);
   const { error: showError } = useToast();
+
+  const setBankView = useCallback((view: BankView) => {
+    setSearchParams(updateBankViewSearch(searchParams, view));
+  }, [searchParams, setSearchParams]);
 
   const fetchTransactionsPage = useCallback(async (
     page: number,
@@ -148,8 +157,8 @@ const BankPage = () => {
   ]);
 
   if (activeView !== 'portal') {
-    const handleReturnToBank = () => setActiveView('portal');
-    const handleViewHistory = () => setActiveView('portal');
+    const handleReturnToBank = () => setBankView('portal');
+    const handleViewHistory = () => setBankView('portal');
     const activePanel = activeView === 'merchant'
       ? <MerchantPanel />
       : activeView === 'deposit'
@@ -163,7 +172,7 @@ const BankPage = () => {
       <div className="space-y-4">
         <SketchyButton
           className="text-sm font-bold uppercase underline hover:opacity-70 transition-opacity mb-4 inline-block"
-          onClick={() => setActiveView('portal')}
+          onClick={() => setBankView('portal')}
           type="button"
         >
           {'←'} Back to Bank
@@ -194,7 +203,7 @@ const BankPage = () => {
           </div>
           <h2 className="text-2xl font-semibold uppercase tracking-tighter mb-2">Deposit</h2>
           <p className="text-xs font-mono font-bold opacity-50 mb-6">Automated USDT on TON</p>
-          <SketchyButton className="w-full" onClick={() => setActiveView('deposit')}>
+          <SketchyButton className="w-full" onClick={() => setBankView('deposit')}>
             Deposit USDT
           </SketchyButton>
         </SketchyContainer>
@@ -205,7 +214,7 @@ const BankPage = () => {
           </div>
           <h2 className="text-2xl font-semibold uppercase tracking-tighter mb-2">Withdraw</h2>
           <p className="text-xs font-mono font-bold opacity-50 mb-6">USDT to a TON wallet</p>
-          <SketchyButton className="w-full" onClick={() => setActiveView('withdraw')}>
+          <SketchyButton className="w-full" onClick={() => setBankView('withdraw')}>
             Withdraw USDT
           </SketchyButton>
         </SketchyContainer>
@@ -222,7 +231,7 @@ const BankPage = () => {
           <SketchyButton
             className="w-full text-warning-text"
             fill="var(--color-note-yellow)"
-            onClick={() => setActiveView('merchant')}
+            onClick={() => setBankView('merchant')}
           >
             Buy / Sell via Fiat
           </SketchyButton>

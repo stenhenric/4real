@@ -224,6 +224,27 @@ test('production-parity withdrawal route requires MFA step-up for normal users',
   assert.equal((await parseJson(response)).code, 'MFA_REQUIRED');
 });
 
+test('production-parity withdrawal route accepts normal users only after fresh MFA step-up', async (t) => {
+  const baseUrl = await startParityApp(t, {
+    principals: {
+      user: principal(),
+    },
+    freshStepUpSessions: ['session-user'],
+  });
+
+  const response = await fetch(`${baseUrl}/api/transactions/withdraw`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders('user'),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ amountUsdt: '5.000000', toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' }),
+  });
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(await parseJson(response), { ok: true, route: 'withdraw' });
+});
+
 test('withdrawal status lookup is scoped to the authenticated user', async (t) => {
   const lookupMock = t.mock.method(WithdrawalRepository, 'findByWithdrawalIdForUser', async () => null);
   const baseUrl = await startParityApp(t, {

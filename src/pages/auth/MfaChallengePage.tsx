@@ -8,7 +8,7 @@ import {
   AuthNotice,
   AuthShell,
 } from '../../features/auth/AuthShell';
-import { getPostAuthPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
+import { addMfaResultFlag, getPostAuthPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { completeMfaChallenge } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
 
@@ -28,7 +28,13 @@ export default function MfaChallengePage() {
 
   const challengeId = searchParams.get('challengeId')?.trim() ?? '';
   const reason = searchParams.get('reason')?.trim();
+  const flow = searchParams.get('flow')?.trim();
   const returnTo = sanitizeInternalPath(searchParams.get('returnTo'));
+  const isWithdrawalStepUp = reason === 'sensitive_action' && flow === 'withdrawal';
+
+  const returnToWithdrawal = (status: 'failed' | 'cancelled') => {
+    navigate(addMfaResultFlag(returnTo ?? '/bank?view=withdraw&flow=withdrawal', status), { replace: true });
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -55,9 +61,19 @@ export default function MfaChallengePage() {
 
       await refreshUser();
       success('Verification complete.');
-      navigate(returnTo ? addVerifiedFlag(returnTo) : '/auth/security?verified=1', { replace: true });
+      navigate(
+        returnTo
+          ? isWithdrawalStepUp
+            ? addMfaResultFlag(returnTo, 'verified')
+            : addVerifiedFlag(returnTo)
+          : '/auth/security?verified=1',
+        { replace: true },
+      );
     } catch (error) {
       showError(getApiErrorMessage(error, 'Unable to complete verification.'));
+      if (isWithdrawalStepUp) {
+        returnToWithdrawal('failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -112,6 +128,17 @@ export default function MfaChallengePage() {
           <SketchyButton className="w-full py-3 text-base" disabled={loading || !challengeId} type="submit">
             {loading ? 'Verifying...' : 'Continue securely'}
           </SketchyButton>
+          {isWithdrawalStepUp ? (
+            <SketchyButton
+              className="w-full py-3 text-base"
+              disabled={loading}
+              onClick={() => returnToWithdrawal('cancelled')}
+              type="button"
+              variant="secondary"
+            >
+              Return to withdrawal
+            </SketchyButton>
+          ) : null}
         </form>
       </div>
     </AuthShell>

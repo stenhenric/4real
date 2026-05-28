@@ -47,11 +47,11 @@ export function prepareTonConnectDeposit(payload: PrepareTonConnectDepositPayloa
   });
 }
 
-export function createWithdrawal(payload: WithdrawRequestDTO) {
+export function createWithdrawal(payload: WithdrawRequestDTO, options?: { idempotencyKey?: string }) {
   return request<WithdrawalRequestAcceptedDTO>('/transactions/withdraw', {
     method: 'POST',
     headers: {
-      'Idempotency-Key': createIdempotencyKey(),
+      'Idempotency-Key': options?.idempotencyKey ?? createIdempotencyKey(),
     },
     body: JSON.stringify(payload),
   });

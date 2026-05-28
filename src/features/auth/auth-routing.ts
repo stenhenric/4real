@@ -83,6 +83,7 @@ export function buildMfaChallengePath(params: {
   challengeId: string;
   challengeReason?: 'suspicious_login' | 'sensitive_action' | null;
   returnTo?: string | null;
+  flow?: 'withdrawal' | null;
 }) {
   const search = new URLSearchParams();
   search.set('challengeId', params.challengeId);
@@ -96,7 +97,18 @@ export function buildMfaChallengePath(params: {
     search.set('returnTo', safeReturnTo);
   }
 
+  if (params.flow) {
+    search.set('flow', params.flow);
+  }
+
   return `/auth/mfa?${search.toString()}`;
+}
+
+export function addMfaResultFlag(path: string | null | undefined, result: 'verified' | 'failed' | 'cancelled') {
+  const safePath = sanitizeInternalPath(path) ?? '/auth/security';
+  const url = new URL(safePath, 'http://4real.local');
+  url.searchParams.set('mfa', result);
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 export function isHandledAuthRedirectCode(code?: string | null) {

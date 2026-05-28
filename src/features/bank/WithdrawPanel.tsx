@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { TonConnectButton, useTonAddress, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowUpRight, Clock } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
@@ -14,10 +15,20 @@ import { createWithdrawal, getWithdrawalStatus } from '../../services/transactio
 import type { WithdrawalRequestAcceptedDTO, WithdrawalStatusDTO } from '../../types/api';
 import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
+import { createIdempotencyKey } from '../../utils/idempotency';
+import {
+  buildWithdrawalMfaReturnPath,
+  clearWithdrawalResumeDraft,
+  createWithdrawalResumeDraft,
+  getBrowserSessionStorage,
+  loadWithdrawalResumeDraft,
+  saveWithdrawalResumeDraft,
+} from './withdrawalResume';
 
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
 const WITHDRAW_ADDRESS_ID = 'withdraw-address';
 const WITHDRAW_DESTINATION_REVIEW_ID = 'withdraw-destination-review';
+const WITHDRAWAL_MFA_RESULTS = new Set(['verified', 'failed', 'cancelled']);
 
 type WithdrawStep = 'form' | 'review' | 'status';
 
@@ -74,6 +85,7 @@ function getStatusMessage(status: WithdrawalStatusDTO['status']) {
 const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
   const { userData, refreshUser } = useAuth();
   const { addToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const wallet = useTonWallet();
   const connectedWalletAddress = useTonAddress();
   const copyToClipboard = useCopyToClipboard();
@@ -87,6 +99,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
   const [withdrawalStatus, setWithdrawalStatus] = useState<WithdrawalStatusDTO | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const resumeAttemptedRef = useRef(false);
 
   useEffect(() => {
     panelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -198,6 +211,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       return;
     }
 
+    setStatusError(null);
     setReviewAmount(normalizedAmount);
     setStep('review');
   };
@@ -209,6 +223,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       setToAddress(value);
     }
 
+    setStatusError(null);
     setFieldErrors((currentErrors) => ({ ...currentErrors, [field]: undefined }));
     if (step !== 'form') {
       setAcceptedWithdrawal(null);
@@ -217,25 +232,31 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     }
   };
 
-  const handleConfirmWithdrawal = async () => {
-    const normalizedAmount = reviewAmount ?? validateForm();
-    if (!normalizedAmount) {
-      setStep('form');
-      return;
-    }
-
+  const submitWithdrawal = useCallback(async (
+    normalizedAmount: string,
+    destination: string,
+    idempotencyKey: string,
+  ) => {
     setLoading(true);
 
     try {
-      const response = await createWithdrawal({ amountUsdt: normalizedAmount, toAddress: normalizedDestination });
+      const response = await createWithdrawal(
+        { amountUsdt: normalizedAmount, toAddress: destination },
+        { idempotencyKey },
+      );
+      const storage = getBrowserSessionStorage();
+      if (storage) {
+        clearWithdrawalResumeDraft(storage);
+      }
       setAcceptedWithdrawal(response);
       setWithdrawalStatus({
         withdrawalId: response.withdrawalId,
         status: response.status,
         amountUsdt: normalizedAmount,
-        toAddress: normalizedDestination,
+        toAddress: destination,
         createdAt: new Date().toISOString(),
       });
+      setStatusError(null);
       setStep('status');
       addToast('Withdrawal queued.', 'success');
       await refreshUser();
@@ -248,6 +269,86 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     } finally {
       setLoading(false);
     }
+  }, [addToast, refreshUser]);
+
+  useEffect(() => {
+    const storage = getBrowserSessionStorage();
+    if (!storage) {
+      return;
+    }
+
+    const resumeStatus = searchParams.get('mfa');
+    const clearResumeStatus = () => {
+      if (!resumeStatus || !WITHDRAWAL_MFA_RESULTS.has(resumeStatus)) {
+        return;
+      }
+
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('mfa');
+      setSearchParams(nextParams, { replace: true });
+    };
+    const result = loadWithdrawalResumeDraft(storage);
+
+    if (result.status === 'expired' || result.status === 'invalid') {
+      clearResumeStatus();
+      setStep('form');
+      setStatusError(result.message);
+      addToast(result.message, 'error');
+      return;
+    }
+
+    if (result.status !== 'ready') {
+      return;
+    }
+
+    const { draft } = result;
+    setAmount(draft.amountUsdt);
+    setToAddress(draft.toAddress);
+    setReviewAmount(draft.amountUsdt);
+    setStep(draft.step);
+
+    if (resumeStatus === 'failed') {
+      clearResumeStatus();
+      setStatusError('Verification failed. Your withdrawal details are still here.');
+      addToast('Verification failed.', 'error');
+      return;
+    }
+
+    if (resumeStatus === 'cancelled') {
+      clearResumeStatus();
+      setStatusError('Verification was cancelled. Your withdrawal details are still here.');
+      addToast('Verification cancelled.', 'info');
+      return;
+    }
+
+    if (resumeStatus === 'verified' && draft.resumeAfterMfa && !resumeAttemptedRef.current) {
+      resumeAttemptedRef.current = true;
+      clearResumeStatus();
+      setStatusError(null);
+      void submitWithdrawal(draft.amountUsdt, draft.toAddress, draft.idempotencyKey);
+    }
+  }, [addToast, searchParams, setSearchParams, submitWithdrawal]);
+
+  const handleConfirmWithdrawal = async () => {
+    const normalizedAmount = reviewAmount ?? validateForm();
+    if (!normalizedAmount) {
+      setStep('form');
+      return;
+    }
+
+    const idempotencyKey = createIdempotencyKey();
+    const storage = getBrowserSessionStorage();
+    if (storage) {
+      saveWithdrawalResumeDraft(storage, createWithdrawalResumeDraft({
+        amountUsdt: normalizedAmount,
+        toAddress: normalizedDestination,
+        step: 'review',
+        idempotencyKey,
+      }));
+    }
+
+    window.history.replaceState(null, '', buildWithdrawalMfaReturnPath());
+    await submitWithdrawal(normalizedAmount, normalizedDestination, idempotencyKey);
   };
 
   const balanceLabel = useMemo(() => formatMoneyValue(userData?.balance), [userData?.balance]);
@@ -476,6 +577,12 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
           <span className="text-sm font-bold uppercase tracking-widest opacity-60">Available Balance:</span>
           <span className="font-mono text-2xl font-bold text-ink-blue">{balanceLabel} USDT</span>
         </div>
+
+        {statusError && step !== 'status' ? (
+          <p className="mb-6 bg-warning-bg p-3 text-sm font-bold text-warning-text" role="status">
+            {statusError}
+          </p>
+        ) : null}
 
         {step === 'form' ? renderFormStep() : null}
         {step === 'review' ? renderReviewStep() : null}

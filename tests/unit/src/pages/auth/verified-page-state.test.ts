@@ -4,6 +4,7 @@ import {
   getVerifiedPageState,
   getVerifiedPostAuthResponse,
 } from '../../../../../src/pages/auth/verified-page-state.ts';
+import { addMfaResultFlag } from '../../../../../src/features/auth/auth-routing.ts';
 import type { UserDTO } from '../../../../../src/types/api.ts';
 
 const completeUser: UserDTO = {
@@ -35,5 +36,17 @@ describe('verified page state', () => {
       user: completeUser,
       nextStep: 'complete_profile',
     });
+  });
+
+  it('adds MFA result flags to internal return paths without dropping existing state', () => {
+    assert.equal(
+      addMfaResultFlag('/bank?view=withdraw&flow=withdrawal', 'failed'),
+      '/bank?view=withdraw&flow=withdrawal&mfa=failed',
+    );
+    assert.equal(
+      addMfaResultFlag('/bank?view=withdraw&mfa=failed#review', 'verified'),
+      '/bank?view=withdraw&mfa=verified#review',
+    );
+    assert.equal(addMfaResultFlag('https://evil.example/bank', 'cancelled'), '/auth/security?mfa=cancelled');
   });
 });
