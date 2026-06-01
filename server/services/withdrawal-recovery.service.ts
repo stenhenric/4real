@@ -205,26 +205,31 @@ export async function recoverStuckWithdrawal(params: {
   }
 
   const session = await mongoose.startSession();
+  let confirmedTransitionApplied = false;
   try {
     await session.withTransaction(async () => {
+      const markedConfirmed = await WithdrawalRepository.markConfirmed(
+        requireWithdrawalId(withdrawal),
+        confirmed.txHash,
+        confirmed.confirmedAt,
+        session,
+      );
+      if (!markedConfirmed) {
+        throw conflict('Withdrawal changed before confirmation could be applied', 'WITHDRAWAL_RECOVERY_STATE_CHANGED');
+      }
+
       await ProcessedTransactionRepository.create({
         txHash: confirmed.txHash,
         processedAt: new Date(),
         type: 'withdrawal_confirm',
       }, session);
 
-      await WithdrawalRepository.markConfirmed(
-        requireWithdrawalId(withdrawal),
-        confirmed.txHash,
-        confirmed.confirmedAt,
-        session,
-      );
-
       await UserBalanceRepository.recordWithdrawalConfirmed(
         withdrawal.userId,
         withdrawal.amountRaw,
         session,
       );
+      confirmedTransitionApplied = true;
     });
   } catch (error) {
     if (!isDuplicateKeyError(error)) {
@@ -232,6 +237,23 @@ export async function recoverStuckWithdrawal(params: {
     }
   } finally {
     await session.endSession();
+  }
+
+  if (!confirmedTransitionApplied) {
+    const current = await WithdrawalRepository.findByWithdrawalId(params.withdrawalId);
+    if (current?.status === 'confirmed') {
+      return {
+        withdrawalId: current.withdrawalId,
+        action: params.action,
+        status: 'confirmed',
+        chainChecked: true,
+        idempotent: true,
+        ...(current.txHash ? { txHash: current.txHash } : {}),
+        ...(current.confirmedAt ? { confirmedAt: current.confirmedAt.toISOString() } : {}),
+      };
+    }
+
+    throw conflict('Withdrawal confirmation could not be applied', 'WITHDRAWAL_RECOVERY_STATE_CHANGED');
   }
 
   await AuditService.record({

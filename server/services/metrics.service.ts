@@ -329,6 +329,30 @@ export function recordDepositIngestionDecision(decision: string): void {
   );
 }
 
+export function recordTerminalFailedDeposit(reason: string): void {
+  incrementCounter(
+    'terminal_failed_deposits_total',
+    'Total deposit ingestions that reached a terminal failed state.',
+    { reason },
+  );
+}
+
+export function recordStuckWithdrawal(reason: string): void {
+  incrementCounter(
+    'stuck_withdrawals_total',
+    'Total withdrawals moved into stuck reconciliation states.',
+    { reason },
+  );
+}
+
+export function recordFailedProofRelay(reason: string): void {
+  incrementCounter(
+    'failed_proof_relays_total',
+    'Total M-Pesa proof relay failures that require operations visibility.',
+    { reason },
+  );
+}
+
 export function setWalletTonBalance(value: number): void {
   setGauge('wallet_ton_balance', 'Last observed TON balance for the hot wallet.', {}, value);
 }

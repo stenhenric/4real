@@ -16,8 +16,11 @@ import {
 } from '../../../../server/services/cache.service.ts';
 import { setRedisClientForTests } from '../../../../server/services/redis.service.ts';
 import {
+  recordFailedProofRelay,
   recordExternalProviderOperation,
   recordRedisOperation,
+  recordStuckWithdrawal,
+  recordTerminalFailedDeposit,
   renderMetrics,
   resetMetricsForTests,
 } from '../../../../server/services/metrics.service.ts';
@@ -358,6 +361,21 @@ test('dependency metrics expose Redis and external provider duration buckets wit
   assert.match(metrics, /redis_operation_duration_ms_bucket\{operation="ping",outcome="success",le="25"\}/);
   assert.match(metrics, /external_provider_duration_ms_bucket\{operation="jetton_transfers",outcome="success",provider="toncenter",le="500"\}/);
   assert.doesNotMatch(metrics, /token|cookie|proof|boc|walletAddress|txHash/i);
+});
+
+test('money-state metrics expose irreversible states without sensitive labels', async () => {
+  resetMetricsForTests();
+
+  recordTerminalFailedDeposit('retry_exhausted');
+  recordStuckWithdrawal('broadcast_unknown');
+  recordFailedProofRelay('terminal_failure');
+
+  const metrics = await renderMetrics();
+
+  assert.match(metrics, /terminal_failed_deposits_total\{reason="retry_exhausted"\} 1/);
+  assert.match(metrics, /stuck_withdrawals_total\{reason="broadcast_unknown"\} 1/);
+  assert.match(metrics, /failed_proof_relays_total\{reason="terminal_failure"\} 1/);
+  assert.doesNotMatch(metrics, /token|cookie|proof_payload|fileBase64|boc|walletAddress|txHash|orderId|userId/i);
 });
 
 test('cache observability records hit, miss, write, invalidate, coalesced, and loader failure events', async (t) => {

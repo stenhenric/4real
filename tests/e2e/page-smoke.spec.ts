@@ -6,6 +6,7 @@ type RouteExpectation = {
   heading?: RegExp;
   text?: RegExp;
   waitForSelector?: string;
+  waitForResponse?: RegExp;
 };
 
 const MOCK_TON_WALLETS = [{
@@ -25,6 +26,8 @@ const MOCK_TON_WALLETS = [{
 const DEFAULT_IGNORED_CONSOLE_ERRORS = [
   /downloadable font: .*Cabin Sketch/i,
   /WebSocket connection to 'ws:\/\/127\.0\.0\.1:4317\/socket\.io\/.*' failed: WebSocket is closed before the connection is established\./i,
+  /Firefox can.t establish a connection to the server at ws:\/\/127\.0\.0\.1:4317\/socket\.io\/.*transport=websocket/i,
+  /The connection to ws:\/\/127\.0\.0\.1:4317\/socket\.io\/.*transport=websocket was interrupted while the page was loading/i,
 ];
 
 function installErrorCollectors(page: Page, options?: { ignoreConsole?: RegExp[]; ignorePageErrors?: RegExp[] }) {
@@ -96,6 +99,10 @@ async function fillWithdrawalReview(page: Page) {
 }
 
 async function expectRouteToRender(page: Page, route: RouteExpectation) {
+  const responsePromise = route.waitForResponse
+    ? page.waitForResponse((response) => route.waitForResponse!.test(response.url()))
+    : undefined;
+
   await page.goto(route.path);
 
   if (route.waitForSelector) {
@@ -109,6 +116,8 @@ async function expectRouteToRender(page: Page, route: RouteExpectation) {
   if (route.text) {
     await expect(page.getByText(route.text).first()).toBeVisible();
   }
+
+  await responsePromise;
 }
 
 test.beforeEach(async ({ request }) => {
@@ -148,7 +157,7 @@ test('player routes when a session is preloaded render the lobby leaderboard ban
   });
   const routes: RouteExpectation[] = [
     { path: '/leaderboard', text: /leaderboard/i },
-    { path: '/bank', heading: /the bank/i },
+    { path: '/bank', heading: /the bank/i, waitForResponse: /\/api\/transactions\?page=1&pageSize=25$/ },
     { path: '/profile/user-player-one', heading: /player-one/i },
     { path: '/play', heading: /central lobby/i },
   ];
@@ -181,7 +190,9 @@ test('play lobby fetches leaderboard only after the leaderboard tab is opened', 
     await expect(page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
     await page.waitForLoadState('networkidle');
 
-    expect(requestedPaths.filter((path) => path === '/api/matches/active').length).toBeGreaterThanOrEqual(1);
+    await expect.poll(
+      () => requestedPaths.filter((path) => path === '/api/matches/active').length,
+    ).toBeGreaterThanOrEqual(1);
     expect(requestedPaths.filter((path) => path === '/api/users/leaderboard')).toHaveLength(0);
 
     await page.getByRole('tab', { name: /leaderboard/i }).click();
@@ -310,6 +321,7 @@ test('withdrawal MFA success returns to the interrupted review and queues throug
           message: 'Additional verification required',
           details: {
             challengeId: 'challenge-withdrawal-success',
+            withdrawalIntentId: 'intent-withdrawal-success',
             challengeReason: 'sensitive_action',
           },
         }),
@@ -337,6 +349,7 @@ test('withdrawal MFA success returns to the interrupted review and queues throug
       body: JSON.stringify({
         status: 'success',
         message: 'Verification complete.',
+        withdrawalIntentId: 'intent-withdrawal-success',
         session: {
           id: 'session-player-one',
           deviceId: '',
@@ -355,10 +368,10 @@ test('withdrawal MFA success returns to the interrupted review and queues throug
   try {
     await fillWithdrawalReview(page);
     await page.getByRole('button', { name: /confirm withdrawal/i }).click();
-    await expect(page).toHaveURL(/\/auth\/mfa\?.*flow=withdrawal/);
+    await expect(page).toHaveURL(/\/auth\/withdrawal-mfa\?.*challenge-withdrawal-success/);
 
     await page.getByLabel(/authenticator code/i).fill('123456');
-    await page.getByRole('button', { name: /continue securely/i }).click();
+    await page.getByRole('button', { name: /authorize & submit/i }).click();
 
     await expect(page.getByRole('heading', { name: /withdrawal queued/i })).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
@@ -366,8 +379,50 @@ test('withdrawal MFA success returns to the interrupted review and queues throug
     expect(withdrawalRequests[1]?.body).toEqual({
       amountUsdt: '5.000000',
       toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+      withdrawalIntentId: 'intent-withdrawal-success',
     });
     expect(withdrawalRequests[1]?.idempotencyKey).toBe(withdrawalRequests[0]?.idempotencyKey);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('withdrawal confirm ignores rapid duplicate clicks and reuses one idempotency key', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  await stubTonConnectWallets(page);
+  const withdrawalRequests: Array<{ idempotencyKey: string | null; body: unknown }> = [];
+
+  await page.route('**/api/transactions/withdraw', async (route) => {
+    const request = route.request();
+    withdrawalRequests.push({
+      idempotencyKey: request.headers()['idempotency-key'] ?? null,
+      body: request.postDataJSON(),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        message: 'Withdrawal queued successfully',
+        status: 'queued',
+        withdrawalId: 'wd-duplicate-click',
+        statusUrl: '/api/transactions/withdrawals/wd-duplicate-click',
+      }),
+    });
+  });
+
+  try {
+    await fillWithdrawalReview(page);
+    const confirmWithdrawal = page.getByRole('button', { name: /confirm withdrawal/i });
+    await confirmWithdrawal.evaluate((button) => {
+      (button as HTMLButtonElement).click();
+      (button as HTMLButtonElement).click();
+    });
+
+    await expect(page.getByRole('heading', { name: /withdrawal queued/i })).toBeVisible();
+    expect(withdrawalRequests).toHaveLength(1);
+    expect(withdrawalRequests[0]?.idempotencyKey).toBeTruthy();
   } finally {
     await closeContext(context);
   }
@@ -389,6 +444,7 @@ test('withdrawal MFA cancellation and failure return with inputs preserved', asy
         message: 'Additional verification required',
         details: {
           challengeId: `challenge-withdrawal-${withdrawalCalls}`,
+          withdrawalIntentId: `intent-withdrawal-${withdrawalCalls}`,
           challengeReason: 'sensitive_action',
         },
       }),
@@ -409,8 +465,8 @@ test('withdrawal MFA cancellation and failure return with inputs preserved', asy
   try {
     await fillWithdrawalReview(page);
     await page.getByRole('button', { name: /confirm withdrawal/i }).click();
-    await expect(page).toHaveURL(/\/auth\/mfa\?.*flow=withdrawal/);
-    await page.getByRole('button', { name: /return to withdrawal/i }).click();
+    await expect(page).toHaveURL(/\/auth\/withdrawal-mfa\?.*challenge-withdrawal-1/);
+    await page.getByRole('button', { name: /cancel transaction/i }).click();
     await expect(page.getByRole('main').getByText(/verification was cancelled/i)).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
     await expect(page.getByText(/ready to review/i)).toBeVisible();
@@ -419,9 +475,9 @@ test('withdrawal MFA cancellation and failure return with inputs preserved', asy
 
     challengeShouldFail = true;
     await page.getByRole('button', { name: /confirm withdrawal/i }).click();
-    await expect(page).toHaveURL(/\/auth\/mfa\?.*flow=withdrawal/);
+    await expect(page).toHaveURL(/\/auth\/withdrawal-mfa\?.*challenge-withdrawal-2/);
     await page.getByLabel(/authenticator code/i).fill('000000');
-    await page.getByRole('button', { name: /continue securely/i }).click();
+    await page.getByRole('button', { name: /authorize & submit/i }).click();
     await expect(page.getByRole('main').getByText(/verification failed/i)).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
     await expect(page.getByText(/ready to review/i)).toBeVisible();
@@ -447,6 +503,7 @@ test('manual withdrawal MFA return URL cannot queue without backend step-up', as
         message: 'Additional verification required',
         details: {
           challengeId: 'challenge-manual-return',
+          withdrawalIntentId: 'intent-manual-return',
           challengeReason: 'sensitive_action',
         },
       }),
@@ -472,8 +529,8 @@ test('manual withdrawal MFA return URL cannot queue without backend step-up', as
     });
 
     await page.goto('/bank?view=withdraw&flow=withdrawal&mfa=verified');
-    await expect(page).toHaveURL(/\/auth\/mfa\?.*challenge-manual-return/);
-    await expect(page.getByRole('heading', { name: /confirm your identity/i })).toBeVisible();
+    await expect(page).toHaveURL(/\/auth\/withdrawal-mfa\?.*challenge-manual-return/);
+    await expect(page.getByRole('heading', { name: /confirm withdrawal/i })).toBeVisible();
     expect(withdrawalCalls).toBe(1);
   } finally {
     await closeContext(context);
@@ -490,8 +547,16 @@ test.describe('mobile merchant shell', () => {
     const health = installErrorCollectors(page);
     const routes: RouteExpectation[] = [
       { path: '/merchant', heading: /treasury overview/i },
-      { path: '/merchant/orders', heading: /order desk/i },
-      { path: '/merchant/deposits', heading: /deposit reconciliation/i },
+      {
+        path: '/merchant/orders',
+        heading: /order desk/i,
+        waitForResponse: /\/admin\/merchant\/orders\?page=1&pageSize=25&status=PENDING&type=ALL$/,
+      },
+      {
+        path: '/merchant/deposits',
+        heading: /deposit reconciliation/i,
+        waitForResponse: /\/admin\/merchant\/deposits\?status=open&limit=100$/,
+      },
       { path: '/merchant/liquidity', heading: /liquidity & wallets/i },
       { path: '/merchant/alerts', heading: /alerts & risk/i },
     ];

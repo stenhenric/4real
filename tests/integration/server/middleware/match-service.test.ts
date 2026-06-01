@@ -270,6 +270,68 @@ test('getActiveMatches only returns public waiting matches using the indexed lis
   });
 });
 
+test('expireStaleMatches does not settle an active match after fresh activity wins the race', async (t) => {
+  registerSessionCleanup(t);
+
+  const activeCandidate = createMatchDocument({
+    roomId: 'race-room',
+    status: 'active',
+  });
+  const refreshedMatch = createMatchDocument({
+    roomId: 'race-room',
+    status: 'active',
+  });
+  refreshedMatch.lastActivityAt = new Date(Date.now() + 30_000);
+
+  const findMock = mock.method(Match, 'find', (filter: { status?: string }) => (
+    filter.status === 'active'
+      ? createResolvedQuery([activeCandidate])
+      : createResolvedQuery([])
+  ));
+  const getMatchMock = mock.method(MatchService, 'getMatchByRoomId', async () => refreshedMatch as any);
+
+  t.after(() => findMock.mock.restore());
+  t.after(() => getMatchMock.mock.restore());
+
+  const result = await MatchService.expireStaleMatches();
+
+  assert.deepEqual(result, { waitingExpired: 0, activeExpired: 0 });
+  assert.equal(refreshedMatch.status, 'active');
+  assert.equal(refreshedMatch.settlementReason, undefined);
+  assert.equal(refreshedMatch.savedWithSession, false);
+});
+
+test('expireStaleMatches settles a still-stale active match once', async (t) => {
+  registerSessionCleanup(t);
+
+  const activeCandidate = createMatchDocument({
+    roomId: 'stale-room',
+    status: 'active',
+  });
+  const staleMatch = createMatchDocument({
+    roomId: 'stale-room',
+    status: 'active',
+  });
+  staleMatch.lastActivityAt = new Date(0);
+
+  const findMock = mock.method(Match, 'find', (filter: { status?: string }) => (
+    filter.status === 'active'
+      ? createResolvedQuery([activeCandidate])
+      : createResolvedQuery([])
+  ));
+  const getMatchMock = mock.method(MatchService, 'getMatchByRoomId', async () => staleMatch as any);
+
+  t.after(() => findMock.mock.restore());
+  t.after(() => getMatchMock.mock.restore());
+
+  const result = await MatchService.expireStaleMatches();
+
+  assert.deepEqual(result, { waitingExpired: 0, activeExpired: 1 });
+  assert.equal(staleMatch.status, 'completed');
+  assert.equal(staleMatch.settlementReason, 'active_expired');
+  assert.equal(staleMatch.savedWithSession, true);
+});
+
 test('match create request validation defaults free public matches and rejects malformed input', () => {
   assert.deepEqual(createMatchRequestSchema.parse({}), {
     wager: '0.000000',

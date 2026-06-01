@@ -15,10 +15,11 @@ test('WithdrawalIntentService createIntent, authorizeIntent, and consumeIntent',
     get: async (key: string) => {
       return store.get(key) || null;
     },
-    del: async (key: string) => {
+    getdel: async (key: string) => {
+      const value = store.get(key) || null;
       const exists = store.has(key);
       store.delete(key);
-      return exists ? 1 : 0;
+      return exists ? value : null;
     },
   } as any;
 
@@ -68,5 +69,78 @@ test('WithdrawalIntentService createIntent, authorizeIntent, and consumeIntent',
   // Double-read should return null (prevent replay!)
   const doubleConsumed = await WithdrawalIntentService.consumeIntent(withdrawalIntentId);
   assert.equal(doubleConsumed, null);
+  assert.equal(store.has(`auth:withdrawal:intent:${withdrawalIntentId}`), false);
+});
+
+test('WithdrawalIntentService atomically consumes only when bound fields match', async (t) => {
+  const store = new Map<string, string>();
+  const mockRedis = {
+    setex: async (key: string, _ttl: number, val: string) => {
+      store.set(key, val);
+      return 'OK';
+    },
+    get: async (key: string) => {
+      return store.get(key) || null;
+    },
+    eval: async (_script: string, _keyCount: number, key: string, _mismatchSentinel: string, ...expectedFragments: string[]) => {
+      const raw = store.get(key) ?? null;
+      if (!raw) {
+        return null;
+      }
+
+      if (!expectedFragments.every((fragment) => raw.includes(fragment))) {
+        return '__WITHDRAWAL_INTENT_MISMATCH__';
+      }
+
+      store.delete(key);
+      return raw;
+    },
+  } as any;
+
+  setRedisClientForTests(mockRedis);
+  t.after(() => setRedisClientForTests(null));
+
+  const createChallengeMock = mock.method(AuthMfaService, 'createChallenge', async () => 'challenge-atomic');
+  t.after(() => createChallengeMock.mock.restore());
+
+  const { withdrawalIntentId } = await WithdrawalIntentService.createIntent({
+    userId: 'user-atomic',
+    toAddress: 'EQAtomic',
+    amountUsdt: '12.000000',
+    idempotencyKey: 'idem-atomic',
+  });
+  await WithdrawalIntentService.authorizeIntent(withdrawalIntentId);
+
+  await assert.rejects(
+    WithdrawalIntentService.consumeIntent(withdrawalIntentId, {
+      userId: 'user-atomic',
+      toAddress: 'EQAtomic',
+      amountUsdt: '12.000000',
+      idempotencyKey: 'different-idem',
+    }),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, 'WITHDRAWAL_INTENT_INVALID');
+      return true;
+    },
+  );
+
+  assert.equal(store.has(`auth:withdrawal:intent:${withdrawalIntentId}`), true);
+
+  const [first, second] = await Promise.all([
+    WithdrawalIntentService.consumeIntent(withdrawalIntentId, {
+      userId: 'user-atomic',
+      toAddress: 'EQAtomic',
+      amountUsdt: '12.000000',
+      idempotencyKey: 'idem-atomic',
+    }),
+    WithdrawalIntentService.consumeIntent(withdrawalIntentId, {
+      userId: 'user-atomic',
+      toAddress: 'EQAtomic',
+      amountUsdt: '12.000000',
+      idempotencyKey: 'idem-atomic',
+    }),
+  ]);
+
+  assert.equal([first, second].filter(Boolean).length, 1);
   assert.equal(store.has(`auth:withdrawal:intent:${withdrawalIntentId}`), false);
 });

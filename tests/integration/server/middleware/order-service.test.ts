@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import test, { mock, type TestContext } from 'node:test';
 import mongoose from 'mongoose';
 
@@ -663,6 +664,15 @@ test('createOrder accepts plausible BUY M-Pesa code but leaves order pending for
   assert.equal(createOrderInput?.transactionCodeOriginal, 'u e r 1234567');
   assert.equal(createOrderInput?.transactionCodeNormalized, 'UER1234567');
   assert.equal(createOrderInput?.mpesaCodeValidationReason, 'VALID_PLAUSIBLE');
+  assert.deepEqual(createOrderInput?.proofUpload, {
+    checksumSha256: crypto.createHash('sha256').update(createProofImage().data).digest('hex'),
+    mimeType: 'image/png',
+    sizeBytes: 9,
+    storageKey: `order-proofs/${userId.toString()}/hash-123/${crypto.createHash('sha256').update(createProofImage().data).digest('hex')}`,
+    uploaderUserId: userId,
+    createdAt: createOrderInput?.proofUpload && (createOrderInput.proofUpload as { createdAt: unknown }).createdAt,
+  });
+  assert.equal((createOrderInput?.proofUpload as { createdAt?: unknown })?.createdAt instanceof Date, true);
   assert.equal(createOrderMock.mock.callCount(), 1);
   assert.equal(relayCreated, true);
   assert.equal(sendOrderCreatedMock.mock.callCount(), 1);

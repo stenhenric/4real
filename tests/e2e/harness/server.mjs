@@ -1498,6 +1498,10 @@ function createApp() {
   });
 
   app.use('/assets', express.static(path.join(distPath, 'assets'), { fallthrough: false }));
+  app.use('/server', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).send('Not found');
+  });
   app.use(express.static(distPath, { index: false }));
   app.get('*', (_req, res) => {
     res.sendFile(indexPath);

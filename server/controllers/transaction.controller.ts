@@ -103,29 +103,33 @@ export const requestWithdrawalHandler = async (req: AuthRequest, res: Response):
     });
   }
 
-  // If withdrawalIntentId is provided, consume it
-  const intent = await WithdrawalIntentService.consumeIntent(withdrawalIntentId);
-  if (!intent) {
-    throw forbidden('Withdrawal intent expired, already consumed, or invalid', 'WITHDRAWAL_INTENT_EXPIRED');
-  }
-
-  // Validate that the intent matches user, amount, toAddress, and is authorized
-  if (
-    intent.userId !== userId ||
-    intent.toAddress !== toAddress ||
-    intent.amountUsdt !== amountUsdt ||
-    !intent.authorized
-  ) {
-    throw forbidden('Withdrawal intent invalid or not authorized', 'WITHDRAWAL_INTENT_INVALID');
-  }
-
-  // Proceed with executing the idempotent mutation
+  // Claim/replay the idempotent mutation before consuming the single-use MFA intent.
   const result = await executeIdempotentMutationV2({
     userId,
     routeKey: 'transactions:withdraw',
     idempotencyKey,
     requestPayload: { toAddress, amountUsdt, withdrawalIntentId },
     execute: async ({ session }) => {
+      const intent = await WithdrawalIntentService.consumeIntent(withdrawalIntentId, {
+        userId,
+        toAddress,
+        amountUsdt,
+        idempotencyKey,
+      });
+      if (!intent) {
+        throw forbidden('Withdrawal intent expired or invalid. Please restart withdrawal review.', 'WITHDRAWAL_INTENT_EXPIRED');
+      }
+
+      if (
+        intent.userId !== userId ||
+        intent.toAddress !== toAddress ||
+        intent.amountUsdt !== amountUsdt ||
+        intent.idempotencyKey !== idempotencyKey ||
+        !intent.authorized
+      ) {
+        throw forbidden('Withdrawal intent invalid or not authorized', 'WITHDRAWAL_INTENT_INVALID');
+      }
+
       const withdrawalId = uuidv4();
       await requestWithdrawal({ userId, toAddress, amountUsdt, withdrawalId, session });
 

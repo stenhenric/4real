@@ -45,6 +45,14 @@ const MPESA_TRANSACTION_CODE_GENERIC_MESSAGE =
 const MPESA_TRANSACTION_CODE_LOCKED_MESSAGE =
   'Too many transaction code attempts. Please wait and try again, or contact support for manual review.';
 
+function buildProofStorageKey(params: {
+  userId: string;
+  requestHash: string;
+  checksumSha256: string;
+}): string {
+  return `order-proofs/${params.userId}/${params.requestHash}/${params.checksumSha256}`;
+}
+
 function createMerchantActionUrl(): string {
   return new URL('/merchant/orders', getPublicAppOrigin()).toString();
 }
@@ -280,6 +288,20 @@ export class OrderController {
           userId: user._id,
           type: parsedBody.type,
           amount: parsedBody.amount,
+          ...(proofImage && proofDigest ? {
+            proofUpload: {
+              checksumSha256: proofDigest,
+              mimeType: proofImage.contentType,
+              sizeBytes: proofImage.size,
+              storageKey: buildProofStorageKey({
+                userId: user._id.toString(),
+                requestHash,
+                checksumSha256: proofDigest,
+              }),
+              uploaderUserId: user._id,
+              createdAt: new Date(),
+            },
+          } : {}),
           proofRelayQueued: Boolean(proofRelay),
           ...(mpesaValidation ? {
             transactionCode: mpesaValidation.normalizedCode,

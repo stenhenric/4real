@@ -1122,12 +1122,23 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
   const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
   const queuedEmailMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalQueued', async () => {});
-  const consumeIntentMock = mock.method(WithdrawalIntentService, 'consumeIntent', async () => ({
-    userId: 'user-handler',
-    toAddress: ZERO_ADDRESS,
-    amountUsdt: '1.5',
-    authorized: true,
-  }));
+  let consumeCalls = 0;
+  const consumeIntentMock = mock.method(WithdrawalIntentService, 'consumeIntent', async () => {
+    consumeCalls += 1;
+    if (consumeCalls > 1) {
+      return null;
+    }
+
+    return {
+      userId: 'user-handler',
+      toAddress: ZERO_ADDRESS,
+      amountUsdt: '1.5',
+      idempotencyKey: 'idem-handler-1',
+      challengeId: 'challenge-handler-1',
+      authorized: true,
+      createdAt: Date.now(),
+    };
+  });
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => claimMock.mock.restore());
@@ -1184,6 +1195,52 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   assert.deepEqual(replayResponse.body, replayBody);
   assert.equal(queuedEmailMock.mock.callCount(), 0);
   assert.equal(createQueuedMock.mock.callCount(), 1);
+  assert.equal(consumeIntentMock.mock.callCount(), 1);
+});
+
+test('requestWithdrawalHandler rejects resume when intent idempotency key does not match submitted key', async (t) => {
+  registerBaseCleanup(t);
+
+  const session = createSessionMock();
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
+  const claimMock = mock.method(IdempotencyKeyRepository, 'claimOrGetExisting', async () => null);
+  const completeMock = mock.method(IdempotencyKeyRepository, 'markCompletedIfProcessing', async () => true);
+  const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-handler' } as any));
+  const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
+  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+  const consumeIntentMock = mock.method(WithdrawalIntentService, 'consumeIntent', async () => ({
+    userId: 'user-handler',
+    toAddress: ZERO_ADDRESS,
+    amountUsdt: '1.5',
+    idempotencyKey: 'idem-original',
+    challengeId: 'challenge-handler-2',
+    authorized: true,
+    createdAt: Date.now(),
+  }));
+
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => claimMock.mock.restore());
+  t.after(() => completeMock.mock.restore());
+  t.after(() => deductMock.mock.restore());
+  t.after(() => createQueuedMock.mock.restore());
+  t.after(() => dailyLimitMock.mock.restore());
+  t.after(() => consumeIntentMock.mock.restore());
+
+  await assert.rejects(
+    requestWithdrawalHandler({
+      user: { id: 'user-handler', mfaEnabled: true },
+      body: { toAddress: ZERO_ADDRESS, amountUsdt: '1.5', withdrawalIntentId: 'test-intent-id' },
+      get: (name: string) => name.toLowerCase() === 'idempotency-key' ? 'idem-submitted' : undefined,
+    } as any, createResponseMock() as any),
+    (error: unknown) => {
+      assert.equal((error as { statusCode?: number }).statusCode, 403);
+      assert.equal((error as { code?: string }).code, 'WITHDRAWAL_INTENT_INVALID');
+      return true;
+    },
+  );
+
+  assert.equal(createQueuedMock.mock.callCount(), 0);
+  assert.equal(deductMock.mock.callCount(), 0);
 });
 
 test('runWithdrawalWorker claims only one queued withdrawal at a time', async (t) => {
@@ -1435,6 +1492,64 @@ test('runWithdrawalWorker does not refund seqno timeout paths', async (t) => {
   });
 });
 
+test('runWithdrawalWorker marks post-broadcast unknown errors as stuck and never refunds', async (t) => {
+  registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+  await initWorker();
+
+  const claimMock = mock.method(WithdrawalRepository, 'claimNextQueued', async () => ({
+    _id: 'doc-broadcast-unknown',
+    withdrawalId: 'wd-broadcast-unknown',
+    userId: 'user-broadcast-unknown',
+    toAddress: ZERO_ADDRESS,
+    amountRaw: '1000000',
+    amountDisplay: '1.000000',
+    status: 'queued',
+    createdAt: new Date(),
+    retries: 2,
+  }));
+  const sentAt = new Date('2026-01-01T00:01:00.000Z');
+  const unknownError = new withdrawalEngineModule.WithdrawalBroadcastUnknownError(
+    21,
+    sentAt,
+    'TON transfer broadcast outcome is unknown',
+  );
+  const markStuckMock = mock.method(WithdrawalRepository, 'markStuck', async () => {});
+  const retryStateMock = mock.method(WithdrawalRepository, 'markRetryState', async () => {});
+  const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
+  const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-unknown' } as any));
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
+
+  t.after(() => claimMock.mock.restore());
+  t.after(() => markStuckMock.mock.restore());
+  t.after(() => retryStateMock.mock.restore());
+  t.after(() => refundMock.mock.restore());
+  t.after(() => createTransactionMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  t.after(() => merchantAlertMock.mock.restore());
+  setWithdrawalWorkerDependenciesForTests({
+    sendUsdtWithdrawal: async () => {
+      throw unknownError;
+    },
+  });
+
+  await runWithdrawalWorker();
+
+  assert.equal(markStuckMock.mock.callCount(), 1);
+  assert.equal(markStuckMock.mock.calls[0].arguments[2], 21);
+  assert.equal((markStuckMock.mock.calls[0].arguments[3] as Date).toISOString(), sentAt.toISOString());
+  assert.equal(retryStateMock.mock.callCount(), 0);
+  assert.equal(refundMock.mock.callCount(), 0);
+  assert.equal(createTransactionMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 1);
+  assert.equal(merchantAlertMock.mock.callCount(), 1);
+});
+
 test('runWithdrawalWorker marks submitted withdrawals as stuck when markSent fails and never refunds them', async (t) => {
   registerBaseCleanup(t);
   setHotWalletRuntimeForTests({
@@ -1594,7 +1709,14 @@ test('confirmSentWithdrawals marks matching outbound transfers as confirmed and 
       throw { code: 11000 };
     }
   });
-  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => {});
+  let markedOnce = false;
+  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => {
+    if (markedOnce) {
+      return false;
+    }
+    markedOnce = true;
+    return true;
+  });
   const withdrawnMock = mock.method(UserBalanceRepository, 'recordWithdrawalConfirmed', async () => {});
   const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
 
@@ -1614,9 +1736,9 @@ test('confirmSentWithdrawals marks matching outbound transfers as confirmed and 
   await confirmSentWithdrawals();
   await confirmSentWithdrawals();
 
-  assert.equal(markConfirmedMock.mock.callCount(), 1);
+  assert.equal(markConfirmedMock.mock.callCount(), 2);
   assert.equal(withdrawnMock.mock.callCount(), 1);
-  assert.equal(processedCreateMock.mock.callCount(), 2);
+  assert.equal(processedCreateMock.mock.callCount(), 1);
   assert.equal(pendingDoc.toAddress, ZERO_ADDRESS);
   assert.equal(transitionMock.mock.callCount(), 1);
   assert.deepEqual(transitionMock.mock.calls[0].arguments[0], {
@@ -1630,6 +1752,54 @@ test('confirmSentWithdrawals marks matching outbound transfers as confirmed and 
   });
 });
 
+test('confirmSentWithdrawals does not record accounting when confirmed transition loses a race', async (t) => {
+  registerBaseCleanup(t);
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: HOT_WALLET_ADDRESS,
+    hotJettonWallet: HOT_JETTON_WALLET,
+    derivedHotJettonWallet: HOT_JETTON_WALLET,
+  });
+  await initWorker();
+
+  const pendingMock = mock.method(WithdrawalRepository, 'findPendingConfirmation', async () => [{
+    _id: 'doc-race-confirm',
+    withdrawalId: 'wd-race-confirm',
+    userId: 'user-race-confirm',
+    toAddress: ZERO_ADDRESS,
+    amountRaw: '1000000',
+    amountDisplay: '1.000000',
+    status: 'sent' as const,
+    createdAt: new Date(),
+    sentAt: new Date('2026-01-02T00:00:00.000Z'),
+    retries: 0,
+  }]);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => false);
+  const withdrawnMock = mock.method(UserBalanceRepository, 'recordWithdrawalConfirmed', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+
+  t.after(() => pendingMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => processedCreateMock.mock.restore());
+  t.after(() => markConfirmedMock.mock.restore());
+  t.after(() => withdrawnMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+  setWithdrawalWorkerDependenciesForTests({
+    findWithdrawalTransferOnChain: async () => ({
+      txHash: 'chain-race-confirm',
+      confirmedAt: new Date('2026-01-02T00:05:00.000Z'),
+    }),
+  });
+
+  await confirmSentWithdrawals();
+
+  assert.equal(markConfirmedMock.mock.callCount(), 1);
+  assert.equal(processedCreateMock.mock.callCount(), 0);
+  assert.equal(withdrawnMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 0);
+});
+
 test('markConfirmed can reconcile stale processing withdrawals found on-chain', async (t) => {
   const repository = WithdrawalRepository as unknown as {
     collection: () => {
@@ -1640,14 +1810,16 @@ test('markConfirmed can reconcile stale processing withdrawals found on-chain', 
   const collectionMock = mock.method(repository, 'collection', () => ({
     async updateOne(...args: unknown[]) {
       updateCalls.push(args);
+      return { matchedCount: 1, modifiedCount: 1 };
     },
   }));
 
   t.after(() => collectionMock.mock.restore());
 
   const confirmedAt = new Date('2026-01-02T00:07:00.000Z');
-  await WithdrawalRepository.markConfirmed('doc-recover-1', 'chain-recovered-1', confirmedAt);
+  const marked = await WithdrawalRepository.markConfirmed('doc-recover-1', 'chain-recovered-1', confirmedAt);
 
+  assert.equal(marked, true);
   assert.equal(updateCalls.length, 1);
   const filter = updateCalls[0]?.[0] as { _id?: string; status?: { $in?: string[] } };
   const update = updateCalls[0]?.[1] as { $set?: { status?: string; txHash?: string; confirmedAt?: Date } };
@@ -1791,7 +1963,7 @@ test('recoverStuckWithdrawals sends confirmed user notification after recovered 
   }]);
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
   const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
-  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => {});
+  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => true);
   const withdrawnMock = mock.method(UserBalanceRepository, 'recordWithdrawalConfirmed', async () => {});
   const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
 

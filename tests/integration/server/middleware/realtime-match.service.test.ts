@@ -10,6 +10,7 @@ import { MatchService } from '../../../../server/services/match.service.ts';
 import { RealtimeMatchService } from '../../../../server/services/realtime-match.service.ts';
 import { setRedisClientForTests } from '../../../../server/services/redis.service.ts';
 import { UserService } from '../../../../server/services/user.service.ts';
+import { SOCKET_IO_TRANSPORTS } from '../../../../shared/socket-config.ts';
 
 function registerRealtimeEnvCleanup(t: TestContext) {
   const previous = {
@@ -400,4 +401,8 @@ test('GameRoomRegistry keeps distributed room membership when a stale socket dis
     roundTripped?.players.find((player) => player.userId === player1Id)?.socketId,
     'socket-new',
   );
+});
+
+test('Socket.IO transport policy is websocket-only for distributed safety', () => {
+  assert.deepEqual(SOCKET_IO_TRANSPORTS, ['websocket']);
 });

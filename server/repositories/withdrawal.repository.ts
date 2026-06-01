@@ -72,14 +72,16 @@ export class WithdrawalRepository {
     );
   }
 
-  static async markSent(id: WithdrawalDocumentId, seqno: number, sentAt: Date = new Date()): Promise<void> {
-    await this.collection().updateOne(
-      { _id: id },
+  static async markSent(id: WithdrawalDocumentId, seqno: number, sentAt: Date = new Date()): Promise<boolean> {
+    const result = await this.collection().updateOne(
+      { _id: id, status: 'processing' },
       {
         $set: { status: 'sent', sentAt, updatedAt: new Date(), seqno },
         $unset: { lastError: '' },
       },
     );
+
+    return result.modifiedCount === 1;
   }
 
   static async markStuck(id: WithdrawalDocumentId, lastError: string, seqno?: number, sentAt?: Date): Promise<void> {
@@ -109,8 +111,8 @@ export class WithdrawalRepository {
     );
   }
 
-  static async markConfirmed(id: WithdrawalDocumentId, txHash: string, confirmedAt: Date, session?: mongoose.ClientSession): Promise<void> {
-    await this.collection().updateOne(
+  static async markConfirmed(id: WithdrawalDocumentId, txHash: string, confirmedAt: Date, session?: mongoose.ClientSession): Promise<boolean> {
+    const result = await this.collection().updateOne(
       { _id: id, status: { $in: ['processing', 'sent', 'stuck'] } },
       {
         $set: {
@@ -123,6 +125,8 @@ export class WithdrawalRepository {
       },
       session ? { session } : undefined,
     );
+
+    return result.modifiedCount === 1;
   }
 
   static async markStuckRefunded(id: WithdrawalDocumentId, lastError: string, session?: mongoose.ClientSession): Promise<boolean> {

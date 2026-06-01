@@ -7,6 +7,7 @@ import {
   type OrderProofRelayDocument,
   type OrderProofRelayPayload,
 } from '../repositories/order-proof-relay.repository.ts';
+import { recordFailedProofRelay } from './metrics.service.ts';
 import { relayOrderProofToTelegram } from './telegram-proof.service.ts';
 import { logger } from '../utils/logger.ts';
 
@@ -116,6 +117,7 @@ async function processClaimedOrderProofRelay(
 
     if (!shouldRetryRelay(error) || attempts >= MAX_RELAY_ATTEMPTS) {
       await OrderProofRelayRepository.markTerminalFailure(document._id, lastError);
+      recordFailedProofRelay('terminal_failure');
       logger.error('order.proof_relay_terminal_failure', {
         orderId: document.orderId,
         requestHash: document.requestHash,

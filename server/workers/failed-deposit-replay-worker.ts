@@ -4,6 +4,7 @@ import {
   buildTransferLookupContext,
   ingestIncomingTransfer,
 } from '../services/deposit-ingestion.service.ts';
+import { recordTerminalFailedDeposit } from '../services/metrics.service.ts';
 import { logger } from '../utils/logger.ts';
 
 const MAX_BACKOFF_MS = 5 * 60_000;
@@ -50,6 +51,7 @@ export async function runFailedDepositReplayWorker(): Promise<void> {
           retryCount: nextRetryCount,
           lastError: errorMessage,
         });
+        recordTerminalFailedDeposit('retry_exhausted');
         logger.error('deposit_replay.terminal_failure', {
           alert: 'deposit_unrecoverable',
           txHash: failedIngestion.txHash,

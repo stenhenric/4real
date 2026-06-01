@@ -18,6 +18,7 @@ import { startBackgroundJobs } from './services/background-jobs.service.ts';
 import { disconnectRedis, getRedisClient } from './services/redis.service.ts';
 import { UserService } from './services/user.service.ts';
 import { getBuildInfo } from './utils/build-info.ts';
+import { SOCKET_IO_TRANSPORTS } from '../shared/socket-config.ts';
 
 export async function startServer() {
   const env = getEnv();
@@ -57,6 +58,7 @@ export async function startServer() {
   const io = new SocketIOServer(httpServer, {
     cors: getSocketCorsOptions(),
     allowRequest: getSocketAllowRequest(),
+    transports: [...SOCKET_IO_TRANSPORTS],
     connectionStateRecovery: {
       maxDisconnectionDuration: 2 * 60 * 1000,
     },

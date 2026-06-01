@@ -26,6 +26,7 @@ interface StoredMfaChallenge {
   deviceId?: string;
   ipAddress?: string | null | undefined;
   userAgent?: string | null | undefined;
+  redirectTo?: string;
   withdrawalIntentId?: string;
 }
 

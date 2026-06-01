@@ -52,6 +52,13 @@ const WITHDRAWAL_STATUS_LABELS: Record<WithdrawalStatusDTO['status'], string> = 
   failed: 'Failed',
 };
 
+function shouldClearWithdrawalIdempotencyAfterError(error: unknown): boolean {
+  return error instanceof ApiClientError
+    && error.status >= 400
+    && error.status < 500
+    && ![408, 409, 429].includes(error.status);
+}
+
 function formatAddressPreview(address: string) {
   if (address.length <= 18) {
     return address;
@@ -101,6 +108,8 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
   const [statusError, setStatusError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const resumeAttemptedRef = useRef(false);
+  const withdrawalRequestInFlightRef = useRef(false);
+  const withdrawalActionRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
 
   useEffect(() => {
     panelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -240,6 +249,11 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     idempotencyKey: string,
     withdrawalIntentId?: string,
   ) => {
+    if (withdrawalRequestInFlightRef.current) {
+      return;
+    }
+
+    withdrawalRequestInFlightRef.current = true;
     setLoading(true);
 
     try {
@@ -264,6 +278,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
           // Ignore
         }
       }
+      withdrawalActionRef.current = null;
       setAcceptedWithdrawal(response);
       setWithdrawalStatus({
         withdrawalId: response.withdrawalId,
@@ -287,9 +302,13 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         return;
       }
 
+      if (shouldClearWithdrawalIdempotencyAfterError(error)) {
+        withdrawalActionRef.current = null;
+      }
       addToast(getApiErrorMessage(error, 'Withdrawal failed. Please try again.'), 'error');
     } finally {
       setLoading(false);
+      withdrawalRequestInFlightRef.current = false;
     }
   }, [addToast, refreshUser]);
 
@@ -360,19 +379,26 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       return;
     }
 
-    const idempotencyKey = createIdempotencyKey();
+    const actionFingerprint = `${normalizedAmount}:${normalizedDestination}`;
+    const currentAction = withdrawalActionRef.current?.fingerprint === actionFingerprint
+      ? withdrawalActionRef.current
+      : {
+          fingerprint: actionFingerprint,
+          idempotencyKey: createIdempotencyKey(),
+        };
+    withdrawalActionRef.current = currentAction;
     const storage = getBrowserSessionStorage();
     if (storage) {
       saveWithdrawalResumeDraft(storage, createWithdrawalResumeDraft({
         amountUsdt: normalizedAmount,
         toAddress: normalizedDestination,
         step: 'review',
-        idempotencyKey,
+        idempotencyKey: currentAction.idempotencyKey,
       }));
     }
 
     window.history.replaceState(null, '', buildWithdrawalMfaReturnPath());
-    await submitWithdrawal(normalizedAmount, normalizedDestination, idempotencyKey);
+    await submitWithdrawal(normalizedAmount, normalizedDestination, currentAction.idempotencyKey);
   };
 
   const balanceLabel = useMemo(() => formatMoneyValue(userData?.balance), [userData?.balance]);

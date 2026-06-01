@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { ArrowDown, History, StickyNote, Upload } from 'lucide-react';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
@@ -18,6 +18,7 @@ import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
 import { formatMoneyValue, moneyToNumber, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
+import { createIdempotencyKey } from '../../utils/idempotency';
 import type { MerchantConfigDTO, OrderDTO } from '../../types/api';
 
 type MerchantTab = 'buy' | 'sell';
@@ -34,6 +35,13 @@ function formatMoney(value: string | number | null | undefined): string {
   return formatMoneyValue(value);
 }
 
+function shouldClearOrderIdempotencyAfterError(error: unknown): boolean {
+  return error instanceof ApiClientError
+    && error.status >= 400
+    && error.status < 500
+    && ![408, 409, 429].includes(error.status);
+}
+
 const MerchantPanel = () => {
   const { isAdmin, refreshUser } = useAuth();
   const { success, error: showError } = useToast();
@@ -47,6 +55,8 @@ const MerchantPanel = () => {
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<OrderDTO[]>([]);
   const [merchantConfig, setMerchantConfig] = useState<MerchantConfigDTO | null>(null);
+  const orderRequestInFlightRef = useRef(false);
+  const orderActionRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -143,8 +153,23 @@ const MerchantPanel = () => {
     return `Pay ${formatMoney(fiatTotal)} ${fiatCurrency} to buy ${formatMoney(amountValue)} USDT.`;
   }, [amountValue, fiatCurrency, fiatTotal, hasValidAmount, rateConfigured]);
 
+  const getOrderAction = (fingerprint: string) => {
+    const currentAction = orderActionRef.current?.fingerprint === fingerprint
+      ? orderActionRef.current
+      : {
+          fingerprint,
+          idempotencyKey: createIdempotencyKey(),
+        };
+    orderActionRef.current = currentAction;
+    return currentAction;
+  };
+
   const handleOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (orderRequestInFlightRef.current) {
+      return;
+    }
 
     if (!hasValidAmount) {
       showError('Enter a valid USDT amount.');
@@ -176,12 +201,21 @@ const MerchantPanel = () => {
           throw new Error('Upload your payment screenshot before submitting.');
         }
 
+        const currentAction = getOrderAction([
+          'BUY',
+          normalizedAmount,
+          transactionCode.trim(),
+          proofImage.name,
+          proofImage.size,
+          proofImage.lastModified,
+        ].join(':'));
+        orderRequestInFlightRef.current = true;
         const order = await createOrder({
           type: 'BUY',
           amount: normalizedAmount,
           transactionCode: transactionCode.trim(),
           proofImage,
-        });
+        }, { idempotencyKey: currentAction.idempotencyKey });
 
         setOrders((currentOrders) => [order, ...currentOrders]);
         success('Buy order submitted.');
@@ -196,17 +230,25 @@ const MerchantPanel = () => {
           throw new Error('Please enter a valid M-Pesa number (07XXXXXXXXX or 254XXXXXXXXX).');
         }
 
+        const currentAction = getOrderAction([
+          'SELL',
+          normalizedAmount,
+          mpesaNumber.trim(),
+          mpesaName.trim(),
+        ].join(':'));
+        orderRequestInFlightRef.current = true;
         const order = await createOrder({
           type: 'SELL',
           amount: normalizedAmount,
           mpesaNumber: mpesaNumber.trim(),
           mpesaName: mpesaName.trim(),
-        });
+        }, { idempotencyKey: currentAction.idempotencyKey });
 
         setOrders((currentOrders) => [order, ...currentOrders]);
         success('Sell order placed.');
       }
 
+      orderActionRef.current = null;
       resetTradeForm();
       await refreshUser();
     } catch (error) {
@@ -215,9 +257,13 @@ const MerchantPanel = () => {
         return;
       }
 
+      if (shouldClearOrderIdempotencyAfterError(error)) {
+        orderActionRef.current = null;
+      }
       showError(getApiErrorMessage(error, 'Transaction failed. Please try again.'));
     } finally {
       setLoading(false);
+      orderRequestInFlightRef.current = false;
     }
   };
 

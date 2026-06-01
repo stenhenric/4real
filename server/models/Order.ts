@@ -7,12 +7,22 @@ export interface TelegramOrderProof {
   chatId: string;
 }
 
+export interface OrderProofUpload {
+  checksumSha256: string;
+  mimeType: string;
+  sizeBytes: number;
+  storageKey: string;
+  uploaderUserId: mongoose.Types.ObjectId;
+  createdAt: Date;
+}
+
 export interface IOrder extends Document {
   userId: mongoose.Types.ObjectId;
   type: 'BUY' | 'SELL';
   amount: string;
   status: 'PENDING' | 'DONE' | 'REJECTED';
   proof?: TelegramOrderProof;
+  proofUpload?: OrderProofUpload;
   transactionCode?: string;
   transactionCodeOriginal?: string;
   transactionCodeNormalized?: string;
@@ -54,7 +64,18 @@ const OrderSchema: Schema = new Schema({
       chatId: { type: String, trim: true },
     },
     default: undefined,
-  }
+  },
+  proofUpload: {
+    type: {
+      checksumSha256: { type: String, trim: true, required: true },
+      mimeType: { type: String, trim: true, required: true },
+      sizeBytes: { type: Number, min: 1, required: true },
+      storageKey: { type: String, trim: true, required: true },
+      uploaderUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+      createdAt: { type: Date, required: true },
+    },
+    default: undefined,
+  },
 }, {
   timestamps: true
 });

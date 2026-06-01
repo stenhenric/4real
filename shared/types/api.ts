@@ -141,6 +141,15 @@ export interface TelegramOrderProofDTO {
   chatId: string;
 }
 
+export interface OrderProofUploadDTO {
+  checksumSha256: string;
+  mimeType: string;
+  sizeBytes: number;
+  storageKey: string;
+  uploaderUserId: string;
+  createdAt: string;
+}
+
 export type FiatCurrency = 'KES';
 
 export interface OrderDTO {
@@ -150,6 +159,7 @@ export interface OrderDTO {
   amount: UsdtAmountString;
   status: 'PENDING' | 'DONE' | 'REJECTED';
   proof?: TelegramOrderProofDTO;
+  proofUpload?: OrderProofUploadDTO;
   transactionCode?: string;
   fiatCurrency?: FiatCurrency;
   exchangeRate?: RateString;

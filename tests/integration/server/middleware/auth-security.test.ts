@@ -713,6 +713,66 @@ test('loginPassword accepts username identifiers without requiring an email look
   }
 });
 
+test('loginPassword requires MFA before issuing a full session for MFA-enabled accounts', async (t) => {
+  const previousTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = '';
+  resetEnvCacheForTests();
+
+  try {
+    const password = 'paper-lobby-stakes-2026';
+    const user = createMockUser({
+      passwordHash: await hashPassword(password),
+      mfa: {
+        enabledAt: new Date('2026-05-03T00:00:00.000Z'),
+        totpSecretEncrypted: 'encrypted-secret',
+        recoveryCodeHashes: [],
+      },
+    });
+    const emailLookupMock = t.mock.method(UserService, 'findByEmail', async () => user);
+    const suspiciousLoginMock = t.mock.method(AuthSessionService, 'isSuspiciousLogin', async () => false);
+    const challengeMock = t.mock.method(AuthMfaService, 'createChallenge', async (params) => {
+      assert.equal(params.userId, 'user-1');
+      assert.equal(params.mode, 'login');
+      assert.equal(typeof params.deviceId, 'string');
+      assert.ok(params.deviceId.length > 0);
+      return 'mfa-challenge-1';
+    });
+    const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+    const balanceMock = t.mock.method(UserService, 'getDisplayBalance', async () => '125.500000');
+
+    const req = {
+      body: {
+        identifier: 'alice@example.com',
+        password,
+        turnstileToken: 'token',
+      },
+      ip: '127.0.0.1',
+      cookies: {},
+      get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+    } as any;
+    const res = createResponseMock() as any;
+
+    await AuthController.loginPassword(req, res);
+
+    assert.equal(emailLookupMock.mock.callCount(), 1);
+    assert.equal(suspiciousLoginMock.mock.callCount(), 1);
+    assert.equal(challengeMock.mock.callCount(), 1);
+    assert.equal(sessionMock.mock.callCount(), 0);
+    assert.equal(balanceMock.mock.callCount(), 0);
+    assert.equal(res.statusCode, 202);
+    assert.equal((res.payload as { status?: string }).status, 'requires_mfa');
+    assert.equal((res.payload as { challengeId?: string }).challengeId, 'mfa-challenge-1');
+    assert.equal(res.cookies.length, 0);
+  } finally {
+    if (previousTurnstileSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = previousTurnstileSecret;
+    }
+    resetEnvCacheForTests();
+  }
+});
+
 function createResponseMock() {
   const headers = new Map<string, string>();
   const cookies: Array<{ name: string; value: string; options: unknown }> = [];
@@ -838,6 +898,51 @@ test('consumeMagicLink issues session cookies, no-store headers, and a redirect 
     [getAuthCookieName(), getDeviceCookieName(), getRefreshCookieName()].sort(),
   );
   assert.equal((res.payload as { redirectTo?: string }).redirectTo, '/bank');
+});
+
+test('consumeMagicLink requires MFA before issuing a full session for MFA-enabled accounts', async (t) => {
+  const tokenMock = t.mock.method(OneTimeTokenService, 'consume', async () => ({
+    userId: { toString: () => 'user-1' },
+    metadata: { redirectTo: '/bank' },
+  }) as any);
+  const userMock = t.mock.method(UserService, 'findAuthUserById', async () => createMockUser({
+    mfa: {
+      enabledAt: new Date('2026-05-03T00:00:00.000Z'),
+      totpSecretEncrypted: 'encrypted-secret',
+      recoveryCodeHashes: [],
+    },
+  }));
+  const challengeMock = t.mock.method(AuthMfaService, 'createChallenge', async (params) => {
+    assert.equal(params.userId, 'user-1');
+    assert.equal(params.mode, 'login');
+    assert.equal(typeof params.deviceId, 'string');
+    assert.ok(params.deviceId.length > 0);
+    return 'mfa-challenge-2';
+  });
+  const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+  const balanceMock = t.mock.method(UserService, 'getDisplayBalance', async () => '125.500000');
+
+  const req = {
+    body: { token: 'magic-token' },
+    cookies: {},
+    ip: '127.0.0.1',
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const res = createResponseMock() as any;
+
+  await AuthController.consumeMagicLink(req, res);
+
+  assert.equal(tokenMock.mock.callCount(), 1);
+  assert.equal(userMock.mock.callCount(), 1);
+  assert.equal(challengeMock.mock.callCount(), 1);
+  assert.equal(sessionMock.mock.callCount(), 0);
+  assert.equal(balanceMock.mock.callCount(), 0);
+  assert.equal(res.getHeader('cache-control'), 'no-store, max-age=0');
+  assert.equal(res.statusCode, 202);
+  assert.equal((res.payload as { status?: string }).status, 'requires_mfa');
+  assert.equal((res.payload as { challengeId?: string }).challengeId, 'mfa-challenge-2');
+  assert.equal((res.payload as { redirectTo?: string }).redirectTo, '/bank');
+  assert.equal(res.cookies.length, 0);
 });
 
 test('consumeVerificationEmail issues a session and routes the browser to the verified screen', async (t) => {
@@ -1149,6 +1254,60 @@ test('handleGoogleCallback logs in an account already linked to the Google subje
   assert.equal(sessionMock.mock.callCount(), 1);
   assert.equal(res.statusCode, 302);
   assert.equal(res.payload, '/play');
+});
+
+test('handleGoogleCallback redirects MFA-enabled linked accounts to MFA without issuing a session', async (t) => {
+  const linkedUser = createMockUser({
+    _id: { toString: () => 'linked-user' },
+    email: 'linked@example.com',
+    googleSubject: 'google-linked-sub',
+    mfa: {
+      enabledAt: new Date('2026-05-03T00:00:00.000Z'),
+      totpSecretEncrypted: 'encrypted-secret',
+      recoveryCodeHashes: [],
+    },
+  });
+  const googleProfileMock = t.mock.method(GoogleOAuthService, 'consumeCallback', async () => ({
+    googleSubject: 'google-linked-sub',
+    email: 'linked@example.com',
+    name: 'Linked',
+    picture: null,
+    redirectTo: '/bank',
+  }));
+  const googleSubjectLookupMock = t.mock.method(UserService, 'findByGoogleSubject', async () => linkedUser);
+  const challengeMock = t.mock.method(AuthMfaService, 'createChallenge', async (params) => {
+    assert.equal(params.userId, 'linked-user');
+    assert.equal(params.mode, 'login');
+    assert.equal(typeof params.deviceId, 'string');
+    assert.ok(params.deviceId.length > 0);
+    return 'mfa-challenge-3';
+  });
+  const sessionMock = t.mock.method(AuthSessionService, 'createSession', async () => createIssuedSession() as any);
+
+  const req = {
+    query: {
+      state: 'oauth-state',
+      code: 'oauth-code',
+    },
+    cookies: {},
+    ip: '127.0.0.1',
+    get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'test-agent' : undefined),
+  } as any;
+  const res = createResponseMock() as any;
+
+  await AuthController.handleGoogleCallback(req, res);
+
+  assert.equal(googleProfileMock.mock.callCount(), 1);
+  assert.equal(googleSubjectLookupMock.mock.callCount(), 1);
+  assert.equal(challengeMock.mock.callCount(), 1);
+  assert.equal(sessionMock.mock.callCount(), 0);
+  assert.equal(res.statusCode, 302);
+  assert.match(res.payload, /^\/auth\/mfa\?/);
+  const redirectUrl = new URL(res.payload as string, 'http://4real.test');
+  assert.equal(redirectUrl.searchParams.get('challengeId'), 'mfa-challenge-3');
+  assert.equal(redirectUrl.searchParams.get('reason'), 'suspicious_login');
+  assert.equal(redirectUrl.searchParams.get('returnTo'), '/bank');
+  assert.equal(res.cookies.length, 0);
 });
 
 test('handleGoogleCallback creates and logs in a new Google user when no local account exists', async (t) => {

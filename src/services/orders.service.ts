@@ -26,7 +26,7 @@ export function getMerchantConfig(signal?: AbortSignal) {
   return request<MerchantConfigDTO>('/orders/config', signal ? { signal } : undefined);
 }
 
-export function createOrder(payload: CreateOrderPayload) {
+export function createOrder(payload: CreateOrderPayload, options?: { idempotencyKey?: string }) {
   const form = new FormData();
   form.set('type', payload.type);
   form.set('amount', String(payload.amount));
@@ -41,7 +41,7 @@ export function createOrder(payload: CreateOrderPayload) {
   return request<OrderDTO>('/orders', {
     method: 'POST',
     headers: {
-      'Idempotency-Key': createIdempotencyKey(),
+      'Idempotency-Key': options?.idempotencyKey ?? createIdempotencyKey(),
     },
     body: form,
   });

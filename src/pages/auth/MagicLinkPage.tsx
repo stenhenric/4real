@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { AuthNotice, AuthShell } from '../../features/auth/AuthShell';
-import { getPostAuthRedirectPath } from '../../features/auth/auth-routing';
+import { buildMfaChallengePath, getPostAuthRedirectPath, sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { scrubSensitiveTokenFromCurrentUrl } from '../../features/auth/url-token';
 import { consumeMagicLink } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
@@ -33,6 +33,18 @@ export default function MagicLinkPage() {
 
     void consumeMagicLink({ token })
       .then((response) => {
+        if (response.status === 'requires_mfa' && response.challengeId) {
+          navigate(
+            buildMfaChallengePath({
+              challengeId: response.challengeId,
+              challengeReason: response.challengeReason ?? 'suspicious_login',
+              returnTo: sanitizeInternalPath(response.redirectTo) ?? '/play',
+            }),
+            { replace: true },
+          );
+          return;
+        }
+
         setAuthStateFromResponse(response);
         success('Signed in.');
         navigate(getPostAuthRedirectPath(response), { replace: true });

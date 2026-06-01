@@ -205,6 +205,16 @@ export function serializeOrder(order: IOrder, options?: { includePayoutDetails?:
         chatId: order.proof.chatId,
       },
     } : {}),
+    ...(order.proofUpload ? {
+      proofUpload: {
+        checksumSha256: order.proofUpload.checksumSha256,
+        mimeType: order.proofUpload.mimeType,
+        sizeBytes: order.proofUpload.sizeBytes,
+        storageKey: order.proofUpload.storageKey,
+        uploaderUserId: serializeId(order.proofUpload.uploaderUserId),
+        createdAt: order.proofUpload.createdAt.toISOString(),
+      },
+    } : {}),
     ...(order.transactionCode ? { transactionCode: order.transactionCode } : {}),
     ...(order.fiatCurrency ? { fiatCurrency: order.fiatCurrency } : {}),
     ...(exchangeRate ? { exchangeRate } : {}),

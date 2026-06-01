@@ -27,6 +27,15 @@ async function withFrontendServer(run: (baseUrl: string) => Promise<void>): Prom
     await writeFile(path.join(distPath, 'fonts', 'cabin-sketch-700.woff2'), 'font bytes');
     await writeFile(path.join(distPath, 'tonconnect-icon.jpg'), 'jpg bytes');
     await writeFile(path.join(distPath, 'phpinfo.php'), 'sensitive phpinfo output');
+    await mkdir(path.join(distPath, 'server', 'server', 'controllers'), { recursive: true });
+    await writeFile(path.join(distPath, 'server', 'main.js'), 'console.log("compiled server entry");');
+    await writeFile(path.join(distPath, 'server', 'main.js.map'), '{"sources":["../../server/main.ts"]}');
+    await writeFile(path.join(distPath, 'server', 'server', 'runtime.js'), 'console.log("runtime");');
+    await writeFile(path.join(distPath, 'server', 'server', 'runtime.js.map'), '{"sources":["../../../server/runtime.ts"]}');
+    await writeFile(
+      path.join(distPath, 'server', 'server', 'controllers', 'transaction.controller.js'),
+      'console.log("transaction controller");',
+    );
     process.chdir(tempRoot);
 
     const app = express();
@@ -159,6 +168,28 @@ test('frontend middleware returns 404 for scanner and debug probe paths', async 
       assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0', route);
       assert.doesNotMatch(body, /4real test shell/, route);
       assert.doesNotMatch(body, /sensitive phpinfo output/, route);
+    }
+  });
+});
+
+test('frontend middleware does not expose compiled server artifacts', async () => {
+  await withFrontendServer(async (baseUrl) => {
+    for (const route of [
+      '/server/main.js',
+      '/server/main.js.map',
+      '/server/runtime.js',
+      '/server/runtime.js.map',
+      '/server/server/runtime.js',
+      '/server/server/runtime.js.map',
+      '/server/server/controllers/transaction.controller.js',
+    ]) {
+      const response = await fetch(`${baseUrl}${route}`);
+      const body = await response.text();
+
+      assert.equal(response.status, 404, route);
+      assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0', route);
+      assert.doesNotMatch(body, /compiled server entry|runtime|transaction controller/, route);
+      assert.doesNotMatch(body, /server\/(?:main|runtime)\.ts/, route);
     }
   });
 });

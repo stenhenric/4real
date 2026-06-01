@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 import { Order } from '../models/Order.ts';
-import type { IOrder, TelegramOrderProof } from '../models/Order.ts';
+import type { IOrder, OrderProofUpload, TelegramOrderProof } from '../models/Order.ts';
 import { badRequest, internalServerError } from '../utils/http-error.ts';
 import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 import { AuditService } from './audit.service.ts';
@@ -23,6 +23,7 @@ export class OrderService {
     type,
     amount,
     proof,
+    proofUpload,
     proofRelayQueued,
     transactionCode,
     transactionCodeOriginal,
@@ -43,6 +44,7 @@ export class OrderService {
     type: 'BUY' | 'SELL';
     amount: string;
     proof?: TelegramOrderProof | undefined;
+    proofUpload?: OrderProofUpload | undefined;
     proofRelayQueued?: boolean | undefined;
     transactionCode?: string | undefined;
     transactionCodeOriginal?: string | undefined;
@@ -83,6 +85,7 @@ export class OrderService {
         fiatTotal,
         status: 'PENDING',
         ...(proof ? { proof } : {}),
+        ...(proofUpload ? { proofUpload } : {}),
         ...(transactionCode ? { transactionCode } : {}),
         ...(transactionCodeOriginal ? { transactionCodeOriginal } : {}),
         ...(transactionCodeNormalized ? { transactionCodeNormalized } : {}),
@@ -132,6 +135,10 @@ export class OrderService {
           mpesaName: savedOrder.mpesaName,
           proofProvider: savedOrder.proof?.provider,
           proofUrl: savedOrder.proof?.url,
+          proofChecksumSha256: savedOrder.proofUpload?.checksumSha256,
+          proofMimeType: savedOrder.proofUpload?.mimeType,
+          proofSizeBytes: savedOrder.proofUpload?.sizeBytes,
+          proofStorageKey: savedOrder.proofUpload?.storageKey,
           proofRelayQueued: proofRelayQueued === true,
         },
         session: activeSession,

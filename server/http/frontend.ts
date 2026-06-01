@@ -68,6 +68,11 @@ function isProbePath(pathname: string): boolean {
   return probePathPatterns.some((pattern) => pattern.test(normalizedPath));
 }
 
+function isServerBuildArtifactPath(pathname: string): boolean {
+  const normalizedPath = normalizeRequestPath(pathname);
+  return normalizedPath === '/server' || normalizedPath.startsWith('/server/');
+}
+
 function isFrontendRoute(pathname: string): boolean {
   const normalizedPath = normalizeRequestPath(pathname);
 
@@ -85,7 +90,7 @@ function registerStaticFrontend(app: Express): void {
   const distPath = path.join(process.cwd(), 'dist');
 
   app.use((req, res, next) => {
-    if (isProbePath(req.path)) {
+    if (isProbePath(req.path) || isServerBuildArtifactPath(req.path)) {
       applyNoStoreHeaders(res);
       return res.status(404).send('Not found');
     }

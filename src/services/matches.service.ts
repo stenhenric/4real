@@ -13,7 +13,8 @@ function normalizeInviteToken(inviteToken?: string): string | undefined {
 }
 
 export function getActiveMatches(signal?: AbortSignal) {
-  return request<MatchDTO[]>('/matches/active', signal ? { signal } : undefined);
+  return request<MatchDTO[] | null>('/matches/active', signal ? { signal } : undefined)
+    .then((matches) => (Array.isArray(matches) ? matches : []));
 }
 
 export function createMatch(payload: CreateMatchPayload) {

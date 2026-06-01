@@ -8,6 +8,7 @@ import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { AuditService } from '../services/audit.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
 import {
+  recordStuckWithdrawal,
   recordWithdrawalConfirmation,
   setWalletReserveDeltaUsdt,
   setWalletTonBalance,
@@ -20,8 +21,8 @@ import {
   findWithdrawalTransferOnChain,
   getHotWalletTonBalance,
   getHotWalletUsdtBalanceRaw,
+  isWithdrawalBroadcastUnknownError,
   sendUsdtWithdrawal,
-  SeqnoTimeoutError,
 } from '../services/withdrawal-engine.ts';
 import { UserService } from '../services/user.service.ts';
 import { logger } from '../utils/logger.ts';
@@ -173,6 +174,7 @@ export async function runWithdrawalWorker() {
             submittedWithdrawal.seqno,
             submittedWithdrawal.sentAt,
           );
+          recordStuckWithdrawal('post_send_persist_failed');
           await ProductEmailNotificationService.sendWithdrawalTransition({
             scenario: 'withdrawal_stuck_user',
             userId: doc.userId,
@@ -203,8 +205,9 @@ export async function runWithdrawalWorker() {
       const errorMessage = sendErr instanceof Error ? sendErr.message : String(sendErr);
       logger.error('withdrawal.failed', { withdrawalId: doc.withdrawalId, errorMessage });
 
-      if (sendErr instanceof SeqnoTimeoutError) {
+      if (isWithdrawalBroadcastUnknownError(sendErr)) {
         await WithdrawalRepository.markStuck(doc._id, errorMessage, sendErr.seqno, sendErr.sentAt);
+        recordStuckWithdrawal('broadcast_unknown');
         await ProductEmailNotificationService.sendWithdrawalTransition({
           scenario: 'withdrawal_stuck_user',
           userId: doc.userId,
@@ -313,27 +316,41 @@ export async function confirmSentWithdrawals() {
 
       if (confirmed) {
         const session = await mongoose.startSession();
+        let confirmedTransitionApplied = false;
         try {
           await session.withTransaction(async () => {
+            const markedConfirmed = await WithdrawalRepository.markConfirmed(
+              withdrawal._id,
+              confirmed.txHash,
+              confirmed.confirmedAt,
+              session,
+            );
+            if (!markedConfirmed) {
+              logger.warn('withdrawal.confirm_transition_skipped', {
+                withdrawalId: withdrawal.withdrawalId,
+                status: withdrawal.status,
+                txHash: confirmed.txHash,
+              });
+              recordWithdrawalConfirmation('transition_skipped');
+              return;
+            }
+
             await ProcessedTransactionRepository.create({
               txHash: confirmed.txHash,
               processedAt: new Date(),
               type: 'withdrawal_confirm',
             }, session);
 
-            await WithdrawalRepository.markConfirmed(
-              withdrawal._id,
-              confirmed.txHash,
-              confirmed.confirmedAt,
-              session,
-            );
-
             await UserBalanceRepository.recordWithdrawalConfirmed(
               withdrawal.userId,
               withdrawal.amountRaw,
               session,
             );
+            confirmedTransitionApplied = true;
           });
+          if (!confirmedTransitionApplied) {
+            continue;
+          }
           await AuditService.record({
             eventType: 'withdrawal_confirmed',
             actorUserId: withdrawal.userId,
@@ -377,6 +394,7 @@ export async function confirmSentWithdrawals() {
             withdrawal.seqno,
             withdrawal.sentAt,
           );
+          recordStuckWithdrawal('confirmation_delayed');
           logger.warn('withdrawal.confirmation_delayed', {
             withdrawalId: withdrawal.withdrawalId,
           });
@@ -522,27 +540,41 @@ export async function recoverStuckWithdrawals() {
           });
 
           const session = await mongoose.startSession();
+          let confirmedTransitionApplied = false;
           try {
             await session.withTransaction(async () => {
+              const markedConfirmed = await WithdrawalRepository.markConfirmed(
+                withdrawal._id,
+                confirmed.txHash,
+                confirmed.confirmedAt,
+                session,
+              );
+              if (!markedConfirmed) {
+                logger.warn('withdrawal.recovery_confirm_transition_skipped', {
+                  withdrawalId: withdrawal.withdrawalId,
+                  status: withdrawal.status,
+                  txHash: confirmed.txHash,
+                });
+                recordWithdrawalConfirmation('recovery_transition_skipped');
+                return;
+              }
+
               await ProcessedTransactionRepository.create({
                 txHash: confirmed.txHash,
                 processedAt: new Date(),
                 type: 'withdrawal_confirm',
               }, session);
 
-              await WithdrawalRepository.markConfirmed(
-                withdrawal._id,
-                confirmed.txHash,
-                confirmed.confirmedAt,
-                session,
-              );
-
               await UserBalanceRepository.recordWithdrawalConfirmed(
                 withdrawal.userId,
                 withdrawal.amountRaw,
                 session,
               );
+              confirmedTransitionApplied = true;
             });
+            if (!confirmedTransitionApplied) {
+              continue;
+            }
             await AuditService.record({
               eventType: 'withdrawal_confirmed',
               actorUserId: withdrawal.userId,
@@ -580,6 +612,7 @@ export async function recoverStuckWithdrawals() {
             withdrawal.seqno,
             withdrawal.startedAt,
           );
+          recordStuckWithdrawal('processing_expired');
           logger.warn('withdrawal.processing_stuck', { withdrawalId: withdrawal.withdrawalId });
           recordWithdrawalConfirmation('processing_stuck');
           await ProductEmailNotificationService.sendWithdrawalTransition({
@@ -610,6 +643,7 @@ export async function recoverStuckWithdrawals() {
           withdrawal.seqno,
           withdrawal.startedAt,
         );
+        recordStuckWithdrawal('processing_reconcile_failed');
         recordWithdrawalConfirmation('processing_reconcile_failed');
         await ProductEmailNotificationService.sendWithdrawalTransition({
           scenario: 'withdrawal_stuck_user',

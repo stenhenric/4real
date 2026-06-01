@@ -81,6 +81,7 @@ export default function WithdrawalMfaPage() {
       returnToBank('verified', response.withdrawalIntentId || withdrawalIntentId);
     } catch (error) {
       showError(getApiErrorMessage(error, 'Unable to complete verification.'));
+      returnToBank('failed');
     } finally {
       setLoading(false);
     }

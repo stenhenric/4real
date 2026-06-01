@@ -126,6 +126,45 @@ function buildSuspiciousLoginRedirect(email?: string): string {
   return query ? `/auth/approve-login?${query}` : '/auth/approve-login';
 }
 
+function isMfaEnabled(user: IUser): boolean {
+  return Boolean(user.mfa?.enabledAt);
+}
+
+async function respondWithLoginMfaChallenge(params: {
+  req: Request;
+  res: Response;
+  user: IUser;
+  redirectTo?: string;
+  metadata?: ReturnType<typeof getRequestMetadata>;
+}): Promise<void> {
+  const metadata = params.metadata ?? getRequestMetadata(params.req);
+  const challengeId = await AuthMfaService.createChallenge({
+    userId: params.user._id.toString(),
+    mode: 'login',
+    deviceId: metadata.deviceId,
+    ipAddress: metadata.ipAddress,
+    userAgent: metadata.userAgent,
+    ...(params.redirectTo ? { redirectTo: params.redirectTo } : {}),
+  });
+
+  params.res.status(202).json({
+    status: 'requires_mfa',
+    message: 'Verify your sign-in to continue.',
+    challengeId,
+    challengeReason: 'suspicious_login',
+    nextStep: 'mfa_challenge',
+    ...(params.redirectTo ? { redirectTo: params.redirectTo } : {}),
+  });
+}
+
+function buildLoginMfaRedirect(challengeId: string, redirectTo: string): string {
+  const search = new URLSearchParams();
+  search.set('challengeId', challengeId);
+  search.set('reason', 'suspicious_login');
+  search.set('returnTo', redirectTo);
+  return `/auth/mfa?${search.toString()}`;
+}
+
 function sendPendingRegistrationResponse(res: Response, email: string): void {
   res.status(202).json({
     status: 'pending_email_verification',
@@ -321,25 +360,12 @@ export class AuthController {
 
     const metadata = getRequestMetadata(req);
     const suspicious = await AuthSessionService.isSuspiciousLogin(user._id.toString(), metadata.deviceId);
-    if (suspicious) {
-      if (user.mfa?.enabledAt) {
-        const challengeId = await AuthMfaService.createChallenge({
-          userId: user._id.toString(),
-          mode: 'login',
-          deviceId: metadata.deviceId,
-          ipAddress: metadata.ipAddress,
-          userAgent: metadata.userAgent,
-        });
-        res.status(202).json({
-          status: 'requires_mfa',
-          message: 'Verify your sign-in to continue.',
-          challengeId,
-          challengeReason: 'suspicious_login',
-          nextStep: 'mfa_challenge',
-        });
-        return;
-      }
+    if (isMfaEnabled(user)) {
+      await respondWithLoginMfaChallenge({ req, res, user, metadata });
+      return;
+    }
 
+    if (suspicious) {
       try {
         await AuthEmailService.sendSuspiciousLoginEmail(user._id.toString(), user.email);
       } catch (error) {
@@ -445,6 +471,11 @@ export class AuthController {
     const redirectTo = sanitizeRedirectPath(
       typeof document.metadata?.redirectTo === 'string' ? document.metadata.redirectTo : undefined,
     ) ?? buildPostAuthRedirect(user.username);
+    if (isMfaEnabled(user)) {
+      await respondWithLoginMfaChallenge({ req, res, user, redirectTo });
+      return;
+    }
+
     await respondWithIssuedSession({
       req,
       res,
@@ -515,14 +546,28 @@ export class AuthController {
         throw serviceUnavailable('Unable to complete Google sign-in', 'GOOGLE_SIGNIN_FAILED');
       }
 
+      const redirectTarget = sanitizeRedirectPath(googleProfile.redirectTo)
+        ?? buildPostAuthRedirect(user.username);
+      if (isMfaEnabled(user)) {
+        const metadata = getRequestMetadata(req);
+        const challengeId = await AuthMfaService.createChallenge({
+          userId: user._id.toString(),
+          mode: 'login',
+          deviceId: metadata.deviceId,
+          ipAddress: metadata.ipAddress,
+          userAgent: metadata.userAgent,
+          redirectTo: redirectTarget,
+        });
+        res.redirect(302, buildLoginMfaRedirect(challengeId, redirectTarget));
+        return;
+      }
+
       const issuedSession = await AuthSessionService.createSession({
         user,
         metadata: getRequestMetadata(req),
       });
       applySessionCookies(res, issuedSession);
 
-      const redirectTarget = sanitizeRedirectPath(googleProfile.redirectTo)
-        ?? buildPostAuthRedirect(user.username);
       res.redirect(302, redirectTarget);
     } catch (err) {
       res.clearCookie(getGoogleOAuthStateCookieName(), getGoogleOAuthStateCookieClearOptions());
@@ -874,13 +919,16 @@ export class AuthController {
       applySessionCookies(res, issuedSession);
 
       const balance = await UserService.getDisplayBalance(user._id.toString());
-      res.json(serializeAuthState({
-        status: user.username ? 'authenticated' : 'profile_incomplete',
-        user,
-        balance,
-        session: issuedSession.session,
-        nextStep: user.username ? undefined : 'complete_profile',
-      }));
+      res.json({
+        ...serializeAuthState({
+          status: user.username ? 'authenticated' : 'profile_incomplete',
+          user,
+          balance,
+          session: issuedSession.session,
+          nextStep: user.username ? undefined : 'complete_profile',
+        }),
+        ...(challenge.redirectTo ? { redirectTo: challenge.redirectTo } : {}),
+      });
       return;
     }
 
@@ -989,6 +1037,16 @@ export class AuthController {
     const user = await UserService.findAuthUserById(document.userId.toString());
     if (!user || !user.emailVerifiedAt) {
       throw unauthorized('This link is invalid or has expired', 'INVALID_OR_EXPIRED_LINK');
+    }
+
+    if (isMfaEnabled(user)) {
+      await respondWithLoginMfaChallenge({
+        req,
+        res,
+        user,
+        redirectTo: buildPostAuthRedirect(user.username),
+      });
+      return;
     }
 
     await respondWithIssuedSession({

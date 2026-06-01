@@ -74,6 +74,25 @@ export class SeqnoTimeoutError extends Error {
   }
 }
 
+export class WithdrawalBroadcastUnknownError extends Error {
+  readonly seqno: number;
+  readonly sentAt: Date;
+
+  constructor(seqno: number, sentAt: Date, message = 'TON transfer broadcast outcome is unknown', cause?: unknown) {
+    super(message);
+    this.name = 'WithdrawalBroadcastUnknownError';
+    this.seqno = seqno;
+    this.sentAt = sentAt;
+    if (cause !== undefined) {
+      this.cause = cause;
+    }
+  }
+}
+
+export function isWithdrawalBroadcastUnknownError(error: unknown): error is WithdrawalBroadcastUnknownError {
+  return error instanceof WithdrawalBroadcastUnknownError || error instanceof SeqnoTimeoutError;
+}
+
 export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, hotJettonWallet }: { toAddress: string, amountRaw: string, withdrawalId: string, hotJettonWallet: string }) {
   return recordProviderCall('ton_wallet_rpc', 'send_usdt_withdrawal', () => (
     runProtectedDependencyCall({
@@ -94,24 +113,39 @@ export async function sendUsdtWithdrawal({ toAddress, amountRaw, withdrawalId, h
 
         const seqno = await contract.getSeqno();
         const validUntil = Math.floor(Date.now() / 1000) + 300; // 5 minutes expiration
+        const sentAt = new Date();
 
-        await contract.sendTransfer({
+        logger.info('withdrawal.broadcast_attempt', {
+          withdrawalId,
           seqno,
-          secretKey: keyPair.secretKey,
-          sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
-          timeout: validUntil,
-          messages: [
-            internal({
-              to: Address.parse(hotJettonWallet),
-              // This attached TON value is a service-side execution/excess buffer, not the final burned fee.
-              value: toNano(env.TON_JETTON_EXCESS_BUFFER),
-              bounce: true,
-              body,
-            }),
-          ],
+          toAddress,
+          amountRaw,
         });
 
-        const sentAt = new Date();
+        try {
+          await contract.sendTransfer({
+            seqno,
+            secretKey: keyPair.secretKey,
+            sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+            timeout: validUntil,
+            messages: [
+              internal({
+                to: Address.parse(hotJettonWallet),
+                // This attached TON value is a service-side execution/excess buffer, not the final burned fee.
+                value: toNano(env.TON_JETTON_EXCESS_BUFFER),
+                bounce: true,
+                body,
+              }),
+            ],
+          });
+        } catch (error) {
+          throw new WithdrawalBroadcastUnknownError(
+            seqno,
+            sentAt,
+            'TON transfer send attempt failed after broadcast may have started',
+            error,
+          );
+        }
 
         try {
           await pollUntilSeqnoChanges(contract, seqno, 90_000);

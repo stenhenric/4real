@@ -33,7 +33,13 @@ export function getTransactions(query: {
     ? `/transactions?${queryString}`
     : '/transactions';
 
-  return request<TransactionFeedDTO>(endpoint, query.signal ? { signal: query.signal } : undefined);
+  return request<TransactionFeedDTO | null>(endpoint, query.signal ? { signal: query.signal } : undefined)
+    .then((feed) => ({
+      items: Array.isArray(feed?.items) ? feed.items : [],
+      page: typeof feed?.page === 'number' ? feed.page : (query.page ?? 1),
+      pageSize: typeof feed?.pageSize === 'number' ? feed.pageSize : (query.pageSize ?? 0),
+      total: typeof feed?.total === 'number' ? feed.total : 0,
+    }));
 }
 
 export function createDepositMemo() {

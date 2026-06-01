@@ -93,7 +93,7 @@ test('admin recovery confirms a stuck withdrawal after an on-chain match', async
   const findMock = mock.method(WithdrawalRepository, 'findByWithdrawalId', async () => stuckWithdrawal());
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
   const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
-  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => {});
+  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => true);
   const recordConfirmedMock = mock.method(UserBalanceRepository, 'recordWithdrawalConfirmed', async () => {});
   const auditMock = mock.method(AuditService, 'record', async () => {});
   const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
@@ -125,6 +125,51 @@ test('admin recovery confirms a stuck withdrawal after an on-chain match', async
   assert.equal(recordConfirmedMock.mock.callCount(), 1);
   assert.equal(auditMock.mock.calls[0].arguments[0]?.actorUserId, 'admin-1');
   assert.equal(transitionMock.mock.calls[0].arguments[0]?.scenario, 'withdrawal_confirmed_user');
+});
+
+test('admin recovery confirmation does not record accounting when terminal transition fails', async (t) => {
+  registerCleanup(t);
+
+  const findMock = mock.method(WithdrawalRepository, 'findByWithdrawalId', async () => stuckWithdrawal());
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const processedCreateMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => false);
+  const recordConfirmedMock = mock.method(UserBalanceRepository, 'recordWithdrawalConfirmed', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
+  const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
+  setWithdrawalRecoveryDependenciesForTests({
+    findWithdrawalTransferOnChain: async () => ({
+      txHash: 'chain-hash-race',
+      confirmedAt: new Date('2026-01-01T00:15:00.000Z'),
+    }),
+  });
+
+  t.after(() => findMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => processedCreateMock.mock.restore());
+  t.after(() => markConfirmedMock.mock.restore());
+  t.after(() => recordConfirmedMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
+  t.after(() => transitionMock.mock.restore());
+
+  await assert.rejects(
+    recoverStuckWithdrawal({
+      withdrawalId: 'wd-stuck-1',
+      action: 'confirm',
+      actorUserId: 'admin-1',
+    }),
+    (error: unknown) => {
+      assert.equal((error as { statusCode?: number }).statusCode, 409);
+      assert.equal((error as { code?: string }).code, 'WITHDRAWAL_RECOVERY_STATE_CHANGED');
+      return true;
+    },
+  );
+
+  assert.equal(markConfirmedMock.mock.callCount(), 1);
+  assert.equal(processedCreateMock.mock.callCount(), 0);
+  assert.equal(recordConfirmedMock.mock.callCount(), 0);
+  assert.equal(auditMock.mock.callCount(), 0);
+  assert.equal(transitionMock.mock.callCount(), 0);
 });
 
 test('admin recovery refunds a stuck withdrawal only after no on-chain match is found', async (t) => {
@@ -194,7 +239,7 @@ test('admin recovery repeated confirm and refund actions are idempotent for term
   });
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
-  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => {});
+  const markConfirmedMock = mock.method(WithdrawalRepository, 'markConfirmed', async () => true);
   const markRefundedMock = mock.method(WithdrawalRepository, 'markStuckRefunded', async () => true);
 
   t.after(() => findMock.mock.restore());

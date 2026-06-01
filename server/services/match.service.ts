@@ -469,7 +469,7 @@ export class MatchService {
 
     let activeExpired = 0;
     for (const match of activeMatches) {
-      const expired = await this.expireActiveMatch(match.roomId);
+      const expired = await this.expireActiveMatch(match.roomId, activeCutoff);
       if (expired) {
         activeExpired += 1;
       }
@@ -535,10 +535,14 @@ export class MatchService {
     return expired;
   }
 
-  private static async expireActiveMatch(roomId: string): Promise<boolean> {
+  private static async expireActiveMatch(roomId: string, activeCutoff: Date): Promise<boolean> {
     const expiredMatch = await runOwnTransaction(async (session) => {
       const match = await this.getMatchByRoomId(roomId, session);
       if (!match || match.status !== 'active') {
+        return null;
+      }
+
+      if (!match.lastActivityAt || match.lastActivityAt >= activeCutoff) {
         return null;
       }
 

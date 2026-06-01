@@ -9,6 +9,7 @@ import {
 } from '../../../../server/services/background-jobs.service.ts';
 import { disconnectRedis, getBullmqRedisClient, getRedisClient } from '../../../../server/services/redis.service.ts';
 import { setHotWalletRuntimeForTests } from '../../../../server/services/hot-wallet-runtime.service.ts';
+import { MatchService } from '../../../../server/services/match.service.ts';
 import { WithdrawalRepository } from '../../../../server/repositories/withdrawal.repository.ts';
 import { resetWithdrawalWorkerStateForTests } from '../../../../server/workers/withdrawal-worker.ts';
 
@@ -95,6 +96,51 @@ test('startBackgroundJobs uses BullMQ as the only scheduler when queue mode is e
   assert.equal(setIntervalMock.mock.callCount(), 0);
   assert.equal(bullmqMock.mock.callCount(), 1);
   assert.equal(bullmqStop.mock.callCount(), 1);
+});
+
+test('BullMQ background job processors rethrow after recording failures so BullMQ can retry', async (t) => {
+  registerEnvCleanup(t);
+  process.env.FEATURE_BULLMQ_JOBS = 'true';
+  process.env.REDIS_URL = 'redis://127.0.0.1:6379';
+  resetEnvCacheForTests();
+  setHotWalletRuntimeForTests({
+    hotWalletAddress: 'wallet-address',
+    hotJettonWallet: 'jetton-wallet',
+    derivedHotJettonWallet: 'jetton-wallet',
+  });
+
+  const staleProcessingMock = mock.method(WithdrawalRepository, 'findStaleProcessing', async () => []);
+  const expiryError = new Error('expiry unavailable');
+  const expiryMock = mock.method(MatchService, 'expireStaleMatches', async () => {
+    throw expiryError;
+  });
+  let staleMatchProcessor: (() => Promise<void>) | undefined;
+  const bullmqStop = mock.fn(async () => {});
+  const bullmqMock = mock.fn(async (definitions) => {
+    staleMatchProcessor = definitions.find(
+      (definition: { queueName: string }) => definition.queueName === 'stale-match-expiry',
+    )?.processor;
+    return {
+      stop: bullmqStop,
+      probe: async () => {},
+      getQueueDepths: async () => ({}),
+    };
+  });
+  setBackgroundJobDependenciesForTests({
+    startBullmqBackgroundJobs: bullmqMock,
+  });
+
+  t.after(() => staleProcessingMock.mock.restore());
+  t.after(() => expiryMock.mock.restore());
+
+  const controller = await startBackgroundJobs();
+  try {
+    assert.ok(staleMatchProcessor);
+    await assert.rejects(staleMatchProcessor, /expiry unavailable/);
+    assert.equal(expiryMock.mock.callCount(), 1);
+  } finally {
+    await controller.stop();
+  }
 });
 
 test('Redis clients use fail-fast retries for app operations and blocking-safe retries for BullMQ', async (t) => {

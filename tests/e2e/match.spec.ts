@@ -173,21 +173,21 @@ test('settles a paid public match with merchant commission end to end', async ({
 
     await expect(playerOne.page).toHaveURL(/\/game\//);
     await expect(playerOne.page.getByText(/waiting for p2/i)).toBeVisible();
-    await expect(playerOne.page.getByText('$18.00')).toBeVisible();
+    await expect(playerOne.page.getByText('$18', { exact: true })).toBeVisible();
     await expect(playerOne.page.getByText(/10% merchant commission applied/i)).toBeVisible();
-    await expect(playerOne.page.getByText('$32.50')).toBeVisible();
+    await expect(playerOne.page.getByText('$32.5', { exact: true })).toBeVisible();
 
     await playerTwo.page.goto('/play');
     await expect(playerTwo.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
     await expect(playerTwo.page.getByText(/player-one/i)).toBeVisible();
-    await expect(playerTwo.page.getByText(/10\.00 usdt/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/10(?:\.0+)? usdt/i)).toBeVisible();
     await playerTwo.page.getByRole('button', { name: /join & wager/i }).click();
-    await expect(playerTwo.page.getByText(/wager: 10\.00 usdt/i)).toBeVisible();
-    await expect(playerTwo.page.getByText(/payout: 18\.00 usdt/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/wager: 10(?:\.0+)? usdt/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/payout: 18(?:\.0+)? usdt/i)).toBeVisible();
     await playerTwo.page.getByRole('button', { name: /join match/i }).click();
 
     await expect(playerTwo.page).toHaveURL(/\/game\//);
-    await expect(playerTwo.page.getByText('$8.00')).toBeVisible();
+    await expect(playerTwo.page.getByText('$8', { exact: true })).toBeVisible();
     await expect(playerTwo.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
     await playerOne.page.reload();
     await expect(playerOne.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
@@ -206,19 +206,19 @@ test('settles a paid public match with merchant commission end to end', async ({
     await boardOne.press('1');
     await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
     await expect(playerTwo.page.getByText(/you were defeated/i)).toBeVisible();
-    await expect(playerOne.page.getByText('$50.50')).toBeVisible();
-    await expect(playerTwo.page.getByText('$8.00')).toBeVisible();
+    await expect(playerOne.page.getByText('$50.5', { exact: true })).toBeVisible();
+    await expect(playerTwo.page.getByText('$8', { exact: true })).toBeVisible();
 
     await playerOne.page.goto('/bank');
     await expect(playerOne.page.getByText(/match wager/i).first()).toBeVisible();
-    await expect(playerOne.page.getByText('-10.00').first()).toBeVisible();
+    await expect(playerOne.page.getByText('-10', { exact: true }).first()).toBeVisible();
     await expect(playerOne.page.getByText(/match win/i).first()).toBeVisible();
-    await expect(playerOne.page.getByText('+18.00').first()).toBeVisible();
+    await expect(playerOne.page.getByText('+18', { exact: true }).first()).toBeVisible();
 
     await admin.page.goto('/merchant/liquidity');
     await expect(admin.page.getByRole('heading', { name: /liquidity & wallets/i })).toBeVisible();
     await expect(admin.page.getByText('Platform Commission', { exact: true })).toBeVisible();
-    await expect(admin.page.getByText('13.50')).toBeVisible();
+    await expect(admin.page.getByText('13.5')).toBeVisible();
   } finally {
     await closeContext(playerOne.context);
     await closeContext(playerTwo.context);

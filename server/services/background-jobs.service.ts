@@ -53,7 +53,12 @@ const backgroundJobDependencies = {
   ...defaultBackgroundJobDependencies,
 };
 
-function createJobRunner(name: keyof BackgroundJobState, state: BackgroundJobState, job: () => Promise<void>) {
+function createJobRunner(
+  name: keyof BackgroundJobState,
+  state: BackgroundJobState,
+  job: () => Promise<void>,
+  options: { rethrowFailures?: boolean } = {},
+) {
   let isRunning = false;
 
   return async () => {
@@ -91,6 +96,9 @@ function createJobRunner(name: keyof BackgroundJobState, state: BackgroundJobSta
             outcome: 'failure',
             durationMs: performance.now() - startedAt,
           });
+          if (options.rethrowFailures === true) {
+            throw error;
+          }
         } finally {
           isRunning = false;
         }
@@ -138,22 +146,23 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
     logger.error('background_job.initialization_failed', { job: 'withdrawalWorker', error });
   }
 
+  const runnerOptions = { rethrowFailures: useBullmqSchedulers };
   const runDepositPoller = createJobRunner('depositPoller', state, async () => {
     await pollDeposits();
     await runFailedDepositReplayWorker();
-  });
+  }, runnerOptions);
   const runOrderProofRelay = createJobRunner('orderProofRelay', state, async () => {
     await runOrderProofRelayWorker();
-  });
-  const runWithdrawalWorker = createJobRunner('withdrawalWorker', state, runWithdrawalWorkerTask);
-  const runWithdrawalConfirmation = createJobRunner('withdrawalConfirmation', state, confirmSentWithdrawals);
-  const runHotWalletMonitor = createJobRunner('hotWalletMonitor', state, monitorHotWalletBalances);
+  }, runnerOptions);
+  const runWithdrawalWorker = createJobRunner('withdrawalWorker', state, runWithdrawalWorkerTask, runnerOptions);
+  const runWithdrawalConfirmation = createJobRunner('withdrawalConfirmation', state, confirmSentWithdrawals, runnerOptions);
+  const runHotWalletMonitor = createJobRunner('hotWalletMonitor', state, monitorHotWalletBalances, runnerOptions);
   const runStaleMatchExpiry = createJobRunner('staleMatchExpiry', state, async () => {
     const result = await MatchService.expireStaleMatches();
     if (result.waitingExpired > 0 || result.activeExpired > 0) {
       logger.warn('background_job.stale_matches_settled', result);
     }
-  });
+  }, runnerOptions);
 
   let bullmqRuntime: BullmqBackgroundJobRuntime | null = null;
   const bullmqJobs: Parameters<typeof backgroundJobDependencies.startBullmqBackgroundJobs>[0] = [];
@@ -252,42 +261,42 @@ export async function startBackgroundJobs(): Promise<BackgroundJobController> {
   const depositHandle = useBullmqSchedulers || !fallbackPollingEnabled
     ? null
     : setInterval(() => {
-        void runDepositPoller();
+        void runDepositPoller().catch(() => undefined);
       }, depositPollIntervalMs);
   depositHandle?.unref?.();
 
   const withdrawalHandle = useBullmqSchedulers
     ? null
     : setInterval(() => {
-        void runWithdrawalWorker();
+        void runWithdrawalWorker().catch(() => undefined);
       }, 5_000);
   withdrawalHandle?.unref?.();
 
   const orderProofRelayHandle = useBullmqSchedulers
     ? null
     : setInterval(() => {
-        void runOrderProofRelay();
+        void runOrderProofRelay().catch(() => undefined);
       }, 15_000);
   orderProofRelayHandle?.unref?.();
 
   const confirmationHandle = useBullmqSchedulers || !fallbackPollingEnabled
     ? null
     : setInterval(() => {
-        void runWithdrawalConfirmation();
+        void runWithdrawalConfirmation().catch(() => undefined);
       }, withdrawalConfirmIntervalMs);
   confirmationHandle?.unref?.();
 
   const monitorHandle = useBullmqSchedulers
     ? null
     : setInterval(() => {
-        void runHotWalletMonitor();
+        void runHotWalletMonitor().catch(() => undefined);
       }, 60_000);
   monitorHandle?.unref?.();
 
   const staleMatchHandle = useBullmqSchedulers
     ? null
     : setInterval(() => {
-        void runStaleMatchExpiry();
+        void runStaleMatchExpiry().catch(() => undefined);
       }, 30_000);
   staleMatchHandle?.unref?.();
 

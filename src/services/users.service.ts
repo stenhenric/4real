@@ -2,7 +2,8 @@ import request from './api/apiClient.ts';
 import type { LeaderboardUserDTO, UserProfileDTO } from '../types/api';
 
 export function getLeaderboard(signal?: AbortSignal) {
-  return request<LeaderboardUserDTO[]>('/users/leaderboard', signal ? { signal } : undefined);
+  return request<LeaderboardUserDTO[] | null>('/users/leaderboard', signal ? { signal } : undefined)
+    .then((leaderboard) => (Array.isArray(leaderboard) ? leaderboard : []));
 }
 
 export function getUserProfile(userId: string, signal?: AbortSignal) {
