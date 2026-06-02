@@ -41,7 +41,7 @@ function isApiErrorPayload(value: unknown): value is ApiErrorDTO {
 }
 
 let activeSessionRefresh: Promise<void> | null = null;
-const AUTH_REFRESH_EXCLUDED_ENDPOINTS = new Set([
+const PUBLIC_AUTH_ENDPOINTS = new Set([
   '/auth/login/password',
   '/auth/register',
   '/auth/login/magic-link/request',
@@ -53,13 +53,31 @@ const AUTH_REFRESH_EXCLUDED_ENDPOINTS = new Set([
   '/auth/email/verify/consume',
   '/auth/mfa/challenge',
 ]);
+const AUTH_REFRESH_EXCLUDED_ENDPOINTS = new Set([
+  ...PUBLIC_AUTH_ENDPOINTS,
+  '/auth/mfa/totp/verify',
+  '/auth/mfa/disable',
+]);
 const SESSION_EXPIRED_REDIRECT_EXCLUDED_ENDPOINTS = new Set([
   '/auth/me',
-  ...AUTH_REFRESH_EXCLUDED_ENDPOINTS,
+  ...PUBLIC_AUTH_ENDPOINTS,
+]);
+const SESSION_EXPIRED_CODES = new Set([
+  'UNAUTHENTICATED',
+  'SESSION_EXPIRED',
+  'INVALID_TOKEN',
 ]);
 
 function shouldSkipSessionExpiredRedirect(endpoint: string) {
   return SESSION_EXPIRED_REDIRECT_EXCLUDED_ENDPOINTS.has(endpoint);
+}
+
+function shouldDispatchSessionExpired(status: number, endpoint: string, code?: string) {
+  if (status !== 401 || shouldSkipSessionExpiredRedirect(endpoint)) {
+    return false;
+  }
+
+  return code ? SESSION_EXPIRED_CODES.has(code) : true;
 }
 
 async function refreshAuthSession(): Promise<void> {
@@ -174,7 +192,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
         });
       }
 
-      if (response.status === 401 && !shouldSkipSessionExpiredRedirect(endpoint)) {
+      if (shouldDispatchSessionExpired(response.status, endpoint, data.code)) {
         dispatchSessionExpired();
       }
 
@@ -187,7 +205,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
     }
 
     if (typeof data === 'string' && data.trim().length > 0) {
-      if (response.status === 401 && !shouldSkipSessionExpiredRedirect(endpoint)) {
+      if (shouldDispatchSessionExpired(response.status, endpoint)) {
         dispatchSessionExpired();
       }
 
@@ -197,7 +215,7 @@ const request = async <T = unknown>(endpoint: string, options?: ApiRequestOption
       });
     }
 
-    if (response.status === 401 && !shouldSkipSessionExpiredRedirect(endpoint)) {
+    if (shouldDispatchSessionExpired(response.status, endpoint)) {
       dispatchSessionExpired();
     }
 

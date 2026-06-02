@@ -1,7 +1,7 @@
 import type { SessionListItemDTO } from '../../types/api';
 
 type BrowserName = 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Samsung Internet' | 'Browser';
-type DeviceClass = 'desktop' | 'mobile' | 'tablet' | 'device';
+type DeviceClass = 'Desktop' | 'Mobile' | 'Tablet' | 'Device';
 
 function getBrowserName(userAgent: string): BrowserName {
   if (/\bEdg\//.test(userAgent)) {
@@ -29,18 +29,18 @@ function getBrowserName(userAgent: string): BrowserName {
 
 function getDeviceClass(userAgent: string): DeviceClass {
   if (/\biPad\b|\bTablet\b/i.test(userAgent)) {
-    return 'tablet';
+    return 'Tablet';
   }
 
   if (/\bMobile\b|\bAndroid\b|\biPhone\b|\biPod\b/i.test(userAgent)) {
-    return 'mobile';
+    return 'Mobile';
   }
 
   if (/\bWindows NT\b|\bMacintosh\b|\bX11\b|\bLinux x86_64\b/i.test(userAgent)) {
-    return 'desktop';
+    return 'Desktop';
   }
 
-  return 'device';
+  return 'Device';
 }
 
 export function formatSessionDeviceLabel(session: Pick<SessionListItemDTO, 'userAgent'>): string {
@@ -52,5 +52,8 @@ export function formatSessionDeviceLabel(session: Pick<SessionListItemDTO, 'user
 }
 
 export function formatSessionLastSeen(session: Pick<SessionListItemDTO, 'lastSeenAt'>): string {
-  return `Last seen ${new Date(session.lastSeenAt).toLocaleString()}`;
+  return `Last active: ${new Date(session.lastSeenAt).toLocaleString([], {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })}`;
 }

@@ -9,6 +9,31 @@ type RouteExpectation = {
   waitForResponse?: RegExp;
 };
 
+type MockUser = {
+  id: string;
+  username: string;
+  email: string;
+  balance: string;
+  elo: number;
+  isAdmin: boolean;
+  stats: { wins: number; losses: number; draws: number };
+  emailVerifiedAt?: string;
+  hasPassword: boolean;
+  mfaEnabled: boolean;
+};
+
+type MockSession = {
+  id: string;
+  deviceId: string;
+  current: boolean;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  idleExpiresAt: string;
+  absoluteExpiresAt: string;
+};
+
 const MOCK_TON_WALLETS = [{
   app_name: 'mock-wallet',
   name: 'Mock Wallet',
@@ -29,6 +54,43 @@ const DEFAULT_IGNORED_CONSOLE_ERRORS = [
   /Firefox can.t establish a connection to the server at ws:\/\/127\.0\.0\.1:4317\/socket\.io\/.*transport=websocket/i,
   /The connection to ws:\/\/127\.0\.0\.1:4317\/socket\.io\/.*transport=websocket was interrupted while the page was loading/i,
 ];
+
+const currentSecuritySession: MockSession = {
+  id: 'session-current',
+  deviceId: 'device-current',
+  current: true,
+  userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36',
+  ipAddress: '127.0.0.1',
+  createdAt: '2026-06-02T15:00:00.000Z',
+  lastSeenAt: '2026-06-02T15:33:00.000Z',
+  idleExpiresAt: '2026-06-03T15:33:00.000Z',
+  absoluteExpiresAt: '2026-07-02T15:33:00.000Z',
+};
+
+const otherSecuritySession: MockSession = {
+  id: 'session-other',
+  deviceId: 'device-other',
+  current: false,
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
+  ipAddress: '127.0.0.2',
+  createdAt: '2026-06-02T13:00:00.000Z',
+  lastSeenAt: '2026-06-02T14:20:00.000Z',
+  idleExpiresAt: '2026-06-03T14:20:00.000Z',
+  absoluteExpiresAt: '2026-07-02T14:20:00.000Z',
+};
+
+const baseSecurityUser: MockUser = {
+  id: 'user-security',
+  username: 'security-user',
+  email: 'security-user@example.com',
+  balance: '42.000000',
+  elo: 1200,
+  isAdmin: false,
+  stats: { wins: 1, losses: 0, draws: 0 },
+  emailVerifiedAt: '2026-06-01T00:00:00.000Z',
+  hasPassword: true,
+  mfaEnabled: false,
+};
 
 function installErrorCollectors(page: Page, options?: { ignoreConsole?: RegExp[]; ignorePageErrors?: RegExp[] }) {
   const pageErrors: string[] = [];
@@ -86,6 +148,107 @@ async function installTurnstileStub(page: Page) {
       remove: () => {},
     };
   });
+}
+
+function authResponse(user: MockUser, session: MockSession) {
+  return {
+    status: 'authenticated',
+    user,
+    session,
+  };
+}
+
+async function installClipboardStub(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          (window as unknown as { __copiedText?: string }).__copiedText = text;
+        },
+      },
+    });
+  });
+}
+
+async function mockSecurityApi(page: Page, options?: { mfaEnabled?: boolean; includeOtherDevice?: boolean }) {
+  let user = { ...baseSecurityUser, mfaEnabled: options?.mfaEnabled ?? false };
+  let sessions = options?.includeOtherDevice === false
+    ? [currentSecuritySession]
+    : [currentSecuritySession, otherSecuritySession];
+  let setupCalls = 0;
+
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(authResponse(user, currentSecuritySession)),
+    });
+  });
+
+  await page.route('**/api/auth/sessions/revoke-others', async (route) => {
+    sessions = sessions.filter((session) => session.current);
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'sessions_revoked', sessions }),
+    });
+  });
+
+  await page.route('**/api/auth/sessions/session-other', async (route) => {
+    sessions = sessions.filter((session) => session.id !== 'session-other');
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'sessions_revoked', sessions }),
+    });
+  });
+
+  await page.route('**/api/auth/sessions', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'success', sessions }),
+    });
+  });
+
+  await page.route('**/api/auth/mfa/totp/setup', async (route) => {
+    setupCalls += 1;
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'success',
+        setupToken: 'setup-token-1',
+        totpSecret: 'JBSWY3DPEHPK3PXP',
+        otpauthUrl: 'otpauth://totp/4real:security-user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=4real&algorithm=SHA1&digits=6&period=30',
+      }),
+    });
+  });
+
+  await page.route('**/api/auth/mfa/totp/verify', async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { code?: string };
+    if (body.code !== '123456') {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'INVALID_TOTP_CODE',
+          message: 'Invalid verification code',
+        }),
+      });
+      return;
+    }
+
+    user = { ...user, mfaEnabled: true };
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...authResponse(user, currentSecuritySession),
+        status: 'mfa_enabled',
+        recoveryCodes: ['ABCD-EFGH', 'JKLM-NPQR'],
+      }),
+    });
+  });
+
+  return {
+    getSetupCalls: () => setupCalls,
+  };
 }
 
 async function fillWithdrawalReview(page: Page) {
@@ -170,6 +333,119 @@ test('player routes when a session is preloaded render the lobby leaderboard ban
     await health.assertHealthy();
   } finally {
     await closeContext(context);
+  }
+});
+
+test('security overview stays compact and opens a focused 2FA setup flow', async ({ page }) => {
+  await installClipboardStub(page);
+  const api = await mockSecurityApi(page);
+
+  await page.goto('/auth/security');
+
+  await expect(page.getByRole('heading', { name: /^security$/i })).toBeVisible();
+  await expect(page.getByText(/protect your account/i)).toBeVisible();
+  await expect(page.getByText('Account protection')).toBeVisible();
+  await expect(page.getByText('Email')).toBeVisible();
+  await expect(page.getByText('Verified')).toBeVisible();
+  await expect(page.getByText('Password')).toBeVisible();
+  await expect(page.getByText('Enabled')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^two-factor authentication$/i })).toBeVisible();
+  await expect(page.getByText('Current device').first()).toBeVisible();
+  await expect(page.getByText('Active', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /enable 2FA/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /manage devices/i })).toBeVisible();
+
+  await expect(page.getByText(/OTP Auth URL/i)).toHaveCount(0);
+  await expect(page.getByText(/\bsecret\b/i)).toHaveCount(0);
+  await expect(page.getByLabel(/authenticator code/i)).toHaveCount(0);
+  expect(api.getSetupCalls()).toBe(0);
+
+  await page.getByRole('button', { name: /enable 2FA/i }).click();
+  await expect(page.getByRole('heading', { name: /enable two-factor authentication/i })).toBeVisible();
+  await expect(page.getByText(/Google Authenticator, 1Password, Authy, Microsoft Authenticator/i)).toBeVisible();
+  expect(api.getSetupCalls()).toBe(0);
+
+  await page.getByRole('button', { name: /start setup/i }).click();
+  await expect(page.getByRole('heading', { name: /scan this QR code/i })).toBeVisible();
+  await expect(page.getByRole('img', { name: /QR code for authenticator app/i })).toBeVisible();
+  await expect(page.getByText('JBSWY3DPEHPK3PXP')).toHaveCount(0);
+  await expect(page.getByText(/otpauth:\/\//i)).toHaveCount(0);
+  expect(api.getSetupCalls()).toBe(1);
+
+  await page.getByRole('button', { name: /show setup key/i }).click();
+  await expect(page.getByText('JBSWY3DPEHPK3PXP')).toBeVisible();
+  await page.getByRole('button', { name: /copy setup key/i }).click();
+  await expect(page.getByRole('region', { name: 'Notifications' })).toContainText(/setup key copied/i);
+
+  await page.getByRole('button', { name: /continue/i }).click();
+  await expect(page.getByRole('heading', { name: /enter the 6-digit code/i })).toBeVisible();
+  const codeInput = page.getByLabel(/authenticator code/i);
+  await codeInput.fill('12345');
+  await expect(page.getByRole('button', { name: /enable 2FA/i })).toBeDisabled();
+  await codeInput.fill('000000');
+  await page.getByRole('button', { name: /enable 2FA/i }).click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText(/that code did not work/i);
+
+  await codeInput.fill('123456');
+  await page.getByRole('button', { name: /enable 2FA/i }).click();
+  await expect(page.getByRole('heading', { name: /save your recovery codes/i })).toBeVisible();
+  await expect(page.getByText('ABCD-EFGH')).toBeVisible();
+  await page.getByRole('button', { name: /i've saved my codes/i }).click();
+  await expect(page.getByText(/have you saved your recovery codes/i)).toBeVisible();
+  await page.getByRole('button', { name: /yes, I saved them/i }).click();
+  await expect(page.getByRole('heading', { name: /^security$/i })).toBeVisible();
+  await expect(page.getByText('On', { exact: true }).first()).toBeVisible();
+});
+
+test('device management is focused and confirms destructive session actions', async ({ page }) => {
+  await mockSecurityApi(page);
+
+  await page.goto('/auth/security');
+  await page.getByRole('button', { name: /manage devices/i }).click();
+
+  await expect(page.getByRole('heading', { name: /^active devices$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^current device$/i })).toBeVisible();
+  await expect(page.getByText('Chrome Mobile')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^other devices$/i })).toBeVisible();
+  await expect(page.getByText('Chrome Desktop')).toBeVisible();
+
+  await page.getByRole('button', { name: /^sign out$/i }).click();
+  await expect(page.getByText(/sign out this device\?/i)).toHaveCount(0);
+  await expect(page.getByText(/sign out other devices\?/i)).toBeVisible();
+  await page.getByRole('button', { name: /cancel/i }).click();
+
+  await page.getByRole('button', { name: /sign out all other devices/i }).click();
+  await expect(page.getByText(/this will remove access from all devices except this one/i)).toBeVisible();
+  await page.getByRole('button', { name: /^sign out other devices$/i }).click();
+  await expect(page.getByText(/no other active devices found/i)).toBeVisible();
+});
+
+test('mobile bottom navigation contains destinations only', async ({ page }) => {
+  await mockSecurityApi(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+
+  await page.goto('/auth/security');
+
+  const mobileNav = page.getByRole('navigation', { name: /mobile navigation/i });
+  await expect(mobileNav).toBeVisible();
+  await expect(mobileNav).toContainText(/lobby/i);
+  await expect(mobileNav).toContainText(/bank/i);
+  await expect(mobileNav).toContainText(/profile/i);
+  await expect(mobileNav).not.toContainText(/logout/i);
+});
+
+test('security surfaces have no horizontal overflow across supported widths', async ({ page }) => {
+  await mockSecurityApi(page);
+
+  for (const width of [320, 375, 430, 768, 1024, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/auth/security');
+    await expect(page.getByRole('button', { name: /enable 2FA/i })).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    await page.getByRole('button', { name: /manage devices/i }).click();
+    await expect(page.getByRole('heading', { name: /^active devices$/i })).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
 });
 

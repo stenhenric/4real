@@ -69,7 +69,7 @@ const Navbar = () => {
               <ShieldCheck size={24} />
             </Link>
 
-            {/* Profile & Logout — desktop only (on mobile, use bottom nav) */}
+            {/* Profile and logout are desktop-only. Mobile sign-out lives in account/security actions. */}
             {user ? (
               <Link to={`/profile/${user.id}`} className="hidden md:block p-2 hover:bg-black/5" aria-label="Open profile">
                 <User size={24} />
@@ -124,14 +124,6 @@ const Navbar = () => {
               Profile
             </NavLink>
           ) : null}
-          <SketchyButton
-            type="button"
-            onClick={handleLogout}
-            className="px-4 py-1 text-xs font-bold text-black/50 transition-colors hover:text-black/80 [&>span]:flex-col [&>span]:gap-0.5"
-          >
-            <LogOut size={22} />
-            Logout
-          </SketchyButton>
         </div>
       </nav>
     </>

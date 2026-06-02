@@ -25,7 +25,7 @@ import request, { ApiClientError } from '../../../../src/services/api/apiClient.
 import { getMatch, getUserMatches, joinMatch } from '../../../../src/services/matches.service.ts';
 import { updateOrderStatus } from '../../../../src/services/orders.service.ts';
 import { getUserProfile } from '../../../../src/services/users.service.ts';
-import { shouldAutoStartTotpSetup } from '../../../../src/pages/auth/security-page-content.ts';
+import { shouldOpenTotpSetupFlow } from '../../../../src/pages/auth/security-page-content.ts';
 import { normalizeFixedScaleAmount } from '../../../../src/utils/exact-money.ts';
 
 function createJsonResponse(data: unknown, status = 200) {
@@ -610,78 +610,39 @@ test('auth provider ignores stale refreshes after newer auth state changes', () 
   assert.match(authProviderSource, /authStatus === 'authenticated'/);
 });
 
-test('security page copy uses settings-oriented MFA guidance', () => {
+test('security page copy uses focused settings-oriented MFA guidance', () => {
   const pageSource = readFileSync(join('src', 'pages', 'auth', 'SecuritySettingsPage.tsx'), 'utf8');
   const contentSource = readFileSync(join('src', 'pages', 'auth', 'security-page-content.ts'), 'utf8');
 
-  assert.match(contentSource, /Protect your account\./);
-  assert.match(contentSource, /Set up your authenticator/);
-  assert.match(contentSource, /Recovery codes/);
+  assert.match(contentSource, /title: 'Security'/);
+  assert.match(contentSource, /Manage sign-in protection, recovery options, and active devices\./);
+  assert.match(contentSource, /Start setup/);
+  assert.match(contentSource, /Save your recovery codes/);
   assert.match(contentSource, /Active devices/);
   assert.match(contentSource, /Turn off 2FA/);
+  assert.doesNotMatch(contentSource, /OTP Auth URL/);
   assert.doesNotMatch(contentSource, /Control access from one place\./);
   assert.doesNotMatch(contentSource, /Device sessions/);
   assert.match(pageSource, /SECURITY_PAGE_COPY/);
 });
 
-test('security page auto-start helper only runs when setup is required and idle', () => {
+test('security page setup helper opens the focused flow without starting setup', () => {
   const helperPath = join(process.cwd(), 'src', 'pages', 'auth', 'security-page-content.ts');
 
   assert.equal(existsSync(helperPath), true, 'Expected security page helper module to exist');
 
-  assert.equal(shouldAutoStartTotpSetup({
+  assert.equal(shouldOpenTotpSetupFlow({
     setupRequested: true,
     mfaEnabled: false,
-    hasSetup: false,
-    setupBusy: false,
-    autoStartAttempted: false,
   }), true);
 
-  assert.equal(shouldAutoStartTotpSetup({
+  assert.equal(shouldOpenTotpSetupFlow({
     setupRequested: false,
     mfaEnabled: false,
-    hasSetup: false,
-    setupBusy: false,
-    autoStartAttempted: false,
   }), false);
 
-  assert.equal(shouldAutoStartTotpSetup({
+  assert.equal(shouldOpenTotpSetupFlow({
     setupRequested: true,
     mfaEnabled: true,
-    hasSetup: false,
-    setupBusy: false,
-    autoStartAttempted: false,
-  }), false);
-
-  assert.equal(shouldAutoStartTotpSetup({
-    setupRequested: true,
-    mfaEnabled: false,
-    hasSetup: true,
-    setupBusy: false,
-    autoStartAttempted: false,
-  }), false);
-
-  assert.equal(shouldAutoStartTotpSetup({
-    setupRequested: true,
-    mfaEnabled: false,
-    hasSetup: false,
-    setupBusy: true,
-    autoStartAttempted: false,
-  }), false);
-
-  assert.equal(shouldAutoStartTotpSetup({
-    setupRequested: true,
-    mfaEnabled: false,
-    hasSetup: false,
-    setupBusy: false,
-    autoStartAttempted: true,
-  }), false);
-
-  assert.equal(shouldAutoStartTotpSetup({
-    setupRequested: true,
-    mfaEnabled: false,
-    hasSetup: false,
-    setupBusy: true,
-    autoStartAttempted: true,
   }), false);
 });

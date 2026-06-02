@@ -81,3 +81,30 @@ test('request does not refresh public login failures', async (t) => {
 
   assert.deepEqual(calls, ['/api/auth/login/password']);
 });
+
+test('request does not refresh invalid TOTP setup codes', async (t) => {
+  const calls: string[] = [];
+  const fetchMock = mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    calls.push(url);
+    return jsonResponse(401, {
+      status: 401,
+      code: 'INVALID_TOTP_CODE',
+      message: 'Invalid verification code',
+    });
+  });
+
+  t.after(() => fetchMock.mock.restore());
+
+  await assert.rejects(
+    request('/auth/mfa/totp/verify', { method: 'POST', body: JSON.stringify({ code: '000000' }) }),
+    (error: unknown) => {
+      assert.ok(error instanceof ApiClientError);
+      assert.equal(error.status, 401);
+      assert.equal(error.code, 'INVALID_TOTP_CODE');
+      return true;
+    },
+  );
+
+  assert.deepEqual(calls, ['/api/auth/mfa/totp/verify']);
+});
