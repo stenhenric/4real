@@ -17,6 +17,7 @@ import {
   createOrderCreateRateLimiter,
   createPasswordLoginIdentifierRateLimiter,
   createPublicCacheableGetRateLimiter,
+  createWithdrawalRateLimiter,
 } from '../../../../server/middleware/rate-limit.middleware.ts';
 
 function withRedisRateLimitEnv(t: TestContext): void {
@@ -99,6 +100,8 @@ function withAuthRateLimitEnv(t: TestContext, max = '2'): void {
     MATCH_MUTATION_RATE_LIMIT_MAX: process.env.MATCH_MUTATION_RATE_LIMIT_MAX,
     ADMIN_MUTATION_RATE_LIMIT_WINDOW_MS: process.env.ADMIN_MUTATION_RATE_LIMIT_WINDOW_MS,
     ADMIN_MUTATION_RATE_LIMIT_MAX: process.env.ADMIN_MUTATION_RATE_LIMIT_MAX,
+    WITHDRAWAL_RATE_LIMIT_WINDOW_MS: process.env.WITHDRAWAL_RATE_LIMIT_WINDOW_MS,
+    WITHDRAWAL_RATE_LIMIT_MAX: process.env.WITHDRAWAL_RATE_LIMIT_MAX,
   };
 
   delete process.env.REDIS_URL;
@@ -114,6 +117,8 @@ function withAuthRateLimitEnv(t: TestContext, max = '2'): void {
   process.env.MATCH_MUTATION_RATE_LIMIT_MAX = max;
   process.env.ADMIN_MUTATION_RATE_LIMIT_WINDOW_MS = '60000';
   process.env.ADMIN_MUTATION_RATE_LIMIT_MAX = max;
+  process.env.WITHDRAWAL_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.WITHDRAWAL_RATE_LIMIT_MAX = max;
   resetEnvCacheForTests();
 
   t.after(() => {
@@ -432,6 +437,22 @@ test('expensive operation limiters are keyed by authenticated user instead of IP
   }
 });
 
+test('withdrawal limiter is keyed by authenticated user instead of IP', async (t) => {
+  withAuthRateLimitEnv(t);
+  const baseUrl = await startActorRateLimitApp(t, createWithdrawalRateLimiter());
+
+  assert.equal((await expensiveRequest(baseUrl, { userId: 'withdraw-user', ip: '10.0.7.1' })).status, 202);
+  assert.equal((await expensiveRequest(baseUrl, { userId: 'withdraw-user', ip: '10.0.7.2' })).status, 202);
+  const limited = await expensiveRequest(baseUrl, { userId: 'withdraw-user', ip: '10.0.7.3' });
+
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), {
+    code: 'WITHDRAWAL_RATE_LIMITED',
+    message: 'Too many withdrawal requests, please try again later.',
+  });
+  assert.equal((await expensiveRequest(baseUrl, { userId: 'withdraw-other', ip: '10.0.7.4' })).status, 202);
+});
+
 test('expensive authenticated mutation routes apply route-specific limiters before handlers', () => {
   const transactionsRoutes = fs.readFileSync(
     path.join(process.cwd(), 'server', 'routes', 'transactions.routes.ts'),
@@ -452,11 +473,14 @@ test('expensive authenticated mutation routes apply route-specific limiters befo
 
   assert.match(transactionsRoutes, /router\.post\('\/deposit\/memo',\s*createDepositOperationRateLimiter\(\),\s*asyncHandler\(generateDepositMemoHandler\)\)/s);
   assert.match(transactionsRoutes, /router\.post\('\/deposit\/prepare',\s*createDepositOperationRateLimiter\(\),\s*validateBody\(prepareTonConnectDepositRequestSchema\),\s*asyncHandler\(prepareTonConnectDepositHandler\)\)/s);
+  assert.match(transactionsRoutes, /router\.post\('\/withdraw',\s*createWithdrawalRateLimiter\(\),\s*validateBody\(withdrawRequestSchema\),\s*asyncHandler\(requestWithdrawalHandler\)\)/s);
   assert.match(ordersRoutes, /router\.post\('\/',\s*createOrderCreateRateLimiter\(\),\s*asyncHandler\(OrderController\.createOrder\)\)/s);
+  assert.match(ordersRoutes, /router\.patch\(\s*'\/:id',\s*requireAdmin,\s*requireMfaStepUp,\s*createAdminMutationRateLimiter\(\),\s*validateBody\(updateOrderStatusRequestSchema\),\s*asyncHandler\(OrderController\.updateOrder\),?\s*\)/s);
   assert.match(matchesRoutes, /router\.post\('\/',\s*createMatchMutationRateLimiter\(\),\s*validateBody\(createMatchRequestSchema\),\s*asyncHandler\(MatchController\.createMatch\)\)/s);
   assert.match(matchesRoutes, /router\.post\('\/:roomId\/join',\s*createMatchMutationRateLimiter\(\),\s*asyncHandler\(MatchController\.joinMatch\)\)/s);
   assert.match(matchesRoutes, /router\.post\('\/:roomId\/resign',\s*createMatchMutationRateLimiter\(\),\s*asyncHandler\(MatchController\.resignMatch\)\)/s);
   assert.match(adminRoutes, /router\.post\(\s*'\/merchant\/deposits\/replay-window',\s*createAdminMutationRateLimiter\(\),\s*validateBody\(merchantDepositReplayWindowRequestSchema\),\s*asyncHandler\(MerchantAdminController\.replayDepositWindow\)/s);
   assert.match(adminRoutes, /router\.post\(\s*'\/merchant\/deposits\/:txHash\/reconcile',\s*createAdminMutationRateLimiter\(\),\s*validateBody\(merchantDepositReconcileRequestSchema\),\s*asyncHandler\(MerchantAdminController\.reconcileDeposit\)/s);
   assert.match(adminRoutes, /router\.post\(\s*'\/withdrawals\/:withdrawalId\/recover',\s*createAdminMutationRateLimiter\(\),\s*validateBody\(withdrawalRecoveryRequestSchema\),\s*asyncHandler\(WithdrawalRecoveryController\.recover\)/s);
+  assert.match(adminRoutes, /router\.patch\(\s*'\/merchant\/config',\s*createAdminMutationRateLimiter\(\),\s*validateBody\(updateMerchantConfigRequestSchema\),\s*asyncHandler\(MerchantAdminController\.updateConfig\),?\s*\)/s);
 });

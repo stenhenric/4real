@@ -56,7 +56,18 @@ test('boots the app, enforces auth, supports register verify login logout, and p
   await expect(page).toHaveURL(/\/play$/);
   await expect(page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
 
-  await page.getByRole('button', { name: /log out/i }).click();
+  await page.goto('/auth/security');
+  await expect(page.getByRole('heading', { name: /^security$/i })).toBeVisible();
+  await page.getByRole('button', { name: /sign out of this device/i }).click();
+  await expect(page.getByText(/sign out of this device\?/i)).toBeVisible();
+  await Promise.all([
+    page.waitForResponse((response) => (
+      response.url().includes('/api/auth/logout')
+      && response.request().method() === 'POST'
+      && response.status() === 204
+    )),
+    page.getByRole('button', { name: /^sign out$/i }).click(),
+  ]);
   await expect(page).toHaveURL(/\/auth\/login$/);
 
   await page.getByLabel('Email or username').fill('audit-user');

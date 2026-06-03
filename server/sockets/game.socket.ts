@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 
 import type { Server } from 'socket.io';
-import { getEnv } from '../config/env.ts';
 
 import { getAuthCookieName } from '../config/cookies.ts';
 import { AuthSessionService } from '../services/auth-session.service.ts';
@@ -46,7 +45,6 @@ function extractAccessToken(cookieHeader?: string): string | undefined {
 }
 
 export function registerGameSocketHandlers(io: Server, realtimeMatchService: RealtimeMatchService): void {
-  const env = getEnv();
   io.use((socket, next) => {
     const authToken = typeof socket.handshake.auth?.token === 'string'
       ? socket.handshake.auth.token

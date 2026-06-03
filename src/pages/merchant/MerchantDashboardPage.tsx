@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowDownUp, ArrowUpRight, Clock3, ShieldAlert, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
 import { formatCompactNumber, formatDateTime, formatMoney, formatRelativeMinutes } from '../../features/merchant/format';
@@ -76,7 +77,7 @@ export default function MerchantDashboardPage() {
                 {dashboard.overview.completedTrades24h} completed trade{dashboard.overview.completedTrades24h === 1 ? '' : 's'}
               </p>
             </div>
-            <ArrowUpRight className="text-green-700/40" size={34} />
+            <ArrowUpRight className="text-success-text/40" size={34} />
           </div>
         </SketchyContainer>
 
@@ -112,7 +113,7 @@ export default function MerchantDashboardPage() {
             <div className="flex h-64 items-end gap-3">
               {dashboard.overview.volumeSeries.map((point) => (
                 <div key={point.bucketStart} className="flex flex-1 flex-col items-center gap-3">
-                  <div className="w-full border-2 border-ink-black/20 bg-[repeating-linear-gradient(-45deg,rgba(26,54,93,0.15),rgba(26,54,93,0.15)_10px,rgba(26,54,93,0.08)_10px,rgba(26,54,93,0.08)_20px)] px-2 pt-2" style={{ height: `${Math.max(14, (moneyToNumber(point.completedVolumeUsdt) / maxVolume) * 100)}%` }}>
+                  <div className="w-full border-2 border-ink-black/20 bg-note-blue px-2 pt-2" style={{ height: `${Math.max(14, (moneyToNumber(point.completedVolumeUsdt) / maxVolume) * 100)}%` }}>
                     <div className="text-center text-[11px] font-mono font-bold text-ink-blue">
                       {moneyToNumber(point.completedVolumeUsdt) > 0 ? formatCompactNumber(point.completedVolumeUsdt) : '0'}
                     </div>
@@ -146,17 +147,15 @@ export default function MerchantDashboardPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 text-xs font-bold ${order.type === 'BUY' ? 'bg-ink-blue/10 text-ink-blue' : 'bg-ink-red/10 text-ink-red'}`}>
-                          {order.type}
-                        </span>
+                        <StatusBadge tone={order.type === 'BUY' ? 'info' : 'danger'}>{order.type}</StatusBadge>
                         <span className="font-mono text-sm opacity-60">{order.user.username}</span>
                       </div>
                       <p className="mt-2 text-2xl font-bold italic">{formatMoney(order.amount)} USDT</p>
                     </div>
                     <div className="text-right">
-                      <span className={`px-3 py-1 text-xs font-bold uppercase ${order.riskLevel === 'high' ? 'bg-red-100 text-ink-red' : order.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-700'}`}>
+                      <StatusBadge tone={statusToneFromStatus(order.riskLevel)}>
                         {order.riskLevel} risk
-                      </span>
+                      </StatusBadge>
                       <p className="mt-2 text-sm font-mono opacity-60">{formatRelativeMinutes(order.waitMinutes)}</p>
                     </div>
                   </div>
@@ -189,10 +188,17 @@ export default function MerchantDashboardPage() {
             dashboard.alerts.slice(0, 3).map((alert) => (
               <div key={alert.id} className="border border-black/10 bg-black/5 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <span className={`px-3 py-1 text-xs font-bold uppercase ${alert.severity === 'critical' ? 'bg-red-100 text-ink-red' : alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-ink-blue'}`}>
+                  <StatusBadge tone={statusToneFromStatus(alert.severity)}>
                     {alert.severity}
-                  </span>
-                  <AlertTriangle size={18} className={alert.severity === 'critical' ? 'text-ink-red' : alert.severity === 'warning' ? 'text-yellow-800' : 'text-ink-blue'} />
+                  </StatusBadge>
+                  <AlertTriangle
+                    size={18}
+                    className={alert.severity === 'critical'
+                      ? 'text-danger-text'
+                      : alert.severity === 'warning'
+                        ? 'text-warning-text'
+                        : 'text-info-text'}
+                  />
                 </div>
                 <h4 className="mt-3 text-xl font-semibold italic">{alert.title}</h4>
                 <p className="mt-2 text-sm font-mono opacity-70">{alert.description}</p>

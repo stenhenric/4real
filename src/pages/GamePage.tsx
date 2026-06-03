@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Medal, Trophy } from 'lucide-react';
+import { AlertTriangle, LoaderCircle, Medal, Search, ShieldAlert, Trophy } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { drawConnectFourBoard } from '../canvas/drawConnectFourBoard';
 import { runVictoryConfetti } from '../canvas/runVictoryConfetti';
 import { SketchyButton } from '../components/SketchyButton';
 import { SketchyContainer } from '../components/SketchyContainer';
+import { StatePanel } from '../components/ui/StatePanel';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useGameRoom } from '../features/game/useGameRoom';
 import { getMatch, joinMatch, resignMatch } from '../services/matches.service';
@@ -175,11 +176,31 @@ const GamePage = () => {
   };
 
   if (!roomId) {
-    return <div className="text-center py-20 font-bold">Game room not found.</div>;
+    return (
+      <StatePanel
+        actions={(
+          <SketchyButton onClick={() => navigate('/play')} type="button" variant="primary">
+            Back to lobby
+          </SketchyButton>
+        )}
+        eyebrow="Match"
+        icon={Search}
+        title="Game room not found"
+        tone="warning"
+      />
+    );
   }
 
   if (previewLoading) {
-    return <div className="text-center py-20 italic">Inspecting the match ledger…</div>;
+    return (
+      <StatePanel
+        eyebrow="Match ledger"
+        icon={LoaderCircle}
+        iconClassName="animate-spin"
+        title="Inspecting the match ledger..."
+        tone="info"
+      />
+    );
   }
 
   if (!roomAccessReady && canJoinMatch && matchPreview) {
@@ -212,11 +233,30 @@ const GamePage = () => {
   }
 
   if (!roomAccessReady) {
-    return <div className="text-center py-20 font-bold">You do not have access to this match.</div>;
+    return (
+      <StatePanel
+        actions={(
+          <SketchyButton onClick={() => navigate('/play')} type="button" variant="primary">
+            Back to lobby
+          </SketchyButton>
+        )}
+        eyebrow="Access denied"
+        icon={ShieldAlert}
+        title="You do not have access to this match"
+        tone="danger"
+      />
+    );
   }
 
   if (!room) {
-    return <div className="text-center py-20 italic">Finding the table…</div>;
+    return (
+      <StatePanel
+        eyebrow="Match"
+        icon={AlertTriangle}
+        title="Finding the table..."
+        tone="info"
+      />
+    );
   }
 
   const isMyTurn = room.currentTurn === user?.id;
@@ -294,7 +334,7 @@ const GamePage = () => {
               <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold text-ink-black">
                 <span className="bg-black/5 px-2 py-0.5">ELO {userData?.elo || 1000}</span>
                 {moneyToNumber(room.wager) > 0 && (
-                  <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 border border-yellow-300">
+                  <span className="border border-warning-border bg-warning-bg px-2 py-0.5 text-warning-text">
                     Wager: ${formatMoneyValue(room.wager)}
                   </span>
                 )}
@@ -303,7 +343,7 @@ const GamePage = () => {
 
             <div className="flex flex-col items-center justify-center">
               {room.status === 'waiting' ? (
-                <span className="animate-pulse text-xs font-bold uppercase py-1 px-3 bg-yellow-100 border border-yellow-300 shadow-sm text-ink-black">
+                <span className="animate-pulse border border-warning-border bg-warning-bg px-3 py-1 text-xs font-bold uppercase text-warning-text shadow-sm">
                   Waiting for P2…
                 </span>
               ) : room.status === 'completed' ? (
@@ -331,7 +371,7 @@ const GamePage = () => {
               {opponent ? (
                 <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold">
                   {moneyToNumber(room.wager) > 0 && (
-                    <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 border border-yellow-300">
+                    <span className="border border-warning-border bg-warning-bg px-2 py-0.5 text-warning-text">
                       Wager: ${formatMoneyValue(room.wager)}
                     </span>
                   )}
@@ -403,7 +443,7 @@ const GamePage = () => {
           </div>
         )}
 
-        <SketchyContainer fill="#fff9c4">
+        <SketchyContainer fill="var(--color-note-yellow)">
           <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
             <Trophy size={18} /> Match Log
           </h2>
@@ -420,12 +460,12 @@ const GamePage = () => {
           </div>
         </SketchyContainer>
 
-        <SketchyButton activeColor="#fee2e2" className="w-full" onClick={() => void handleResignMatch()}>
+        <SketchyButton className="w-full" onClick={() => void handleResignMatch()} variant="danger">
           {resigning ? 'Resigning…' : 'Resign Match'}
         </SketchyButton>
 
         {gameOver && (
-          <SketchyContainer fill="#dcfce7" roughness={2}>
+          <SketchyContainer fill="var(--color-success-bg)" roughness={2}>
             <h3 className="font-semibold text-center text-xl mb-4 uppercase">Verdict</h3>
             <p className="text-center font-bold mb-4">
               {gameOver.winnerId === 'draw'

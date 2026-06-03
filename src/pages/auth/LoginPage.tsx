@@ -243,7 +243,7 @@ export default function LoginPage() {
                   className="w-full py-3" 
                   onClick={() => requireIdentifier() && setStep('password_entry')}
                   type="button"
-                  activeColor="#fff9c4"
+                  variant="primary"
                 >
                   Continue with Password
                 </SketchyButton>
@@ -306,7 +306,7 @@ export default function LoginPage() {
                 className="w-full py-4 text-xl" 
                 disabled={passwordLoading || (!!siteKey && !turnstileToken)} 
                 type="submit"
-                activeColor="#fff9c4"
+                variant="primary"
               >
                 {passwordLoading ? 'Signing in...' : 'Sign in'}
               </SketchyButton>
@@ -335,7 +335,7 @@ export default function LoginPage() {
                 className="w-full py-4 text-xl" 
                 disabled={magicLoading || (!!siteKey && !turnstileToken)} 
                 type="submit"
-                activeColor="#fff9c4"
+                variant="primary"
               >
                 {magicLoading ? 'Sending link...' : 'Send Magic Link'}
               </SketchyButton>

@@ -15,5 +15,5 @@ export function isCreditTransaction(transaction: Pick<TransactionDTO, 'type' | '
 }
 
 export function getTransactionAccentClass(transaction: Pick<TransactionDTO, 'type' | 'amount'>): string {
-  return isCreditTransaction(transaction) ? 'bg-green-600' : 'bg-red-600';
+  return isCreditTransaction(transaction) ? 'bg-success-border' : 'bg-danger-border';
 }

@@ -22,7 +22,7 @@ const VARIANT_COLORS: Record<NonNullable<SketchyButtonProps['variant']>, {
     stroke: 'var(--color-ink-black)',
   },
   secondary: {
-    fill: '#ffffff',
+    fill: 'var(--color-surface)',
     activeColor: 'var(--color-paper-soft)',
     stroke: 'var(--color-ink-black)',
   },
@@ -33,7 +33,7 @@ const VARIANT_COLORS: Record<NonNullable<SketchyButtonProps['variant']>, {
   },
   ghost: {
     fill: 'transparent',
-    activeColor: 'rgba(26, 26, 26, 0.06)',
+    activeColor: 'var(--color-paper-soft)',
     stroke: 'var(--color-ink-black)',
   },
 };
@@ -58,7 +58,7 @@ export const SketchyButton = ({
   const resolvedStroke = stroke ?? variantColors.stroke;
   const resolvedActiveColor = activeColor ?? variantColors.activeColor;
   const currentFill = hovered ? resolvedActiveColor : resolvedFill;
-  const resolvedBorderColor = resolveCanvasColor(resolvedStroke, '#1a1a1a');
+  const resolvedBorderColor = resolveCanvasColor(resolvedStroke, 'black');
 
   return (
     <button

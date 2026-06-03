@@ -195,33 +195,23 @@ async function fetchJettonTransfers({
     url.searchParams.set('offset', String(offset));
     url.searchParams.set('sort', 'asc');
 
-    let response: Response;
-    try {
-      response = await recordProviderCall('toncenter', 'withdrawal_transfers', () => runProtectedDependencyCall({
-        dependency: 'toncenter',
-        retries: getEnv().TONCENTER_MAX_RETRIES,
-        baseDelayMs: getEnv().TONCENTER_RETRY_BASE_DELAY_MS,
-        operation: async () => {
-          const nextResponse = await fetch(url.toString(), {
-            headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
-            signal: AbortSignal.timeout(getEnv().TONCENTER_REQUEST_TIMEOUT_MS),
-          });
+    const response = await recordProviderCall('toncenter', 'withdrawal_transfers', () => runProtectedDependencyCall({
+      dependency: 'toncenter',
+      retries: getEnv().TONCENTER_MAX_RETRIES,
+      baseDelayMs: getEnv().TONCENTER_RETRY_BASE_DELAY_MS,
+      operation: async () => {
+        const nextResponse = await fetch(url.toString(), {
+          headers: { 'X-API-Key': getEnv().TONCENTER_API_KEY ?? '' },
+          signal: AbortSignal.timeout(getEnv().TONCENTER_REQUEST_TIMEOUT_MS),
+        });
 
-          if (!nextResponse.ok) {
-            throw createDependencyHttpError('toncenter', nextResponse.status);
-          }
+        if (!nextResponse.ok) {
+          throw createDependencyHttpError('toncenter', nextResponse.status);
+        }
 
-          return nextResponse;
-        },
-      }));
-    } catch (error) {
-      if (error && typeof error === 'object' && 'status' in error && error.status === 429) {
-        logger.warn('withdrawal.confirmation_rate_limited');
-        break;
-      }
-
-      throw error;
-    }
+        return nextResponse;
+      },
+    }));
 
     const data = parseExternalResponse(
       toncenterTransferListSchema,

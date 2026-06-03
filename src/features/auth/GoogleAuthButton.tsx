@@ -23,7 +23,7 @@ export function GoogleAuthButton({
         className,
       )}
       disabled={disabled || loading}
-      fill="#ffffff"
+      fill="var(--color-surface)"
       onClick={onClick}
       type="button"
     >

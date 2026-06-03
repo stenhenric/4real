@@ -19,7 +19,7 @@ import { getEnv, getPublicAppOrigin } from '../config/env.ts';
 import { applyClearSiteDataHeaders, applyNoStoreHeaders } from '../http/cache-policy.ts';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
-import { serializeAuthState, serializeSessionListItem } from '../serializers/api.ts';
+import { serializeAuthState } from '../serializers/api.ts';
 import { AuthEmailService } from '../services/auth-email.service.ts';
 import { cleanUsername, normalizeEmail } from '../services/auth-identity.service.ts';
 import { AuthMfaService } from '../services/auth-mfa.service.ts';
@@ -226,24 +226,6 @@ async function respondWithIssuedSession(params: {
     }),
     redirectTo: params.redirectTo,
   });
-}
-
-async function buildAuthState(userId: string, sessionId?: string) {
-  const user = await UserService.findAuthUserById(userId);
-  if (!user) {
-    throw unauthorized('Session expired', 'SESSION_EXPIRED');
-  }
-
-  const balance = await UserService.getDisplayBalance(userId);
-  const sessionDocument = sessionId
-    ? (await AuthSessionService.listSessions(userId, sessionId)).find((entry) => entry.id === sessionId)
-    : undefined;
-
-  return {
-    user,
-    balance,
-    sessionDocument,
-  };
 }
 
 export class AuthController {
@@ -729,10 +711,10 @@ export class AuthController {
       throw unauthorized('This link is invalid or has expired', 'INVALID_OR_EXPIRED_LINK');
     }
 
+    await AuthSessionService.revokeAllSessionsForUser(user._id.toString(), 'password_reset');
     const passwordHash = await hashPassword(body.password);
     await UserService.setPasswordHash(user._id.toString(), passwordHash);
     await UserService.markEmailVerified(user._id.toString());
-    await AuthSessionService.revokeAllSessionsForUser(user._id.toString(), 'password_reset');
 
     res.json({
       status: 'password_reset_complete',

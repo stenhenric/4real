@@ -32,7 +32,7 @@ export function PublicLayout() {
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <Link to="/" className="relative group flex items-center">
               <div className="relative inline-block">
-                <span className="font-display text-4xl font-bold italic transform -rotate-2 group-hover:rotate-0 transition-all inline-block relative z-10" style={{ textShadow: '1px 1px 0px rgba(0,0,0,0.1)' }}>
+                <span className="font-display text-4xl font-bold italic transform -rotate-2 group-hover:rotate-0 transition-all inline-block relative z-10" style={{ textShadow: '1px 1px 0 var(--color-paper-rule)' }}>
                   4real
                 </span>
                 <div className="highlighter w-full bottom-1 left-0 group-hover:scale-x-110 transition-transform"></div>
@@ -60,7 +60,7 @@ export function PublicLayout() {
               <Link to={primaryHref}>
                 <SketchyButton
                   className="px-6 py-2 text-sm font-bold shadow-md hover:-translate-y-0.5 transition-all"
-                  activeColor="#fff9c4"
+                  variant="primary"
                 >
                   {primaryLabel}
                 </SketchyButton>

@@ -13,6 +13,13 @@ import { UserService } from './user.service.ts';
 const MFA_SETUP_PREFIX = 'auth:mfa:setup:';
 const MFA_CHALLENGE_PREFIX = 'auth:mfa:challenge:';
 const MFA_SETUP_TTL_SECONDS = 10 * 60;
+const ATOMIC_GET_DELETE_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  redis.call('DEL', KEYS[1])
+end
+return raw
+`;
 
 interface StoredMfaSetup {
   userId: string;
@@ -49,6 +56,19 @@ function hashRecoveryCode(code: string): string {
 async function readJsonRecord<T>(key: string): Promise<T | null> {
   const value = await getRedisClient().get(key);
   if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function consumeJsonRecord<T>(key: string): Promise<T | null> {
+  const value = await getRedisClient().eval(ATOMIC_GET_DELETE_SCRIPT, 1, key);
+  if (typeof value !== 'string') {
     return null;
   }
 
@@ -120,12 +140,11 @@ export class AuthMfaService {
 
   static async consumeChallenge(challengeId: string): Promise<StoredMfaChallenge> {
     const key = getMfaChallengeKey(challengeId);
-    const payload = await readJsonRecord<StoredMfaChallenge>(key);
+    const payload = await consumeJsonRecord<StoredMfaChallenge>(key);
     if (!payload) {
       throw unauthorized('MFA challenge expired', 'MFA_CHALLENGE_EXPIRED');
     }
 
-    await getRedisClient().del(key);
     return payload;
   }
 

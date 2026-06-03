@@ -31,6 +31,12 @@ const generateSecureId = () => {
   return Date.now().toString(36);
 };
 
+function reportTurnstileError(error: unknown): void {
+  if (import.meta.env.DEV) {
+    console.error('[AuthTurnstile]', error);
+  }
+}
+
 export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnstileProps) {
     const siteKey = getTurnstileSiteKey();
     const [widgetState, dispatchWidgetState] = useReducer(
@@ -87,7 +93,7 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
           },
         });
       } catch (err) {
-        console.error('[AuthTurnstile]', err);
+        reportTurnstileError(err);
         dispatchWidgetState({ type: 'widget_failed' });
         onErrorRef.current?.();
       }
@@ -121,7 +127,7 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
           }
         })
         .catch((err: unknown) => {
-          console.error('[AuthTurnstile]', err);
+          reportTurnstileError(err);
           dispatchWidgetState({ type: 'script_failed' });
           onErrorRef.current?.();
         });
@@ -144,7 +150,7 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
 
     if (!siteKey) {
       return (
-        <div className="my-4 border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-700">
+        <div className="my-4 border border-danger-border bg-danger-bg px-4 py-3 text-center text-sm font-semibold text-danger-text">
           <strong>Configuration Error:</strong> Bot verification is not configured (missing <code>VITE_TURNSTILE_SITE_KEY</code>).
         </div>
       );
@@ -155,7 +161,7 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
       <div className="my-2 flex min-h-[70px] flex-col items-center justify-center gap-3">
         <div key={widgetState.retryNonce} id={containerIdRef.current} />
         {widgetState.errorMessage ? (
-          <div className="w-full border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-700" role="alert">
+          <div className="w-full border border-danger-border bg-danger-bg px-4 py-3 text-center text-sm font-semibold text-danger-text" role="alert">
             <p>{widgetState.errorMessage}</p>
             <SketchyButton
               className="mt-2"

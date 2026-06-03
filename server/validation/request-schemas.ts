@@ -4,10 +4,8 @@ import { z } from 'zod';
 import { getEnv } from '../config/env.ts';
 import { MIN_WITHDRAWAL_USDT } from '../config/withdrawal-limits.ts';
 import {
-  formatKesAmount,
   formatRate,
   formatUsdtAmount,
-  parseKesAmount,
   parseRate,
   parseUsdtAmount,
 } from '../utils/money.ts';
@@ -106,11 +104,6 @@ const positiveRateSchema = createFixedScaleSchema({
   label: 'Rate',
   parse: (value) => parseRate(value),
   format: (value) => formatRate(value),
-});
-const positiveKesSchema = createFixedScaleSchema({
-  label: 'Amount',
-  parse: (value) => parseKesAmount(value),
-  format: (value) => formatKesAmount(value),
 });
 const consumeTokenSchema = z.object({
   token: z.string().trim().min(1),

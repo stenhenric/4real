@@ -49,9 +49,9 @@ async function atomicConsumeRawIntent(
   key: string,
   expected?: WithdrawalIntentConsumeExpectation,
 ): Promise<string | null> {
-  const redis = getRedisClient() as any;
+  const redis = getRedisClient();
 
-  if (expected && typeof redis.eval === 'function') {
+  if (expected) {
     const result = await redis.eval(
       ATOMIC_COMPARE_DELETE_SCRIPT,
       1,
@@ -71,21 +71,12 @@ async function atomicConsumeRawIntent(
     return typeof result === 'string' ? result : null;
   }
 
-  if (typeof redis.getdel === 'function') {
-    const result = await redis.getdel(key);
-    return typeof result === 'string' ? result : null;
-  }
-
-  if (typeof redis.eval === 'function') {
-    const result = await redis.eval(
-      "local raw = redis.call('GET', KEYS[1]); if raw then redis.call('DEL', KEYS[1]); end; return raw",
-      1,
-      key,
-    );
-    return typeof result === 'string' ? result : null;
-  }
-
-  throw new Error('Redis client does not support atomic withdrawal intent consumption');
+  const result = await redis.eval(
+    "local raw = redis.call('GET', KEYS[1]); if raw then redis.call('DEL', KEYS[1]); end; return raw",
+    1,
+    key,
+  );
+  return typeof result === 'string' ? result : null;
 }
 
 export class WithdrawalIntentService {
@@ -100,7 +91,7 @@ export class WithdrawalIntentService {
     // Create dedicated withdrawal MFA challenge
     const challengeId = await AuthMfaService.createChallenge({
       userId: params.userId,
-      mode: 'withdrawal' as any,
+      mode: 'withdrawal',
       withdrawalIntentId,
     });
 

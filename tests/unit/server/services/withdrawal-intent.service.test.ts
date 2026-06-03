@@ -15,7 +15,7 @@ test('WithdrawalIntentService createIntent, authorizeIntent, and consumeIntent',
     get: async (key: string) => {
       return store.get(key) || null;
     },
-    getdel: async (key: string) => {
+    eval: async (_script: string, _keyCount: number, key: string) => {
       const value = store.get(key) || null;
       const exists = store.has(key);
       store.delete(key);

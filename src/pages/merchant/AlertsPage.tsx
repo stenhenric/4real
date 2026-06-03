@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowRight, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
 import { formatDateTime } from '../../features/merchant/format';
@@ -37,7 +38,7 @@ export default function AlertsPage() {
         </SketchyContainer>
         <SketchyContainer className="bg-white">
           <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Warnings</p>
-          <p className="mt-4 text-5xl font-bold italic text-yellow-800">{warningCount}</p>
+          <p className="mt-4 text-5xl font-bold italic text-warning-text">{warningCount}</p>
         </SketchyContainer>
         <SketchyContainer className="bg-white">
           <p className="text-xs font-bold uppercase tracking-[0.25em] opacity-50">Informational</p>
@@ -65,9 +66,9 @@ export default function AlertsPage() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="max-w-3xl">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`px-3 py-1 text-xs font-bold uppercase ${alert.severity === 'critical' ? 'bg-red-100 text-ink-red' : alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-ink-blue'}`}>
+                      <StatusBadge tone={statusToneFromStatus(alert.severity)}>
                         {alert.severity}
-                      </span>
+                      </StatusBadge>
                       <span className="bg-white px-3 py-1 text-xs font-bold uppercase opacity-70">
                         {alert.category}
                       </span>

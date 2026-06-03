@@ -372,6 +372,22 @@ function buildTransferPreview(
     };
   }
 
+  const { hotWalletAddress } = getHotWalletRuntime();
+  if (!tx.destination || !addressesEqual(tx.destination, hotWalletAddress)) {
+    return {
+      txHash: tx.transaction_hash,
+      decision: 'rejected',
+      amountRaw,
+      amountUsdt: toUsdtDisplay(amountRaw),
+      comment,
+      memoStatus: 'missing',
+      senderJettonWallet,
+      senderOwnerAddress,
+      txTime: txTimeIso,
+      reason: tx.destination ? 'destination_mismatch' : 'destination_missing',
+    };
+  }
+
   const memoResolution = resolveMemoStatus(memoDoc, txTime);
 
   if (options.processed) {
@@ -568,7 +584,7 @@ async function ingestIncomingTransferWithContext(
   }
 
   if (resolvedPreview.decision === 'rejected') {
-    if (resolvedPreview.reason !== 'transaction_aborted') {
+    if (resolvedPreview.reason !== 'transaction_aborted' && resolvedPreview.reason !== 'destination_mismatch' && resolvedPreview.reason !== 'destination_missing') {
       return finalizeIngestionResult(resolvedPreview);
     }
 

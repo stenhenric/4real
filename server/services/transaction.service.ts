@@ -5,7 +5,7 @@ import { Transaction } from '../models/Transaction.ts';
 import type { ITransaction, LedgerTransactionStatus, LedgerTransactionType } from '../models/Transaction.ts';
 import { DepositRepository } from '../repositories/deposit.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
-import type { TransactionDTO, TransactionFeedDTO } from '../types/api.ts';
+import type { TransactionFeedDTO } from '../types/api.ts';
 
 const MAX_UNIFIED_TRANSACTION_FETCH_LIMIT = 10_000;
 const MAX_TRANSACTION_OFFSET = 10_000;

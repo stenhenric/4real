@@ -293,13 +293,13 @@ const MerchantPanel = () => {
                 <div className="tape w-16 h-6 rotate-2"></div>
               </div>
               <div className="flex items-center gap-2 mb-4">
-                <StickyNote className="text-yellow-700" />
+                <StickyNote className="text-warning-text" />
                 <h2 className="text-2xl font-semibold uppercase tracking-tighter underline">
                   Fiat Merchant Instructions
                 </h2>
               </div>
               <div className="space-y-4 font-mono text-sm leading-relaxed">
-                <div className="border border-yellow-500 bg-white/40 p-3">
+                <div className="border border-warning-border bg-white/40 p-3">
                   <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">
                     M-Pesa Till / Merchant ID
                   </p>
@@ -307,7 +307,7 @@ const MerchantPanel = () => {
                     {merchantConfig?.mpesaNumber ?? 'Loading…'}
                   </p>
                 </div>
-                <div className="border border-yellow-500 bg-white/40 p-3">
+                <div className="border border-warning-border bg-white/40 p-3">
                   <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">TON Wallet Address</p>
                   <p className="font-bold break-all text-xs">
                     {merchantConfig?.walletAddress ?? 'Loading…'}
@@ -350,7 +350,7 @@ const MerchantPanel = () => {
                   className={cn(
                     'rough-border border-dashed border-black/30 flex min-h-[240px] w-full flex-col items-center justify-center text-center p-6 transition-colors',
                     activeTab === 'buy' && paymentConfirmed
-                      ? 'bg-white hover:bg-yellow-50 cursor-pointer shadow-lg'
+                      ? 'bg-white hover:bg-warning-bg cursor-pointer shadow-lg'
                       : 'bg-black/5 opacity-70',
                   )}
                   htmlFor={MERCHANT_PROOF_ID}
@@ -392,7 +392,7 @@ const MerchantPanel = () => {
                   'flex-1 py-3 text-xl font-bold border-b-4 transition-all uppercase tracking-tighter',
                   activeTab === 'buy' ? 'border-ink-black bg-black/5 scale-105' : 'border-transparent opacity-30',
                 )}
-                fill={activeTab === 'buy' ? '#f3f4f6' : 'transparent'}
+                fill={activeTab === 'buy' ? 'var(--color-paper-soft)' : 'transparent'}
                 id="merchant-buy-tab"
                 onClick={() => handleTabChange('buy')}
                 role="tab"
@@ -407,7 +407,7 @@ const MerchantPanel = () => {
                   'flex-1 py-3 text-xl font-bold border-b-4 transition-all uppercase tracking-tighter',
                   activeTab === 'sell' ? 'border-ink-black bg-black/5 scale-105' : 'border-transparent opacity-30',
                 )}
-                fill={activeTab === 'sell' ? '#f3f4f6' : 'transparent'}
+                fill={activeTab === 'sell' ? 'var(--color-paper-soft)' : 'transparent'}
                 id="merchant-sell-tab"
                 onClick={() => handleTabChange('sell')}
                 role="tab"
@@ -688,7 +688,7 @@ const MerchantPanel = () => {
                                 href={order.proof.url}
                                 rel="noopener noreferrer"
                                 target="_blank"
-                                className="text-[11px] font-bold text-blue-700 hover:scale-110 transition-transform bg-blue-100 px-2"
+                                className="bg-info-bg px-2 text-[11px] font-bold text-info-text transition-transform hover:scale-110"
                               >
                                 PROOF
                               </a>
@@ -703,7 +703,7 @@ const MerchantPanel = () => {
             </div>
 
             {isAdmin && (
-              <div className="mt-8 p-4 bg-orange-100 border-2 border-orange-300 italic text-sm text-orange-900 flex items-center gap-3">
+              <div className="mt-8 flex items-center gap-3 border-2 border-warning-border bg-warning-bg p-4 text-sm italic text-warning-text">
                 <span aria-hidden="true" className="text-2xl">⚠️</span>
                 <span className="font-bold">
                   Please verify the M-Pesa screenshot matches the transaction details before approving.

@@ -193,7 +193,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
         role="tablist"
       >
         <SketchyButton
-          activeColor="#fff9c4"
+          activeColor="var(--color-note-yellow)"
           aria-controls="dashboard-panel-lobby"
           aria-selected={activeTab === 'lobby'}
           className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'lobby' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
@@ -205,7 +205,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
           <Play size={20} /> Lobby
         </SketchyButton>
         <SketchyButton
-          activeColor="#fff9c4"
+          activeColor="var(--color-note-yellow)"
           aria-controls="dashboard-panel-leaderboard"
           aria-selected={activeTab === 'leaderboard'}
           className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'leaderboard' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
@@ -217,7 +217,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
           <Trophy size={20} /> Leaderboard
         </SketchyButton>
         <SketchyButton
-          activeColor="#fff9c4"
+          activeColor="var(--color-note-yellow)"
           aria-controls="dashboard-panel-archives"
           aria-selected={activeTab === 'archives'}
           className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'archives' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
@@ -229,7 +229,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
           <Clock size={20} /> Archives
         </SketchyButton>
         <SketchyButton
-          activeColor="#fff9c4"
+          activeColor="var(--color-note-yellow)"
           aria-controls="dashboard-panel-stats"
           aria-selected={activeTab === 'stats'}
           className={`flex shrink-0 items-center gap-2 text-base sm:text-xl ${activeTab === 'stats' ? 'scale-105' : 'opacity-70 hover:opacity-100'}`}
@@ -382,7 +382,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 {/* Free Matches Column */}
                 <div>
                   <h3 className="font-semibold text-xl uppercase tracking-tighter mb-4 opacity-50 flex items-center gap-2">
-                    Free Public <span className="text-xs bg-gray-950 text-white px-2 py-0.5">{freeMatches.length}</span>
+                    Free Public <span className="text-xs bg-ink-black text-surface px-2 py-0.5">{freeMatches.length}</span>
                   </h3>
                   <div className="space-y-4">
                     {freeMatches.length === 0 ? (
@@ -477,7 +477,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
           >
             <div className="tape w-16 h-6 -top-3 left-10 rotate-12 opacity-50"></div>
             <h2 className="text-3xl font-semibold flex items-center gap-3 mb-8 italic tracking-tighter underline decoration-double">
-              <Trophy className="text-yellow-700" size={28} /> Top Sketchers
+              <Trophy className="text-warning-text" size={28} /> Top Sketchers
             </h2>
             <div className="space-y-4">
               {leaderboard.map((player, index) => (
@@ -486,7 +486,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                   className="flex items-center justify-between border-b-2 border-black/5 pb-2 hover:bg-black/5 transition-colors px-2"
                 >
                   <div className="flex items-center gap-4">
-                    <span className="font-mono text-xs font-bold bg-gray-950 text-white px-2 py-0.5">
+                    <span className="font-mono text-xs font-bold bg-ink-black text-surface px-2 py-0.5">
                       0{index + 1}
                     </span>
                     <Link
@@ -533,7 +533,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
               </div>
               <div className="flex justify-between items-end border-b border-black/10 pb-2">
                 <span className="opacity-50 font-bold uppercase text-[10px] tracking-widest">VICTORIES</span>
-                <span className="font-bold text-3xl italic text-green-700">{userData?.stats.wins ?? 0}</span>
+                <span className="font-bold text-3xl italic text-success-text">{userData?.stats.wins ?? 0}</span>
               </div>
               <div className="aspect-square rough-border mt-8 flex flex-col items-center justify-center p-6 bg-paper relative overflow-hidden">
                 <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle,black_1px,transparent_1px)] bg-size-[10px_10px]"></div>

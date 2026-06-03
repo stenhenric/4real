@@ -24,7 +24,6 @@ import {
   isWithdrawalBroadcastUnknownError,
   sendUsdtWithdrawal,
 } from '../services/withdrawal-engine.ts';
-import { UserService } from '../services/user.service.ts';
 import { logger } from '../utils/logger.ts';
 
 let isConfirming = false;

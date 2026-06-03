@@ -4,6 +4,7 @@ import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { SketchyContainer } from '../../components/SketchyContainer';
+import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBadge';
 import { useMerchantOutletContext } from '../../components/merchant/MerchantLayout';
 import { MerchantPageFallback } from '../../components/merchant/MerchantPageFallback';
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
@@ -132,8 +133,11 @@ export default function LiquidityPage() {
       </div>
 
       {criticalLiquidityAlerts.length > 0 ? (
-        <div className="border border-red-200 bg-red-50 px-5 py-4 text-sm font-mono text-ink-red">
-          {criticalLiquidityAlerts.length} critical liquidity issue{criticalLiquidityAlerts.length === 1 ? '' : 's'} require action.
+        <div className="flex flex-col gap-2 border border-danger-border bg-danger-bg px-5 py-4 text-sm font-mono text-danger-text sm:flex-row sm:items-center">
+          <StatusBadge tone="danger">Critical</StatusBadge>
+          <span>
+            {criticalLiquidityAlerts.length} critical liquidity issue{criticalLiquidityAlerts.length === 1 ? '' : 's'} require action.
+          </span>
         </div>
       ) : null}
 
@@ -201,21 +205,21 @@ export default function LiquidityPage() {
               </div>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="border border-black/10 bg-green-50 p-4">
-                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-green-800">
+              <div className="border border-success-border bg-success-bg p-4">
+                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-success-text">
                   <ArrowDownToLine size={16} />
                   Deposits 24h
                 </p>
-                <p className="mt-3 text-3xl font-bold italic text-green-700">
+                <p className="mt-3 text-3xl font-bold italic text-success-text">
                   {formatMoney(dashboard.liquidity.depositFlow24hUsdt)} USDT
                 </p>
               </div>
-              <div className="border border-black/10 bg-red-50 p-4">
-                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-ink-red">
+              <div className="border border-danger-border bg-danger-bg p-4">
+                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.25em] text-danger-text">
                   <ArrowUpFromLine size={16} />
                   Withdrawals 24h
                 </p>
-                <p className="mt-3 text-3xl font-bold italic text-ink-red">
+                <p className="mt-3 text-3xl font-bold italic text-danger-text">
                   {formatMoney(dashboard.liquidity.withdrawalFlow24hUsdt)} USDT
                 </p>
               </div>
@@ -252,9 +256,9 @@ export default function LiquidityPage() {
                         Last success {formatDateTime(job.lastSucceededAt)}
                       </p>
                     </div>
-                    <span className={`px-3 py-1 text-xs font-bold uppercase ${job.state === 'critical' ? 'bg-red-100 text-ink-red' : job.state === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-700'}`}>
+                    <StatusBadge tone={statusToneFromStatus(job.state)}>
                       {job.state}
-                    </span>
+                    </StatusBadge>
                   </div>
                   {job.lastError ? (
                     <p className="mt-3 text-sm font-mono opacity-70">{job.lastError}</p>

@@ -21,7 +21,7 @@ export function assertAuthenticated(req: AuthRequest): asserts req is Authentica
   }
 }
 
-export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction): void => {
+export const authenticateToken = (req: AuthRequest, _res: Response, next: NextFunction): void => {
   const token = req.cookies?.[getAuthCookieName()];
 
   if (!token) {

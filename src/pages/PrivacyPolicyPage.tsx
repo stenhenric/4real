@@ -1,70 +1,79 @@
-import { Link } from 'react-router-dom';
+import { Database, FileImage, LifeBuoy, LockKeyhole, Settings } from 'lucide-react';
+import { LegalPageShell, type LegalSection } from '../components/ui/LegalPageShell';
+
+const PRIVACY_SECTIONS: LegalSection[] = [
+  {
+    badge: 'Collected',
+    icon: Database,
+    title: '1. Information We Collect',
+    body: (
+      <p>
+        To operate the 4real platform securely, we collect: <strong>Identity Data</strong> (email address,
+        Google Profile information if used for SSO), <strong>Financial Data</strong> (TON wallet addresses,
+        transaction hashes), <strong>Security Data</strong> (IP addresses, device metadata, active session
+        details), and <strong>Verification Data</strong> (merchant deposit proofs, screenshots, and receipts).
+      </p>
+    ),
+  },
+  {
+    badge: 'Usage',
+    icon: Settings,
+    title: '2. How We Use Your Data',
+    body: (
+      <p>
+        We process your data strictly to: facilitate real-money gameplay, process deposits and withdrawals,
+        enforce fraud controls, maintain account security (including MFA and session revocation), and provide
+        customer support. We do not sell your personal data to third parties for marketing purposes.
+      </p>
+    ),
+    tone: 'success',
+  },
+  {
+    badge: 'Proofs',
+    icon: FileImage,
+    title: '3. Deposit Proofs & Third Parties',
+    body: (
+      <p>
+        Merchant proof uploads (such as screenshots of transfers) are relayed securely to our designated review
+        channels for operator verification. Do not upload third-party personal data or unnecessary sensitive
+        information that is not explicitly required to prove payment.
+      </p>
+    ),
+    tone: 'warning',
+  },
+  {
+    badge: 'Retention',
+    icon: LockKeyhole,
+    title: '4. Data Retention & Security',
+    body: (
+      <p>
+        We utilize short-lived access cookies and rotated refresh tokens. Transaction histories and blockchain
+        interactions are retained indefinitely as part of immutable ledger records. Your account data is
+        retained as long as your account is active or as required by applicable compliance laws.
+      </p>
+    ),
+  },
+  {
+    badge: 'Support',
+    icon: LifeBuoy,
+    title: '5. Contact',
+    body: (
+      <p>
+        For privacy-related queries, contact us via the support channel listed in the app. We aim to respond
+        within 30 days.
+      </p>
+    ),
+  },
+];
 
 const PrivacyPolicyPage = () => {
   return (
-    <div className="max-w-3xl mx-auto py-12 px-6">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1 text-sm font-bold opacity-60 hover:opacity-100 transition-opacity mb-8"
-      >
-        ← 4real home
-      </Link>
-      <div className="rough-border bg-white p-10 shadow-xl relative">
-        <div className="tape w-24 h-8 -top-3 left-1/2 -ml-12"></div>
-        <h1 className="text-5xl font-display font-semibold italic tracking-tighter mb-8">Privacy Policy</h1>
-
-        <div className="space-y-6 font-bold text-base opacity-80 leading-relaxed">
-          <section>
-            <h2 className="text-2xl font-display mb-2 text-ink-black opacity-100">1. Information We Collect</h2>
-            <p>
-              To operate the 4real platform securely, we collect: <strong>Identity Data</strong> (email address,
-              Google Profile information if used for SSO), <strong>Financial Data</strong> (TON wallet addresses,
-              transaction hashes), <strong>Security Data</strong> (IP addresses, device metadata, active session
-              details), and <strong>Verification Data</strong> (merchant deposit proofs, screenshots, and receipts).
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-display mb-2 text-ink-black opacity-100">2. How We Use Your Data</h2>
-            <p>
-              We process your data strictly to: facilitate real-money gameplay, process deposits and withdrawals,
-              enforce fraud controls, maintain account security (including MFA and session revocation), and provide
-              customer support. We do not sell your personal data to third parties for marketing purposes.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-display mb-2 text-ink-black opacity-100">
-              3. Deposit Proofs &amp; Third Parties
-            </h2>
-            <p>
-              Merchant proof uploads (such as screenshots of transfers) are relayed securely to our designated review
-              channels for operator verification. Do not upload third-party personal data or unnecessary sensitive
-              information that is not explicitly required to prove payment.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-display mb-2 text-ink-black opacity-100">
-              4. Data Retention &amp; Security
-            </h2>
-            <p>
-              We utilize short-lived access cookies and rotated refresh tokens. Transaction histories and blockchain
-              interactions are retained indefinitely as part of immutable ledger records. Your account data is
-              retained as long as your account is active or as required by applicable compliance laws.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-display mb-2 text-ink-black opacity-100">5. Contact</h2>
-            <p>
-              For privacy-related queries, contact us via the support channel listed in the app. We aim to respond
-              within 30 days.
-            </p>
-          </section>
-        </div>
-      </div>
-    </div>
+    <LegalPageShell
+      eyebrow="Data handling"
+      sections={PRIVACY_SECTIONS}
+      summary="The same privacy policy, organized into scannable sections with the existing paper and status-token system."
+      title="Privacy Policy"
+    />
   );
 };
 

@@ -82,6 +82,7 @@ test('replayDepositWindow classifies live-shaped transfers without mutating bala
       amount: '2500000',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-credit' },
     },
     {
@@ -91,6 +92,7 @@ test('replayDepositWindow classifies live-shaped transfers without mutating bala
       amount: '3000000',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-open' },
     },
   ]) as Response);
@@ -157,6 +159,7 @@ test('replayDepositWindow formats large raw deposit amounts without floating-poi
       amount: '9007199254740993',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'large-unmatched' },
     },
   ]) as Response);
@@ -191,6 +194,7 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
       amount: '2500000',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-shared' },
     },
     {
@@ -200,6 +204,7 @@ test('replayDepositWindow apply returns post-ingestion decisions when a memo is 
       amount: '3000000',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-shared' },
     },
   ]) as Response);
@@ -305,6 +310,7 @@ test('replayDepositWindow dry-run treats a memo as active when the transfer happ
       amount: '2500000',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-historical-valid' },
     },
   ]) as Response);
@@ -344,6 +350,84 @@ test('replayDepositWindow dry-run treats a memo as active when the transfer happ
   assert.equal(result.transfers[0].candidateUserId, '507f1f77bcf86cd799439011');
 });
 
+test('replayDepositWindow apply rejects active-memo transfers sent to another destination', async (t) => {
+  registerCleanup(t);
+
+  const transferTime = 1_700_000_115;
+  const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([
+    {
+      transaction_hash: 'wrong-destination-hash',
+      transaction_now: transferTime,
+      jetton_master: USDT_MASTER,
+      amount: '2500000',
+      source: SENDER_OWNER_ADDRESS,
+      source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_JETTON_WALLET,
+      decoded_forward_payload: { comment: 'memo-wrong-destination' },
+    },
+  ]) as Response);
+  const findSeenHashesMock = mock.method(ProcessedTransactionRepository, 'findSeenHashes', async () => []);
+  const findUnmatchedBatchMock = mock.method(UnmatchedDepositRepository, 'findOpenByTxHashes', async () => []);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByMemos', async () => [
+    {
+      memo: 'memo-wrong-destination',
+      userId: '507f1f77bcf86cd799439011',
+      createdAt: new Date((transferTime - 60) * 1000),
+      expiresAt: new Date((transferTime + 60) * 1000),
+      used: false,
+    },
+  ]);
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const claimMemoMock = mock.method(DepositMemoRepository, 'claimActiveMemo', async () => {
+    throw new Error('wrong-destination transfer should not claim a deposit memo');
+  });
+  const createProcessedMock = mock.method(ProcessedTransactionRepository, 'create', async () => {});
+  const createDepositMock = mock.method(DepositRepository, 'create', async () => {});
+  const createUnmatchedMock = mock.method(UnmatchedDepositRepository, 'create', async () => {});
+  const creditMock = mock.method(UserBalanceRepository, 'creditDeposit', async () => {});
+  const auditMock = mock.method(AuditService, 'record', async () => {});
+  const sendDepositMock = mock.method(ProductEmailNotificationService, 'sendDeposit', async () => {});
+  const userFindMock = mock.method(User, 'find', (() => createLeanQuery([
+    {
+      _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      username: 'memo-owner',
+    },
+  ])) as any);
+
+  t.after(() => fetchMock.mock.restore());
+  t.after(() => findSeenHashesMock.mock.restore());
+  t.after(() => findUnmatchedBatchMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => claimMemoMock.mock.restore());
+  t.after(() => createProcessedMock.mock.restore());
+  t.after(() => createDepositMock.mock.restore());
+  t.after(() => createUnmatchedMock.mock.restore());
+  t.after(() => creditMock.mock.restore());
+  t.after(() => auditMock.mock.restore());
+  t.after(() => sendDepositMock.mock.restore());
+  t.after(() => userFindMock.mock.restore());
+
+  const result = await replayDepositWindow({
+    sinceUnixTime: transferTime - 10,
+    untilUnixTime: transferTime + 10,
+    dryRun: false,
+  });
+
+  assert.deepEqual(result.transfers.map((item) => item.decision), ['rejected']);
+  assert.equal(result.transfers[0].reason, 'destination_mismatch');
+  assert.equal(claimMemoMock.mock.callCount(), 0);
+  assert.equal(createProcessedMock.mock.callCount(), 1);
+  assert.equal(createProcessedMock.mock.calls[0].arguments[0]?.type, 'deposit_rejected');
+  assert.equal(createDepositMock.mock.callCount(), 0);
+  assert.equal(createUnmatchedMock.mock.callCount(), 0);
+  assert.equal(creditMock.mock.callCount(), 0);
+  assert.equal(auditMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.callCount(), 1);
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.scenario, 'deposit_rejected_merchant');
+  assert.equal(sendDepositMock.mock.calls[0].arguments[0]?.reason, 'destination_mismatch');
+});
+
 test('replayDepositWindow apply credits a historical memo once and treats duplicate transfer hashes as processed', async (t) => {
   registerCleanup(t);
 
@@ -356,6 +440,7 @@ test('replayDepositWindow apply credits a historical memo once and treats duplic
     amount: '2500000',
     source: SENDER_OWNER_ADDRESS,
     source_wallet: SENDER_JETTON_WALLET,
+    destination: HOT_WALLET_ADDRESS,
     decoded_forward_payload: { comment: 'memo-historical-claim-once' },
   };
   const fetchMock = mock.method(globalThis, 'fetch', async () => createToncenterResponse([transfer, transfer]) as Response);
@@ -437,6 +522,7 @@ test('replayDepositWindow does not credit a memo when the transfer happened afte
       amount: '1500000',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-historical-expired' },
     },
   ]) as Response);
@@ -753,6 +839,7 @@ test('replayDepositWindow apply rejects aborted transactions and notifies mercha
       amount: '7000000',
       source: SENDER_OWNER_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-aborted' },
       transaction_aborted: true,
     },

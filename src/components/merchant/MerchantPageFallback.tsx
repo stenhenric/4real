@@ -22,7 +22,7 @@ export function MerchantPageFallback({ title, description }: MerchantPageFallbac
           </div>
           <h2 className="mt-4 text-4xl font-semibold italic tracking-tight">{title}</h2>
           <p className="mt-3 text-sm font-mono opacity-70">{description}</p>
-          <div className="mt-4 border border-red-200 bg-red-50 px-4 py-3 text-sm font-mono text-ink-red">
+          <div className="mt-4 border border-danger-border bg-danger-bg px-4 py-3 text-sm font-mono text-danger-text">
             {error ?? 'The shared merchant dashboard request is still unavailable.'}
           </div>
         </div>

@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { drawConnectFourBoard } from '../canvas/drawConnectFourBoard';
 import { useAuth } from '../app/AuthProvider';
 import { useElementSize } from '../hooks/useElementSize';
-import { BarChart2, Trophy, Play, Clock, Wallet, Shield, Users } from 'lucide-react';
+import { BarChart2, Trophy, Clock, Wallet, Shield, Users } from 'lucide-react';
 
 // Animated Connect 4 board
 
@@ -89,15 +89,15 @@ function SketchBarChart() {
   ];
   return (
     <svg viewBox="0 0 140 60" className="size-full" aria-hidden="true">
-      <line x1="8" y1="4" x2="8" y2="54" stroke="#1A1A1A" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="8" y1="54" x2="138" y2="54" stroke="#1A1A1A" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="8" y1="4" x2="8" y2="54" stroke="var(--color-ink-black)" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="8" y1="54" x2="138" y2="54" stroke="var(--color-ink-black)" strokeWidth="1.5" strokeLinecap="round" />
       {bars.map((bar, i) => {
         const x = 14 + i * 18; const y = 54 - bar.height * 0.62; const bh = bar.height * 0.62;
         return (
           <g key={bar.id}>
-            <rect x={x} y={y} width={11} height={bh} fill="rgba(26,54,93,0.10)" stroke="#1A365D" strokeWidth="1.2" />
+            <rect x={x} y={y} width={11} height={bh} fill="var(--color-note-blue)" stroke="var(--color-ink-blue)" strokeWidth="1.2" />
             {Array.from({ length: Math.floor(bh / 4) }).map((_, li) => (
-              <line key={li} x1={x + 1} y1={y + li * 4 + 2} x2={x + 10} y2={y + li * 4 + 2} stroke="rgba(26,54,93,0.3)" strokeWidth="0.8" />
+              <line key={li} x1={x + 1} y1={y + li * 4 + 2} x2={x + 10} y2={y + li * 4 + 2} stroke="var(--color-ink-blue)" strokeWidth="0.8" strokeOpacity="0.3" />
             ))}
           </g>
         );
@@ -176,7 +176,7 @@ export default function LandingPage() {
 
             {/* Live badge */}
             <div className="inline-flex items-center gap-2">
-              <span className="size-2 rounded-full bg-green-600 animate-pulse" aria-hidden="true" />
+              <span className="size-2 rounded-full bg-success-border animate-pulse" aria-hidden="true" />
               <span className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-50">
                 Real-money Connect 4
               </span>
@@ -202,7 +202,7 @@ export default function LandingPage() {
             <div className="grid grid-cols-2 gap-4">
 
               {/* Real-time Stats: blue sticky */}
-              <div className="rough-border bg-[#E8F0FB] p-4 relative shadow-md">
+              <div className="rough-border bg-note-blue p-4 relative shadow-md">
                 <div className="tape w-14 h-5 -top-2 right-3 rotate-2 opacity-60" />
                 <div className="flex items-center gap-2 mb-2">
                   <BarChart2 size={14} className="text-ink-blue" aria-hidden="true" />
@@ -235,8 +235,7 @@ export default function LandingPage() {
             <div className="flex flex-col sm:flex-row items-start gap-3">
               <Link
                 to={primaryHref}
-                className="sketchy-border relative inline-flex min-w-0 items-center justify-center px-8 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
-                style={{ backgroundColor: '#fff9c4' }}
+                className="sketchy-border relative inline-flex min-w-0 items-center justify-center bg-note-yellow px-8 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
               >
                 {primaryLabel}
               </Link>
@@ -276,7 +275,7 @@ export default function LandingPage() {
               className="absolute inset-0 opacity-10"
               style={{
                 backgroundImage:
-                  'repeating-linear-gradient(45deg,#fff 0,#fff 4px,transparent 4px,transparent 20px)',
+                  'repeating-linear-gradient(45deg,var(--color-surface) 0,var(--color-surface) 4px,transparent 4px,transparent 20px)',
               }}
             />
             <span className="relative font-bold italic text-3xl sm:text-4xl text-white tracking-tighter uppercase transition-transform duration-200 group-hover:scale-105 inline-block">
@@ -362,8 +361,7 @@ export default function LandingPage() {
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               to={primaryHref}
-              className="sketchy-border relative inline-flex min-w-0 items-center justify-center px-10 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
-              style={{ backgroundColor: '#fff9c4' }}
+              className="sketchy-border relative inline-flex min-w-0 items-center justify-center bg-note-yellow px-10 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
             >
               {primaryLabel}
             </Link>

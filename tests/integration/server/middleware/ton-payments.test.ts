@@ -241,6 +241,7 @@ test('pollDeposits ignores already processed transaction hashes', async (t) => {
       amount: '1000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
   ]) as Response);
   const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({ key: 'deposit_poller', lastProcessedTime: 1_700_000_000, updatedAt: new Date() }));
@@ -307,6 +308,7 @@ test('pollDeposits rejects non-USDT jetton transfers', async (t) => {
       amount: '5000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
   ]) as Response);
   const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({ key: 'deposit_poller', lastProcessedTime: 1_700_000_000, updatedAt: new Date() }));
@@ -354,6 +356,7 @@ test('pollDeposits credits the correct user for a valid memo', async (t) => {
       amount: '2500000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
   ]) as Response);
   const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({ key: 'deposit_poller', lastProcessedTime: 1_700_000_000, updatedAt: new Date() }));
@@ -411,6 +414,7 @@ test('pollDeposits resolves memos from decoded forward payload comments', async 
       amount: '3300000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
       decoded_forward_payload: { comment: 'memo-forward' },
     },
   ]) as Response);
@@ -472,6 +476,46 @@ test('findWithdrawalTransferOnChain queries Toncenter using the hot wallet owner
   assert.equal(requestedUrl.searchParams.get('owner_address'), HOT_WALLET_ADDRESS);
 });
 
+test('findWithdrawalTransferOnChain fails closed when Toncenter confirmation lookup is rate limited', async (t) => {
+  registerBaseCleanup(t);
+  const previousRetries = process.env.TONCENTER_MAX_RETRIES;
+  process.env.TONCENTER_MAX_RETRIES = '0';
+  resetEnvCacheForTests();
+  t.after(() => {
+    if (previousRetries === undefined) {
+      delete process.env.TONCENTER_MAX_RETRIES;
+    } else {
+      process.env.TONCENTER_MAX_RETRIES = previousRetries;
+    }
+    resetEnvCacheForTests();
+  });
+
+  const fetchMock = mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 429,
+    async json() {
+      return { error: 'rate limited' };
+    },
+  }) as Response);
+
+  t.after(() => fetchMock.mock.restore());
+
+  await assert.rejects(
+    withdrawalEngineModule.findWithdrawalTransferOnChain({
+      hotWalletAddress: HOT_WALLET_ADDRESS,
+      sentAt: new Date('2026-04-26T22:00:00.000Z'),
+      withdrawalId: 'wd-rate-limited',
+      amountRaw: '1000000',
+      toAddress: ZERO_ADDRESS,
+    }),
+    (error: unknown) => {
+      assert.equal((error as { status?: number }).status, 429);
+      assert.equal((error as { retryable?: boolean }).retryable, true);
+      return true;
+    },
+  );
+});
+
 test('pollDeposits rejects expired or reused memos during execution', async (t) => {
   registerBaseCleanup(t);
   setHotWalletRuntimeForTests({
@@ -489,6 +533,7 @@ test('pollDeposits rejects expired or reused memos during execution', async (t) 
       amount: '1500000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
   ]) as Response);
   const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({ key: 'deposit_poller', lastProcessedTime: 1_700_000_000, updatedAt: new Date() }));
@@ -545,6 +590,7 @@ test('pollDeposits records unmatched deposits when memo resolution fails', async
       amount: '4000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
   ]) as Response);
   const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({ key: 'deposit_poller', lastProcessedTime: 1_700_000_000, updatedAt: new Date() }));
@@ -636,6 +682,7 @@ test('transient ingestion failure keeps cursor pinned and replay succeeds on sec
       amount: '1000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
     {
       transaction_hash: 'transient-success-hash',
@@ -645,6 +692,7 @@ test('transient ingestion failure keeps cursor pinned and replay succeeds on sec
       amount: '2000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
   ]) as Response);
   const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({
@@ -814,6 +862,7 @@ test('terminal replay failure emits alert, marks record, and allows cursor to mo
       amount: '1000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
     failedAt: new Date(),
     retryCount: 1,
@@ -901,6 +950,7 @@ test('terminal replay failure emits alert, marks record, and allows cursor to mo
       amount: '1000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
     {
       transaction_hash: 'latest-seen',
@@ -910,6 +960,7 @@ test('terminal replay failure emits alert, marks record, and allows cursor to mo
       amount: '1000000',
       source: ZERO_ADDRESS,
       source_wallet: SENDER_JETTON_WALLET,
+      destination: HOT_WALLET_ADDRESS,
     },
   ]) as Response);
   const findStateMock = mock.method(PollerStateRepository, 'findByKey', async () => ({
@@ -948,6 +999,7 @@ test('failed deposit replay worker batches retry lookup context for the whole ba
         amount: '1000000',
         source: ZERO_ADDRESS,
         source_wallet: SENDER_JETTON_WALLET,
+        destination: HOT_WALLET_ADDRESS,
       },
       failedAt: new Date(),
       retryCount: 0,
@@ -968,6 +1020,7 @@ test('failed deposit replay worker batches retry lookup context for the whole ba
         amount: '2000000',
         source: ZERO_ADDRESS,
         source_wallet: SENDER_JETTON_WALLET,
+        destination: HOT_WALLET_ADDRESS,
       },
       failedAt: new Date(),
       retryCount: 0,

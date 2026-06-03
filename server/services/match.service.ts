@@ -478,9 +478,17 @@ export class MatchService {
     return { waitingExpired, activeExpired };
   }
 
-  static async getUserHistory(userId: string, limit: number = 5): Promise<IMatch[]> {
+  static async getUserHistory(userId: string, limit: number = 5, viewerUserId?: string): Promise<IMatch[]> {
     return Match.find(trustFilter({
-      $or: [{ player1Id: userId }, { player2Id: userId }],
+      $and: [
+        { $or: [{ player1Id: userId }, { player2Id: userId }] },
+        {
+          $or: [
+            { isPrivate: false },
+            ...(viewerUserId ? [{ player1Id: viewerUserId }, { player2Id: viewerUserId }] : []),
+          ],
+        },
+      ],
       status: 'completed' as const,
     }))
       .sort({ createdAt: -1 })

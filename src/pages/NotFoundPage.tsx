@@ -1,25 +1,29 @@
 import { useNavigate } from 'react-router-dom';
+import { FileQuestion, Gamepad2, Home } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
 import { SketchyButton } from '../components/SketchyButton';
-import { SketchyContainer } from '../components/SketchyContainer';
+import { StatePanel } from '../components/ui/StatePanel';
 
 const NotFoundPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const targetPath = user ? '/play' : '/';
 
   return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="max-w-2xl w-full">
-        <SketchyContainer fill="#fff" roughness={1} className="text-center p-8">
-          <p className="text-xs uppercase font-mono opacity-50 tracking-widest mb-2">Notebook Error</p>
-          <h1 className="text-6xl font-semibold italic tracking-tighter mb-4">404</h1>
-          <p className="opacity-70 italic mb-8">This page was erased from the notebook.</p>
-          <SketchyButton className="text-lg px-10" onClick={() => navigate(user ? '/play' : '/')}>
-            {user ? 'Return to Lobby' : 'Return to Homepage'}
-          </SketchyButton>
-        </SketchyContainer>
-      </div>
-    </div>
+    <StatePanel
+      actions={(
+        <SketchyButton className="px-6 py-3 text-base" onClick={() => navigate(targetPath)} type="button" variant="primary">
+          {user ? <Gamepad2 size={18} /> : <Home size={18} />}
+          {user ? 'Return to lobby' : 'Return home'}
+        </SketchyButton>
+      )}
+      eyebrow="Notebook error"
+      icon={FileQuestion}
+      title="404"
+      tone="info"
+    >
+      This page was erased from the notebook.
+    </StatePanel>
   );
 };
 

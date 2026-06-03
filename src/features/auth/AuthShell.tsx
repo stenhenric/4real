@@ -39,6 +39,7 @@ export function AuthShell({
         </div>
 
         <p className="mt-4 text-sm font-bold opacity-60 leading-6">{description}</p>
+        <div aria-hidden="true" className="mt-5 h-2 w-full rough-border border-info-border bg-info-bg" />
 
         <div className="mt-8">{children}</div>
 

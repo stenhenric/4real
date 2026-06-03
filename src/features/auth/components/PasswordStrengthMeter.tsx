@@ -6,9 +6,7 @@ interface PasswordStrengthMeterProps {
 }
 
 export const PASSWORD_RULES = [
-  { label: 'At least 12 characters', test: (p: string) => p.length >= 12 },
-  { label: 'Upper & lowercase letters', test: (p: string) => /[a-z]/.test(p) && /[A-Z]/.test(p) },
-  { label: 'Number or special character', test: (p: string) => /[0-9!@#$%^&*(),.?":{}|<>]/.test(p) },
+  { label: '12 to 128 characters', test: (p: string) => p.length >= 12 && p.length <= 128 },
 ] as const;
 
 export function isPasswordValid(password: string): boolean {
@@ -43,8 +41,8 @@ export function PasswordStrengthMeter({ password }: PasswordStrengthMeterProps) 
   const getBarColor = (index: number) => {
     if (index >= passedCount) return 'bg-black/5';
     if (passedCount === 1) return 'bg-ink-red/70';
-    if (passedCount === 2) return 'bg-yellow-500/80';
-    return 'bg-green-600/80';
+    if (passedCount === 2) return 'bg-warning-border';
+    return 'bg-success-border';
   };
 
   return (
@@ -66,7 +64,7 @@ export function PasswordStrengthMeter({ password }: PasswordStrengthMeterProps) 
               key={rule.label}
               className={cn(
                 "flex items-center gap-2 text-xs font-bold transition-colors duration-200",
-                passed ? "text-green-700" : "text-black/50"
+                passed ? "text-success-text" : "text-black/50"
               )}
             >
               {passed ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} className="opacity-50" />}

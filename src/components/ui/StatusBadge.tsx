@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../utils/cn';
 
-type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
 const toneClasses: Record<StatusTone, string> = {
   success: 'border-success-border bg-success-bg text-success-text',
@@ -44,6 +44,10 @@ export function statusToneFromStatus(status: string): StatusTone {
 
   if (['failed', 'rejected', 'dismissed', 'critical', 'high', 'error', 'stuck'].includes(normalized)) {
     return 'danger';
+  }
+
+  if (['info', 'informational', 'low'].includes(normalized)) {
+    return 'info';
   }
 
   return 'neutral';

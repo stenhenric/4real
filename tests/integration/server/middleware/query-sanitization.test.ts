@@ -91,7 +91,29 @@ function createResponseDouble() {
   };
 }
 
-test('MatchService.getUserHistory trusts the participant filter', async (t) => {
+test('MatchService.getUserHistory trusts the participant and visibility filters', async (t) => {
+  registerEnvCleanup(t);
+
+  const capturedFilters: Record<string, unknown>[] = [];
+  const findMock = mock.method(Match, 'find', ((filter: Record<string, unknown>) => {
+    capturedFilters.push(filter);
+    return createResolvedQuery([]);
+  }) as any);
+
+  t.after(() => findMock.mock.restore());
+
+  await MatchService.getUserHistory('user-123', 5, 'viewer-456');
+
+  assert.equal(capturedFilters.length, 1);
+  assert.ok(hasTrustedSymbol(capturedFilters[0]));
+  assert.equal(capturedFilters[0].status, 'completed');
+  assert.deepEqual(JSON.parse(JSON.stringify(capturedFilters[0].$and)), [
+    { $or: [{ player1Id: 'user-123' }, { player2Id: 'user-123' }] },
+    { $or: [{ isPrivate: false }, { player1Id: 'viewer-456' }, { player2Id: 'viewer-456' }] },
+  ]);
+});
+
+test('MatchService.getUserHistory hides private matches when no viewer is supplied', async (t) => {
   registerEnvCleanup(t);
 
   const capturedFilters: Record<string, unknown>[] = [];
@@ -105,11 +127,9 @@ test('MatchService.getUserHistory trusts the participant filter', async (t) => {
   await MatchService.getUserHistory('user-123', 5);
 
   assert.equal(capturedFilters.length, 1);
-  assert.ok(hasTrustedSymbol(capturedFilters[0]));
-  assert.equal(capturedFilters[0].status, 'completed');
-  assert.deepEqual(capturedFilters[0].$or, [
-    { player1Id: 'user-123' },
-    { player2Id: 'user-123' },
+  assert.deepEqual(JSON.parse(JSON.stringify(capturedFilters[0].$and)), [
+    { $or: [{ player1Id: 'user-123' }, { player2Id: 'user-123' }] },
+    { $or: [{ isPrivate: false }] },
   ]);
 });
 

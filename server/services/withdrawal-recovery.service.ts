@@ -9,7 +9,8 @@ import { getHotWalletRuntime } from './hot-wallet-runtime.service.ts';
 import { AuditService } from './audit.service.ts';
 import { ProductEmailNotificationService } from './product-email-notification.service.ts';
 import { TransactionService } from './transaction.service.ts';
-import { conflict, notFound } from '../utils/http-error.ts';
+import { conflict, notFound, serviceUnavailable } from '../utils/http-error.ts';
+import { logger } from '../utils/logger.ts';
 
 type WithdrawalRecoveryAction = 'confirm' | 'refund';
 
@@ -119,13 +120,26 @@ export async function recoverStuckWithdrawal(params: {
   assertActionAllowed(withdrawal, params.action);
 
   const hotWalletAddress = getHotWalletRuntime().hotWalletAddress;
-  const confirmed = await recoveryDependencies.findWithdrawalTransferOnChain({
-    hotWalletAddress,
-    sentAt: chainCheckTime(withdrawal),
-    withdrawalId: withdrawal.withdrawalId,
-    amountRaw: withdrawal.amountRaw,
-    toAddress: withdrawal.toAddress,
-  });
+  let confirmed: Awaited<ReturnType<typeof findWithdrawalTransferOnChain>>;
+  try {
+    confirmed = await recoveryDependencies.findWithdrawalTransferOnChain({
+      hotWalletAddress,
+      sentAt: chainCheckTime(withdrawal),
+      withdrawalId: withdrawal.withdrawalId,
+      amountRaw: withdrawal.amountRaw,
+      toAddress: withdrawal.toAddress,
+    });
+  } catch (error) {
+    logger.warn('withdrawal.recovery_chain_check_failed', {
+      withdrawalId: withdrawal.withdrawalId,
+      action: params.action,
+      error,
+    });
+    throw serviceUnavailable(
+      'Withdrawal chain confirmation is temporarily unavailable. Try recovery again after the provider is healthy.',
+      'WITHDRAWAL_RECOVERY_CHAIN_CHECK_UNAVAILABLE',
+    );
+  }
 
   if (params.action === 'refund') {
     if (confirmed) {

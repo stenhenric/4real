@@ -117,6 +117,7 @@ test('match controller user history serializes matches without private invite in
   let payload: unknown;
   const req = {
     params: { userId: player1Id.toString() },
+    user: { id: player2Id.toString() },
   };
   const res = {
     json(value: unknown) {
@@ -128,7 +129,11 @@ test('match controller user history serializes matches without private invite in
   const handler = MatchController.getUserHistory;
   await handler(req as any, res as any);
 
-  assert.equal(getUserHistoryMock.mock.calls[0]?.arguments[0], player1Id.toString());
+  assert.deepEqual(getUserHistoryMock.mock.calls[0]?.arguments, [
+    player1Id.toString(),
+    5,
+    player2Id.toString(),
+  ]);
   const serializedMatch = (payload as Array<Record<string, unknown>>)[0] ?? {};
   assert.equal(serializedMatch.roomId, 'room-history');
   assert.equal(serializedMatch.player1Id, player1Id.toString());

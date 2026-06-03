@@ -321,6 +321,7 @@ test('player routes when a session is preloaded render the lobby leaderboard ban
   const routes: RouteExpectation[] = [
     { path: '/leaderboard', text: /leaderboard/i },
     { path: '/bank', heading: /the bank/i, waitForResponse: /\/api\/transactions\?page=1&pageSize=25$/ },
+    { path: '/community', heading: /^community$/i },
     { path: '/profile/user-player-one', heading: /player-one/i },
     { path: '/play', heading: /central lobby/i },
   ];
@@ -430,8 +431,36 @@ test('mobile bottom navigation contains destinations only', async ({ page }) => 
   await expect(mobileNav).toBeVisible();
   await expect(mobileNav).toContainText(/lobby/i);
   await expect(mobileNav).toContainText(/bank/i);
+  await expect(mobileNav).toContainText(/community/i);
   await expect(mobileNav).toContainText(/profile/i);
   await expect(mobileNav).not.toContainText(/logout/i);
+});
+
+test('community page renders safe Telegram destinations and desktop nav has no logout', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+  const health = installErrorCollectors(page, {
+    ignorePageErrors: [/socket\.io\/.*due to access control checks\./i],
+  });
+
+  try {
+    await page.goto('/community');
+
+    await expect(page.getByRole('heading', { name: /^community$/i })).toBeVisible();
+    const desktopNav = page.getByRole('navigation').first();
+    await expect(desktopNav).toContainText(/community/i);
+    await expect(desktopNav).not.toContainText(/log out/i);
+    await expect(page.getByRole('link', { name: /telegram community/i })).toHaveAttribute('target', '_blank');
+    await expect(page.getByRole('link', { name: /telegram community/i })).toHaveAttribute('rel', /noopener noreferrer/);
+    await expect(page.getByRole('link', { name: /telegram support/i })).toHaveAttribute('target', '_blank');
+    await expect(page.getByRole('link', { name: /telegram support/i })).toHaveAttribute('rel', /noopener noreferrer/);
+
+    await page.goto('/auth/security');
+    await expect(page.getByRole('button', { name: /sign out of this device/i })).toBeVisible();
+
+    await health.assertHealthy();
+  } finally {
+    await closeContext(context);
+  }
 });
 
 test('security surfaces have no horizontal overflow across supported widths', async ({ page }) => {

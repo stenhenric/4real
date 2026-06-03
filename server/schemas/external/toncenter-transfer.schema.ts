@@ -4,6 +4,11 @@ const toncenterForwardPayloadSchema = z.object({
   comment: z.string().optional(),
 }).passthrough();
 
+const rawJettonAmountSchema = z.union([
+  z.string().regex(/^\d+$/, 'Expected a non-negative integer raw amount'),
+  z.number().int().nonnegative().safe().transform(String),
+]);
+
 function normalizeDecodedForwardPayload(
   value: unknown,
 ): z.infer<typeof toncenterForwardPayloadSchema> | Array<z.infer<typeof toncenterForwardPayloadSchema>> | null {
@@ -41,7 +46,7 @@ export const toncenterJettonTransferSchema = z.object({
   transaction_now: z.number().int().nonnegative(),
   comment: z.string().optional(),
   jetton_master: z.string().nullable().optional(),
-  amount: z.union([z.string(), z.number()]),
+  amount: rawJettonAmountSchema,
   source: z.string().nullable().optional(),
   source_owner: z.string().nullable().optional(),
   source_wallet: z.string().nullable().optional(),

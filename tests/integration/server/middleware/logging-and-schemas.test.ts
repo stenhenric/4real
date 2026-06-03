@@ -165,6 +165,23 @@ test('toncenter transfer schema accepts additive keys and normalizes string forw
   assert.deepEqual(result.jetton_transfers[0]?.decoded_forward_payload, { comment: 'memo-123' });
 });
 
+test('toncenter transfer schema rejects malformed raw jetton amounts', () => {
+  for (const amount of ['-1000000', '1.5', 'not-money', 1.5, -1]) {
+    assert.throws(
+      () => parseExternalResponse(toncenterTransferListSchema, {
+        jetton_transfers: [{
+          transaction_hash: 'tx-bad-amount',
+          transaction_now: 1714374000,
+          amount,
+          source: 'EQ-source-wallet',
+          destination: 'EQ-destination-wallet',
+        }],
+      }, 'toncenter.jetton_transfers'),
+      ExternalSchemaError,
+    );
+  }
+});
+
 test('computeJitteredTtl keeps cache TTLs positive and never extends the declared window', (t) => {
   forceMemoryOnlyCacheForTest(t);
   const randomMock = mock.method(Math, 'random', () => 0.5);

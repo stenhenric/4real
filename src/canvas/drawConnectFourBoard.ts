@@ -30,9 +30,9 @@ export function drawConnectFourBoard(
   const generator = rough.canvas(canvas);
   const cellWidth = canvas.width / 7;
   const cellHeight = canvas.height / 6;
-  const boardLine = themeColor('--color-game-board-line', '#1A365D');
-  const redDisc = themeColor('--color-disc-red', '#ef4444');
-  const blueDisc = themeColor('--color-disc-blue', '#3b82f6');
+  const boardLine = themeColor('--color-game-board-line', 'navy');
+  const redDisc = themeColor('--color-disc-red', 'red');
+  const blueDisc = themeColor('--color-disc-blue', 'blue');
 
   for (let row = 0; row <= 6; row += 1) {
     generator.line(0, row * cellHeight, canvas.width, row * cellHeight, {
@@ -72,7 +72,7 @@ export function drawConnectFourBoard(
 
   winningLine?.forEach(([row, column]) => {
     generator.rectangle(column * cellWidth + 5, row * cellHeight + 5, cellWidth - 10, cellHeight - 10, {
-      fill: 'rgba(255, 235, 59, 0.4)',
+      fill: themeColor('--color-marker-yellow', 'yellow'),
       fillStyle: 'solid',
       roughness: 3,
       stroke: 'transparent',

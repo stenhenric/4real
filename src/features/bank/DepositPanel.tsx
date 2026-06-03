@@ -346,7 +346,7 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
             aria-describedby={!wallet ? WALLET_CONNECT_REQUIRED_ID : undefined}
             className="w-full py-4 text-lg text-white"
             disabled={!wallet || sendingTransaction || expiryState.expired}
-            fill={!wallet || sendingTransaction || expiryState.expired ? '#d1d5db' : 'var(--color-ink-blue)'}
+            fill={!wallet || sendingTransaction || expiryState.expired ? 'var(--color-paper-rule)' : 'var(--color-ink-blue)'}
             onClick={handleDepositTonConnect}
             type="button"
           >

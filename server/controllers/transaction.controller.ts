@@ -16,7 +16,6 @@ import { requestWithdrawal } from '../services/withdrawal-service.ts';
 import { badRequest, forbidden, notFound } from '../utils/http-error.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
 import { WithdrawalIntentService } from '../services/withdrawal-intent.service.ts';
-import { UserService } from '../services/user.service.ts';
 import type {
   PrepareTonConnectDepositRequest,
   WithdrawRequest,

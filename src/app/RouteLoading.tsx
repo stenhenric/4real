@@ -1,11 +1,18 @@
+import { LoaderCircle } from 'lucide-react';
+import { StatePanel } from '../components/ui/StatePanel';
+
 interface RouteLoadingProps {
   message?: string;
 }
 
 export function RouteLoading({ message = 'Loading your notebook...' }: RouteLoadingProps) {
   return (
-    <div className="h-full min-h-[50vh] flex items-center justify-center font-sans text-2xl animate-pulse">
-      {message}
-    </div>
+    <StatePanel
+      eyebrow="Loading"
+      icon={LoaderCircle}
+      iconClassName="animate-spin"
+      title={message}
+      tone="info"
+    />
   );
 }

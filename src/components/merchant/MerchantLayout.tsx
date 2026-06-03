@@ -1,5 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowDownUp, BellDot, Landmark, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
+import { ArrowDownUp, BellDot, Landmark, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
@@ -9,6 +9,7 @@ import { getMerchantDashboard } from '../../services/merchant-dashboard.service'
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
 import { SketchyButton } from '../SketchyButton';
+import { StatusBadge, type StatusTone } from '../ui/StatusBadge';
 import type { MerchantDashboardDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
 
@@ -32,18 +33,21 @@ export function useMerchantOutletContext() {
   return useOutletContext<MerchantOutletContext>();
 }
 
-function buildStatusLabel(dashboard: MerchantDashboardDTO | null, error: string | null) {
+function buildStatusLabel(
+  dashboard: MerchantDashboardDTO | null,
+  error: string | null,
+): { label: string; tone: StatusTone } {
   if (!dashboard) {
     if (error) {
       return {
         label: 'Dashboard unavailable',
-        tone: 'text-ink-red bg-red-50 border-red-200',
+        tone: 'danger' satisfies StatusTone,
       };
     }
 
     return {
       label: 'Loading status',
-      tone: 'text-ink-black/60 bg-white',
+      tone: 'neutral' satisfies StatusTone,
     };
   }
 
@@ -53,20 +57,20 @@ function buildStatusLabel(dashboard: MerchantDashboardDTO | null, error: string 
   if (criticalCount > 0) {
     return {
       label: `${criticalCount} critical issue${criticalCount === 1 ? '' : 's'}`,
-      tone: 'text-ink-red bg-red-50 border-red-200',
+      tone: 'danger' satisfies StatusTone,
     };
   }
 
   if (warningCount > 0) {
     return {
       label: `${warningCount} warning${warningCount === 1 ? '' : 's'}`,
-      tone: 'text-yellow-800 bg-yellow-50 border-yellow-200',
+      tone: 'warning' satisfies StatusTone,
     };
   }
 
   return {
     label: 'Systems stable',
-    tone: 'text-green-700 bg-green-50 border-green-200',
+    tone: 'success' satisfies StatusTone,
   };
 }
 
@@ -314,12 +318,9 @@ export function MerchantLayout() {
                   {currentSectionLabel}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <span className={cn(
-                    'inline-flex items-center border px-3 py-1 text-sm font-bold',
-                    statusBadge.tone,
-                  )}>
+                  <StatusBadge tone={statusBadge.tone}>
                     {statusBadge.label}
-                  </span>
+                  </StatusBadge>
                   <span className="text-sm font-mono opacity-60">
                     Updated {dashboard ? formatDateTime(dashboard.generatedAt) : 'pending'}
                   </span>
@@ -333,9 +334,9 @@ export function MerchantLayout() {
                 <SketchyButton
                   aria-label="Refresh merchant dashboard"
                   className="h-10 px-3 text-sm font-semibold text-ink-black/70 shadow-sm transition-colors hover:text-ink-black disabled:opacity-60"
-                  fill="#ffffff"
-                  activeColor="rgba(0,0,0,0.05)"
+                  activeColor="var(--color-paper-soft)"
                   disabled={isRefreshing}
+                  fill="var(--color-surface)"
                   onClick={() => {
                     void loadDashboard('manual');
                   }}
@@ -348,7 +349,7 @@ export function MerchantLayout() {
             </div>
 
             {error ? (
-              <div className="mt-4 border border-red-200 bg-red-50 px-4 py-3 text-sm font-mono text-ink-red">
+              <div className="mt-4 border border-danger-border bg-danger-bg px-4 py-3 text-sm font-mono text-danger-text">
                 {error}
               </div>
             ) : null}

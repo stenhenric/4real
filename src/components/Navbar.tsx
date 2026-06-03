@@ -1,33 +1,19 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../app/AuthProvider';
-import { useToast } from '../app/ToastProvider';
-import { LogOut, Home, Landmark, ShieldCheck, User } from 'lucide-react';
+import { Home, Landmark, MessageCircle, ShieldCheck, User } from 'lucide-react';
 import { formatMoneyValue } from '../utils/exact-money.ts';
-import { SketchyButton } from './SketchyButton';
 
 const Navbar = () => {
-  const { userData, user, logout } = useAuth();
-  const navigate = useNavigate();
-  const { error, info } = useToast();
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      info('Logged out successfully.');
-      navigate('/auth/login');
-    } catch (logoutError) {
-      error(logoutError instanceof Error ? logoutError.message : 'Unable to log out right now.');
-    }
-  };
+  const { userData, user } = useAuth();
 
   return (
     <>
       {/* ── Top navbar ── */}
-      <nav className="border-b-2 border-[#1a1a1a] bg-paper sticky top-0 z-50">
+      <nav className="border-b-2 border-ink-black bg-paper sticky top-0 z-50">
         <div className="container mx-auto px-3 md:px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3 md:gap-6">
             <Link to="/play" className="relative group">
-              <span className="font-display text-2xl md:text-4xl font-bold italic transform -rotate-2 hover:rotate-0 transition-all inline-block relative z-10" style={{ textShadow: '1px 1px 0px rgba(0,0,0,0.1)' }}>
+              <span className="font-display text-2xl md:text-4xl font-bold italic transform -rotate-2 hover:rotate-0 transition-all inline-block relative z-10" style={{ textShadow: '1px 1px 0 var(--color-paper-rule)' }}>
                 4real
               </span>
               <div className="highlighter w-full bottom-1 left-0 group-hover:scale-x-110 transition-transform"></div>
@@ -44,6 +30,12 @@ const Navbar = () => {
                 className={({ isActive }) => `flex items-center gap-1 font-bold text-lg ${isActive ? 'underline' : 'hover:underline'}`}
               >
                 <Landmark size={20} /> Bank
+              </NavLink>
+              <NavLink
+                to="/community"
+                className={({ isActive }) => `flex items-center gap-1 font-bold text-lg ${isActive ? 'underline' : 'hover:underline'}`}
+              >
+                <MessageCircle size={20} /> Community
               </NavLink>
             </div>
           </div>
@@ -69,28 +61,19 @@ const Navbar = () => {
               <ShieldCheck size={24} />
             </Link>
 
-            {/* Profile and logout are desktop-only. Mobile sign-out lives in account/security actions. */}
+            {/* Profile is desktop-only. Sign-out lives on the Security page. */}
             {user ? (
               <Link to={`/profile/${user.id}`} className="hidden md:block p-2 hover:bg-black/5" aria-label="Open profile">
                 <User size={24} />
               </Link>
             ) : null}
-            
-            <SketchyButton
-              aria-label="Log out"
-              className="hidden p-2 transition-colors hover:bg-red-50 hover:text-red-600 md:block"
-              onClick={handleLogout}
-              type="button"
-            >
-              <LogOut size={24} />
-            </SketchyButton>
           </div>
         </div>
       </nav>
 
       {/* ── Mobile bottom navigation (visible only on small screens) ── */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t-2 border-[#1a1a1a] bg-paper"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t-2 border-ink-black bg-paper"
         aria-label="Mobile navigation"
       >
         <div className="flex items-center justify-around py-2">
@@ -98,7 +81,7 @@ const Navbar = () => {
             to="/play"
             end
             className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 px-2 py-1 text-xs font-bold ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
             }
           >
             <Home size={22} />
@@ -107,17 +90,26 @@ const Navbar = () => {
           <NavLink
             to="/bank"
             className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 px-2 py-1 text-xs font-bold ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
             }
           >
             <Landmark size={22} />
             Bank
           </NavLink>
+          <NavLink
+            to="/community"
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 px-2 py-1 text-xs font-bold ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
+            }
+          >
+            <MessageCircle size={22} />
+            Community
+          </NavLink>
           {user ? (
             <NavLink
               to={`/profile/${user.id}`}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 text-xs font-bold px-4 py-1 ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
+                `flex min-w-0 flex-1 flex-col items-center gap-0.5 px-2 py-1 text-xs font-bold ${isActive ? 'text-black' : 'text-black/50 hover:text-black/80'}`
               }
             >
               <User size={22} />

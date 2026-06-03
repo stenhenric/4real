@@ -266,11 +266,11 @@ test('frontend bank presentation treats refund credits as positive incoming fund
   assert.equal(getTransactionAccentClass({
     type: 'WITHDRAW_REFUND',
     amount: '12.000000',
-  }), 'bg-green-600');
+  }), 'bg-success-border');
   assert.equal(getTransactionAccentClass({
     type: 'SELL_P2P_REFUND',
     amount: '7.000000',
-  }), 'bg-green-600');
+  }), 'bg-success-border');
 });
 
 test('merchant formatters use unavailable fallback for missing money and invalid dates', () => {
@@ -583,6 +583,36 @@ test('frontend logout bypasses automatic session refresh on 401', async (t) => {
   );
 
   assert.deepEqual(calls.map((entry) => entry.input), ['/api/auth/logout']);
+});
+
+test('frontend navigation exposes community and keeps logout only on security', () => {
+  const appSource = readFileSync(join('src', 'app', 'App.tsx'), 'utf8');
+  const navbarSource = readFileSync(join('src', 'components', 'Navbar.tsx'), 'utf8');
+  const securitySource = readFileSync(join('src', 'pages', 'auth', 'SecuritySettingsPage.tsx'), 'utf8');
+  const communitySource = readFileSync(join('src', 'pages', 'CommunityPage.tsx'), 'utf8');
+  const viteEnvSource = readFileSync(join('src', 'vite-env.d.ts'), 'utf8');
+  const passwordMeterSource = readFileSync(join('src', 'features', 'auth', 'components', 'PasswordStrengthMeter.tsx'), 'utf8');
+  const registerSource = readFileSync(join('src', 'pages', 'auth', 'RegisterPage.tsx'), 'utf8');
+  const turnstileSource = readFileSync(join('src', 'features', 'auth', 'AuthTurnstile.tsx'), 'utf8');
+
+  assert.match(appSource, /CommunityPage/);
+  assert.match(appSource, /path="\/community"/);
+  assert.match(appSource, /path="\/auth\/security"[\s\S]*allowIncompleteProfile=\{true\}/);
+  assert.match(navbarSource, /to="\/community"/);
+  assert.match(navbarSource, /Community/);
+  assert.doesNotMatch(navbarSource, /logout/);
+  assert.doesNotMatch(navbarSource, /LogOut/);
+  assert.match(securitySource, /LogOut/);
+  assert.match(communitySource, /Telegram Community/);
+  assert.match(communitySource, /Telegram Support/);
+  assert.match(communitySource, /target="_blank"/);
+  assert.match(communitySource, /rel="noopener noreferrer"/);
+  assert.match(viteEnvSource, /VITE_TELEGRAM_COMMUNITY_URL/);
+  assert.match(viteEnvSource, /VITE_TELEGRAM_SUPPORT_URL/);
+  assert.match(passwordMeterSource, /12 to 128 characters/);
+  assert.doesNotMatch(passwordMeterSource, /Upper & lowercase|Number or special|\\\[A-Z\\\]|\\\[a-z\\\]/);
+  assert.match(registerSource, /Password must be 12 to 128 characters\./);
+  assert.match(turnstileSource, /import\.meta\.env\.DEV[\s\S]*console\.error/);
 });
 
 test('frontend auth refresh clears state only after explicit unauthenticated responses', () => {

@@ -19,6 +19,7 @@ import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { StatusBadge } from '../../components/ui/StatusBadge';
+import { resolveCanvasColor } from '../../canvas/resolveCanvasColor';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   disableMfa,
@@ -91,7 +92,7 @@ function ProtectionRow({
 
 function BackButton({ onClick, label = SECURITY_PAGE_COPY.mfa.backToSecurityAction }: { onClick: () => void; label?: string }) {
   return (
-    <SketchyButton className="mb-5 px-3 py-2 text-sm" fill="#ffffff" onClick={onClick} type="button">
+    <SketchyButton className="mb-5 px-3 py-2 text-sm" fill="var(--color-surface)" onClick={onClick} type="button">
       <ArrowLeft size={16} />
       {label}
     </SketchyButton>
@@ -136,16 +137,16 @@ function ConfirmationPanel({
       <h3 className="text-xl font-semibold italic text-danger-text">{title}</h3>
       <p className="mt-2 text-sm font-bold leading-6 text-danger-text/80">{description}</p>
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
-        <SketchyButton className="px-4 py-3 text-sm" fill="#ffffff" onClick={onCancel} type="button">
+        <SketchyButton className="px-4 py-3 text-sm" fill="var(--color-surface)" onClick={onCancel} type="button">
           Cancel
         </SketchyButton>
         <SketchyButton
-          activeColor="#fecaca"
+          activeColor="var(--color-danger-bg)"
           className="px-4 py-3 text-sm text-ink-red"
           disabled={busy}
-          fill="#fee2e2"
+          fill="var(--color-danger-bg)"
           onClick={onConfirm}
-          stroke="#b91c1c"
+          stroke="var(--color-danger-border)"
           type="button"
         >
           {busy ? 'Working...' : confirmLabel}
@@ -240,13 +241,16 @@ export default function SecuritySettingsPage() {
 
     let cancelled = false;
     setQrCodeDataUrl('');
+    const qrDark = resolveCanvasColor('var(--color-ink-black)', 'black');
+    const qrLight = resolveCanvasColor('var(--color-surface)', 'white');
+
     QRCode.toDataURL(setup.otpauthUrl, {
       errorCorrectionLevel: 'M',
       margin: 1,
       width: 224,
       color: {
-        dark: '#1A1A1A',
-        light: '#FFFFFF',
+        dark: qrDark,
+        light: qrLight,
       },
     })
       .then((dataUrl) => {
@@ -627,7 +631,7 @@ export default function SecuritySettingsPage() {
                 <SketchyButton
                   className="w-full px-4 py-3 text-sm sm:w-auto"
                   disabled={recoveryCodes.length === 0}
-                  fill="#ffffff"
+                  fill="var(--color-surface)"
                   onClick={handleCopyRecoveryCodes}
                   type="button"
                 >
@@ -637,7 +641,7 @@ export default function SecuritySettingsPage() {
                 <SketchyButton
                   className="w-full px-4 py-3 text-sm sm:w-auto"
                   disabled={recoveryCodes.length === 0}
-                  fill="#ffffff"
+                  fill="var(--color-surface)"
                   onClick={handleDownloadRecoveryCodes}
                   type="button"
                 >
@@ -661,7 +665,7 @@ export default function SecuritySettingsPage() {
                     {SECURITY_PAGE_COPY.mfa.recoveryConfirmDescription}
                   </p>
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                    <SketchyButton className="px-4 py-3 text-sm" fill="#ffffff" onClick={() => setRecoveryConfirmOpen(false)} type="button">
+                    <SketchyButton className="px-4 py-3 text-sm" fill="var(--color-surface)" onClick={() => setRecoveryConfirmOpen(false)} type="button">
                       {SECURITY_PAGE_COPY.mfa.goBackAction}
                     </SketchyButton>
                     <SketchyButton className="px-4 py-3 text-sm" onClick={handleFinalizeRecoveryCodes} type="button">
@@ -687,7 +691,7 @@ export default function SecuritySettingsPage() {
                 <SketchyButton
                   className="w-full px-4 py-3 text-sm sm:w-auto"
                   disabled={recoveryBusy}
-                  fill="#ffffff"
+                  fill="var(--color-surface)"
                   onClick={() => void handleRegenerateRecoveryCodes()}
                   type="button"
                 >
@@ -763,7 +767,7 @@ export default function SecuritySettingsPage() {
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <SketchyButton
                         className="px-4 py-3 text-sm"
-                        fill="#ffffff"
+                        fill="var(--color-surface)"
                         onClick={() => void copyToClipboard(setup.totpSecret, 'Setup key copied to clipboard.')}
                         type="button"
                       >
@@ -772,7 +776,7 @@ export default function SecuritySettingsPage() {
                       </SketchyButton>
                       <SketchyButton
                         className="px-4 py-3 text-sm"
-                        fill="#ffffff"
+                        fill="var(--color-surface)"
                         onClick={() => setSetupKeyRevealed(false)}
                         type="button"
                       >
@@ -781,14 +785,14 @@ export default function SecuritySettingsPage() {
                     </div>
                   </div>
                 ) : (
-                  <SketchyButton className="mt-3 px-4 py-3 text-sm" fill="#ffffff" onClick={() => setSetupKeyRevealed(true)} type="button">
+                  <SketchyButton className="mt-3 px-4 py-3 text-sm" fill="var(--color-surface)" onClick={() => setSetupKeyRevealed(true)} type="button">
                     {SECURITY_PAGE_COPY.mfa.showSetupKeyAction}
                   </SketchyButton>
                 )}
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <SketchyButton className="px-5 py-3 text-sm" fill="#ffffff" onClick={handleCancelSetup} type="button">
+                <SketchyButton className="px-5 py-3 text-sm" fill="var(--color-surface)" onClick={handleCancelSetup} type="button">
                   {SECURITY_PAGE_COPY.mfa.cancelAction}
                 </SketchyButton>
                 <SketchyButton className="px-5 py-3 text-sm" onClick={() => setSetupStep('confirm')} type="button">
@@ -818,7 +822,7 @@ export default function SecuritySettingsPage() {
                   value={setupCode}
                 />
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-                  <SketchyButton className="px-5 py-3 text-sm" fill="#ffffff" onClick={() => setSetupStep('scan')} type="button">
+                  <SketchyButton className="px-5 py-3 text-sm" fill="var(--color-surface)" onClick={() => setSetupStep('scan')} type="button">
                     {SECURITY_PAGE_COPY.mfa.goBackAction}
                   </SketchyButton>
                   <SketchyButton
@@ -871,11 +875,11 @@ export default function SecuritySettingsPage() {
               <div className="space-y-4">
                 <DeviceSummary session={currentDevice} />
                 <SketchyButton
-                  activeColor="#fee2e2"
+                  activeColor="var(--color-danger-bg)"
                   className="w-full px-4 py-3 text-sm text-ink-red sm:w-auto"
-                  fill="#fff5f5"
+                  fill="var(--color-danger-bg)"
                   onClick={() => setConfirmSessionAction({ type: 'current', session: currentDevice })}
-                  stroke="#ef4444"
+                  stroke="var(--color-danger-border)"
                   type="button"
                 >
                   <LogOut size={16} />
@@ -900,11 +904,11 @@ export default function SecuritySettingsPage() {
                         <p className="mt-1 text-sm text-black/60">{formatSessionLastSeen(session)}</p>
                       </div>
                       <SketchyButton
-                        activeColor="#fee2e2"
+                        activeColor="var(--color-danger-bg)"
                         className="w-full px-4 py-3 text-sm text-ink-red sm:w-auto"
-                        fill="#fff5f5"
+                        fill="var(--color-danger-bg)"
                         onClick={() => setConfirmSessionAction({ type: 'other', session })}
-                        stroke="#ef4444"
+                        stroke="var(--color-danger-border)"
                         type="button"
                       >
                         <Trash2 size={16} />
@@ -915,11 +919,11 @@ export default function SecuritySettingsPage() {
                 ))}
 
                 <SketchyButton
-                  activeColor="#fee2e2"
+                  activeColor="var(--color-danger-bg)"
                   className="w-full px-4 py-3 text-sm text-ink-red sm:w-auto"
-                  fill="#fff5f5"
+                  fill="var(--color-danger-bg)"
                   onClick={() => setConfirmSessionAction({ type: 'others' })}
-                  stroke="#ef4444"
+                  stroke="var(--color-danger-border)"
                   type="button"
                 >
                   <Trash2 size={16} />
@@ -999,7 +1003,7 @@ export default function SecuritySettingsPage() {
             >
               <div className="space-y-4">
                 <DeviceSummary session={currentDevice} />
-                <SketchyButton className="w-full px-4 py-3 text-sm sm:w-auto" fill="#ffffff" onClick={() => navigateToFlow('devices')} type="button">
+                <SketchyButton className="w-full px-4 py-3 text-sm sm:w-auto" fill="var(--color-surface)" onClick={() => navigateToFlow('devices')} type="button">
                   <Laptop2 size={16} />
                   {SECURITY_PAGE_COPY.sessions.manageAction}
                 </SketchyButton>
@@ -1012,11 +1016,11 @@ export default function SecuritySettingsPage() {
               title={SECURITY_PAGE_COPY.accountActions.title}
             >
               <SketchyButton
-                activeColor="#fee2e2"
+                activeColor="var(--color-danger-bg)"
                 className="w-full px-4 py-3 text-sm text-ink-red"
-                fill="#fff5f5"
+                fill="var(--color-danger-bg)"
                 onClick={() => setConfirmSessionAction({ type: 'current', session: currentDevice })}
-                stroke="#ef4444"
+                stroke="var(--color-danger-border)"
                 type="button"
               >
                 <LogOut size={16} />

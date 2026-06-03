@@ -277,7 +277,7 @@ const BankPage = () => {
                 </div>
                 <div className="text-right flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center">
                   <span
-                    className={`font-bold text-2xl tracking-tighter ${moneyToNumber(transaction.amount) > 0 ? 'text-green-700' : 'text-red-700'}`}
+                    className={`font-bold text-2xl tracking-tighter ${moneyToNumber(transaction.amount) > 0 ? 'text-success-text' : 'text-danger-text'}`}
                   >
                     {moneyToNumber(transaction.amount) > 0 ? '+' : ''}
                     {formatMoneyValue(transaction.amount)}
@@ -293,7 +293,7 @@ const BankPage = () => {
           {transactions.length > 0 ? (
             <div className="flex flex-col items-center gap-3 pt-2">
               {nextTransactionsError ? (
-                <p className="text-center text-sm font-semibold text-red-700" role="alert">
+                <p className="text-center text-sm font-semibold text-danger-text" role="alert">
                   {nextTransactionsError}
                 </p>
               ) : null}

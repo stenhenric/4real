@@ -103,6 +103,11 @@ function createAuthenticatedOperationRateLimiter(params: {
   prefix: string;
   windowMs: number;
   max: number;
+  requestPropertyName?: string;
+  message?: {
+    code: string;
+    message: string;
+  };
 }) {
   const store = createRateLimitStore(params.prefix);
 
@@ -111,10 +116,10 @@ function createAuthenticatedOperationRateLimiter(params: {
     windowMs: params.windowMs,
     max: params.max,
     standardHeaders: true,
-    requestPropertyName: 'operationRateLimit',
+    requestPropertyName: params.requestPropertyName ?? 'operationRateLimit',
     legacyHeaders: false,
     keyGenerator: getAuthenticatedActorRateLimitKey,
-    message: {
+    message: params.message ?? {
       code: 'OPERATION_RATE_LIMITED',
       message: 'Too many requests for this operation, please try again later.',
     },
@@ -216,15 +221,11 @@ export function createAdminMutationRateLimiter() {
 
 export function createWithdrawalRateLimiter() {
   const env = getEnv();
-  const store = createRateLimitStore('rl:withdrawal:');
-
-  return rateLimit({
-    ...(store ? { store } : {}),
+  return createAuthenticatedOperationRateLimiter({
+    prefix: 'rl:withdrawal:',
     windowMs: env.WITHDRAWAL_RATE_LIMIT_WINDOW_MS,
     max: env.WITHDRAWAL_RATE_LIMIT_MAX,
-    standardHeaders: true,
     requestPropertyName: 'withdrawalRateLimit',
-    legacyHeaders: false,
     message: {
       code: 'WITHDRAWAL_RATE_LIMITED',
       message: 'Too many withdrawal requests, please try again later.',

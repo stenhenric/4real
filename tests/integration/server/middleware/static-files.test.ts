@@ -103,6 +103,7 @@ test('frontend middleware serves the SPA shell for known app routes', async () =
       '/auth/security',
       '/play',
       '/leaderboard',
+      '/community',
       '/bank',
       '/merchant/orders',
       '/game/room-123',

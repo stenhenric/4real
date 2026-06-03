@@ -156,7 +156,7 @@ export default function OrderDeskPage() {
                   ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
               )}
-              fill={typeFilter === filter ? '#dbeafe' : '#ffffff'}
+              fill={typeFilter === filter ? 'var(--color-info-bg)' : 'var(--color-surface)'}
               onClick={() => {
                 setPage(1);
                 setTypeFilter(filter);
@@ -176,7 +176,7 @@ export default function OrderDeskPage() {
                   ? 'border-ink-blue bg-ink-blue/10 text-ink-blue'
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
               )}
-              fill={statusFilter === filter ? '#dbeafe' : '#ffffff'}
+              fill={statusFilter === filter ? 'var(--color-info-bg)' : 'var(--color-surface)'}
               onClick={() => {
                 setPage(1);
                 setStatusFilter(filter);
@@ -395,8 +395,9 @@ export default function OrderDeskPage() {
                               </span>
                             </SketchyButton>
                             <SketchyButton
-                              className="px-3 py-2 text-sm text-green-700"
+                              className="px-3 py-2 text-sm text-success-text"
                               disabled={Boolean(rowActions[getRowActionKey(order.id)])}
+                              fill="var(--color-success-bg)"
                               onClick={() => {
                                 void handleStatusUpdate(order.id, 'DONE');
                               }}

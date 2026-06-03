@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Gamepad2, Medal } from 'lucide-react';
+import { ArrowLeft, Gamepad2, LoaderCircle, Medal, SearchX } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { SketchyButton } from '../components/SketchyButton';
 import { EmptyState } from '../components/ui/EmptyState';
 import { MiniMatchCard } from '../components/ui/MiniMatchCard';
+import { StatePanel } from '../components/ui/StatePanel';
 import { getUserMatches } from '../services/matches.service';
 import { getUserProfile } from '../services/users.service';
 import { isAbortError } from '../utils/isAbortError';
@@ -63,11 +64,28 @@ const ProfilePage = () => {
   }, [showError, userId]);
 
   if (loading) {
-    return <div className="text-center py-20 animate-pulse font-bold">Sharpening pencils…</div>;
+    return (
+      <StatePanel
+        eyebrow="Loading profile"
+        icon={LoaderCircle}
+        iconClassName="animate-spin"
+        title="Sharpening pencils..."
+        tone="info"
+      />
+    );
   }
 
   if (!profile) {
-    return <div className="text-center py-20 font-bold">Profile not found in the scribbles.</div>;
+    return (
+      <StatePanel
+        eyebrow="Profile"
+        icon={SearchX}
+        title="Profile not found"
+        tone="warning"
+      >
+        This player was not found in the scribbles.
+      </StatePanel>
+    );
   }
 
   const isOwnProfile = currentUser?.id === userId;
@@ -139,7 +157,7 @@ const ProfilePage = () => {
           <div className="rough-border bg-white/80 p-8 shadow-xl relative">
             <div className="tape w-20 h-6 -top-2 left-10 opacity-60"></div>
             <h2 className="text-3xl font-semibold flex items-center gap-2 mb-8 italic tracking-tighter underline">
-              <Medal className="text-orange-700" size={28} /> Sketcher Portfolio
+              <Medal className="text-warning-text" size={28} /> Sketcher Portfolio
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {['First Strike', 'Bank Master', 'USDT Whale', 'Winstreak'].map((feature) => (
@@ -151,7 +169,7 @@ const ProfilePage = () => {
                     🏆
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-tight">{feature}</p>
-                  <div className="hidden group-hover:block absolute top-full left-1/2 -ml-20 w-40 p-2 bg-gray-950 text-white text-[10px] z-20 mt-2">
+                  <div className="hidden group-hover:block absolute top-full left-1/2 -ml-20 w-40 p-2 bg-ink-black text-white text-[10px] z-20 mt-2">
                     Complete challenges to unlock.
                   </div>
                 </div>

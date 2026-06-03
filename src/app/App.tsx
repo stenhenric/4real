@@ -13,6 +13,7 @@ const LandingPage = lazy(() => import('../pages/LandingPage'));
 const PrivacyPolicyPage = lazy(() => import('../pages/PrivacyPolicyPage'));
 const TermsOfUsePage = lazy(() => import('../pages/TermsOfUsePage'));
 const BankPage = lazy(() => import('../pages/BankPage'));
+const CommunityPage = lazy(() => import('../pages/CommunityPage'));
 const DashboardPage = lazy(() => import('../pages/DashboardPage'));
 const GamePage = lazy(() => import('../pages/GamePage'));
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage'));
@@ -88,7 +89,10 @@ export default function App() {
             {import.meta.env.DEV && DevBankPreview && (
               <Route path="/dev/bank" element={<DevBankPreview />} />
             )}
-            <Route path="/auth/security" element={<ProtectedRoute><SecuritySettingsPage /></ProtectedRoute>} />
+            <Route
+              path="/auth/security"
+              element={<ProtectedRoute allowIncompleteProfile={true}><SecuritySettingsPage /></ProtectedRoute>}
+            />
 
             <Route path="/merchant" element={<ProtectedRoute requireAdmin={true} redirectTo="/bank" />}>
               <Route element={<MerchantLayout />}>
@@ -107,6 +111,7 @@ export default function App() {
                 path="/leaderboard"
                 element={<DashboardPage key="dashboard-leaderboard" initialTab="leaderboard" />}
               />
+              <Route path="/community" element={<CommunityPage />} />
               <Route path="/bank" element={<BankPage />} />
               <Route path="/game/:roomId" element={<GamePage />} />
               <Route path="/profile/:userId" element={<ProfilePage />} />

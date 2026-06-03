@@ -1,5 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
 import {
@@ -116,9 +117,10 @@ export default function WithdrawalMfaPage() {
         ) : null}
 
         {draftAmount && draftAddress ? (
-          <div className="border-2 border-black bg-yellow-100 p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] text-black">
-            <h4 className="font-bold text-sm uppercase tracking-wide mb-2 text-yellow-900 flex items-center gap-1.5">
-              ⚠️ Transaction Details
+          <div className="border-2 border-warning-border bg-warning-bg p-4 shadow-[4px_4px_0px_0px_var(--color-ink-black)] text-warning-text">
+            <h4 className="mb-2 flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-warning-text">
+              <AlertTriangle size={16} />
+              Transaction Details
             </h4>
             <div className="space-y-1.5 font-mono text-xs">
               <div className="flex justify-between border-b border-black/10 pb-1">
@@ -130,7 +132,7 @@ export default function WithdrawalMfaPage() {
                 <span className="font-bold">{truncateAddress(draftAddress)}</span>
               </div>
             </div>
-            <p className="mt-3 text-[10px] text-yellow-900 leading-relaxed font-sans">
+            <p className="mt-3 text-[10px] leading-relaxed text-warning-text font-sans">
               <strong>CRITICAL WARNING:</strong> Verify the destination wallet address precisely. Blockchain transfers are permanent and cannot be reversed.
             </p>
           </div>

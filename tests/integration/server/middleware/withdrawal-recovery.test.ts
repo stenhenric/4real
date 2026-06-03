@@ -218,6 +218,47 @@ test('admin recovery refunds a stuck withdrawal only after no on-chain match is 
   assert.equal(merchantAlertMock.mock.calls[0].arguments[0]?.scenario, 'withdrawal_failed_merchant');
 });
 
+test('admin recovery fails closed when the chain re-check is unavailable before refund', async (t) => {
+  registerCleanup(t);
+
+  const findMock = mock.method(WithdrawalRepository, 'findByWithdrawalId', async () => stuckWithdrawal());
+  const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
+  const markRefundedMock = mock.method(WithdrawalRepository, 'markStuckRefunded', async () => true);
+  const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
+  const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'refund-tx-1' } as any));
+  setWithdrawalRecoveryDependenciesForTests({
+    findWithdrawalTransferOnChain: async () => {
+      const error = new Error('toncenter rate limited') as Error & { status?: number };
+      error.status = 429;
+      throw error;
+    },
+  });
+
+  t.after(() => findMock.mock.restore());
+  t.after(() => startSessionMock.mock.restore());
+  t.after(() => markRefundedMock.mock.restore());
+  t.after(() => refundMock.mock.restore());
+  t.after(() => createTransactionMock.mock.restore());
+
+  await assert.rejects(
+    recoverStuckWithdrawal({
+      withdrawalId: 'wd-stuck-1',
+      action: 'refund',
+      actorUserId: 'admin-1',
+    }),
+    (error: unknown) => {
+      assert.equal((error as { statusCode?: number }).statusCode, 503);
+      assert.equal((error as { code?: string }).code, 'WITHDRAWAL_RECOVERY_CHAIN_CHECK_UNAVAILABLE');
+      return true;
+    },
+  );
+
+  assert.equal(startSessionMock.mock.callCount(), 0);
+  assert.equal(markRefundedMock.mock.callCount(), 0);
+  assert.equal(refundMock.mock.callCount(), 0);
+  assert.equal(createTransactionMock.mock.callCount(), 0);
+});
+
 test('admin recovery repeated confirm and refund actions are idempotent for terminal states', async (t) => {
   registerCleanup(t);
 

@@ -27,6 +27,10 @@ interface ExecuteIdempotentMutationV2Options<TBody> {
   execute: (context: { requestHash: string; session: ClientSession }) => Promise<IdempotentMutationResult<TBody>>;
 }
 
+type IdempotencyV2Executor = (
+  options: ExecuteIdempotentMutationV2Options<unknown>,
+) => Promise<IdempotentMutationResponse<unknown>>;
+
 export interface IdempotentMutationResponse<TBody> extends IdempotentMutationResult<TBody> {
   replayed: boolean;
   requestHash: string;
@@ -166,9 +170,9 @@ function isDuplicateKeyError(error: unknown): error is { code: number } {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 11000);
 }
 
-let activeV2Executor: any = null;
+let activeV2Executor: IdempotencyV2Executor | null = null;
 
-export function setIdempotencyV2ExecutorForTests(fn: any): void {
+export function setIdempotencyV2ExecutorForTests(fn: IdempotencyV2Executor): void {
   activeV2Executor = fn;
 }
 
@@ -180,7 +184,7 @@ export async function executeIdempotentMutationV2<TBody>(
   options: ExecuteIdempotentMutationV2Options<TBody>,
 ): Promise<IdempotentMutationResponse<TBody>> {
   if (activeV2Executor) {
-    return activeV2Executor(options);
+    return activeV2Executor(options as ExecuteIdempotentMutationV2Options<unknown>) as Promise<IdempotentMutationResponse<TBody>>;
   }
 
   const { userId, routeKey, idempotencyKey, requestPayload, execute } = options;

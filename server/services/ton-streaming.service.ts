@@ -34,11 +34,17 @@ interface TonStreamingSubscription {
   actionTypes?: string[];
 }
 
+interface WebSocketCloseEventLike {
+  code?: number;
+  reason?: string;
+  wasClean?: boolean;
+}
+
 type WebSocketLike = {
   readyState: number;
   onopen: (() => void) | null;
   onmessage: ((event: { data: string }) => void) | null;
-  onclose: ((event: any) => void) | null;
+  onclose: ((event?: WebSocketCloseEventLike) => void) | null;
   onerror: ((event: unknown) => void) | null;
   send: (payload: string) => void;
   close: () => void;

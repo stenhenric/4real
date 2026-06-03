@@ -28,6 +28,7 @@ import { verifyTurnstileToken } from '../../../../server/services/auth-turnstile
 import { createTotpSetup, verifyTotpCode } from '../../../../server/services/totp.service.ts';
 import { ProductEmailNotificationService } from '../../../../server/services/product-email-notification.service.ts';
 import { UserService } from '../../../../server/services/user.service.ts';
+import { setRedisClientForTests } from '../../../../server/services/redis.service.ts';
 import { User } from '../../../../server/models/User.ts';
 import { serviceUnavailable } from '../../../../server/utils/http-error.ts';
 import { logger } from '../../../../server/utils/logger.ts';
@@ -132,6 +133,42 @@ test('verifyUserFactor consumes a recovery code atomically and rejects duplicate
       && rejected.reason.code === 'INVALID_TOTP_CODE',
     true,
   );
+});
+
+test('consumeChallenge atomically allows only one concurrent MFA challenge redemption', async (t) => {
+  const challengeKey = 'auth:mfa:challenge:challenge-race';
+  const store = new Map<string, string>([
+    [challengeKey, JSON.stringify({ userId: 'user-1', mode: 'login' })],
+  ]);
+  const redis = {
+    async eval(_script: string, _keyCount: number, key: string) {
+      const value = store.get(key) ?? null;
+      if (value) {
+        store.delete(key);
+      }
+      return value;
+    },
+  };
+  setRedisClientForTests(redis as any);
+  t.after(() => setRedisClientForTests(null));
+
+  const results = await Promise.allSettled([
+    AuthMfaService.consumeChallenge('challenge-race'),
+    AuthMfaService.consumeChallenge('challenge-race'),
+  ]);
+
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
+  const rejected = results.find((result) => result.status === 'rejected');
+  assert.equal(
+    rejected?.status === 'rejected'
+      && typeof rejected.reason === 'object'
+      && rejected.reason !== null
+      && 'code' in rejected.reason
+      && rejected.reason.code === 'MFA_CHALLENGE_EXPIRED',
+    true,
+  );
+  assert.equal(store.has(challengeKey), false);
 });
 
 test('verifyUserFactor still accepts a valid TOTP code without consuming recovery codes', async (t) => {

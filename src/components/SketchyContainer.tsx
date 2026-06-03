@@ -26,7 +26,7 @@ export const SketchyContainer = ({
   const { elementRef, size } = useElementSize<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const resolvedFill = resolveCanvasColor(fill, 'transparent');
-  const resolvedStroke = resolveCanvasColor(stroke, '#1a1a1a');
+  const resolvedStroke = resolveCanvasColor(stroke, 'black');
 
   useEffect(() => {
     const canvas = canvasRef.current;

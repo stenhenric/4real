@@ -6,6 +6,8 @@ import type { Request, Response } from 'express';
 import { resetEnvCacheForTests } from '../../../../server/config/env.ts';
 import { AuthController } from '../../../../server/controllers/auth.controller.ts';
 import { AuthEmailService } from '../../../../server/services/auth-email.service.ts';
+import { AuthSessionService } from '../../../../server/services/auth-session.service.ts';
+import { OneTimeTokenService } from '../../../../server/services/one-time-token.service.ts';
 import { UserService } from '../../../../server/services/user.service.ts';
 
 const VALID_TOTP_KEY = Buffer.from('0123456789abcdef0123456789abcdef', 'utf8').toString('base64');
@@ -89,6 +91,40 @@ test('requestPasswordReset omits previewUrl when the backend sends a reset email
     });
   });
 });
+
+test('resetPassword does not change credentials when session revocation fails', async (t) => {
+  t.mock.method(OneTimeTokenService, 'consume', async () => ({
+    userId: { toString: () => 'user-123' },
+  }) as any);
+  t.mock.method(UserService, 'findAuthUserById', async () => ({
+    _id: { toString: () => 'user-123' },
+    email: 'alice@example.com',
+    emailVerifiedAt: new Date('2026-05-05T00:00:00.000Z'),
+  }) as any);
+  const revokeMock = t.mock.method(AuthSessionService, 'revokeAllSessionsForUser', async () => {
+    throw new Error('session store unavailable');
+  });
+  const setPasswordHashMock = t.mock.method(UserService, 'setPasswordHash', async () => ({} as any));
+  const markEmailVerifiedMock = t.mock.method(UserService, 'markEmailVerified', async () => ({} as any));
+
+  const req = {
+    body: {
+      token: 'reset-token',
+      password: 'ValidPassword123!',
+    },
+  } as Request;
+  const res = createResponseMock();
+
+  await assert.rejects(
+    () => AuthController.resetPassword(req, res),
+    /session store unavailable/,
+  );
+
+  assert.equal(revokeMock.mock.callCount(), 1);
+  assert.equal(setPasswordHashMock.mock.callCount(), 0);
+  assert.equal(markEmailVerifiedMock.mock.callCount(), 0);
+});
+
 test('register responds 202 immediately and does not wait/block on sendVerificationEmail', async (t) => {
   const passwordHashService = await import('../../../../server/services/password-hash.service.ts');
   passwordHashService.setHashPasswordForTests(async () => 'argon2id$v=1$m=19456,t=1,p=1$c2FsdA$aGFzaA');

@@ -18,7 +18,12 @@ const router = Router();
 router.use(authenticateToken, requireVerifiedAccount, requireAdmin, requireMfaStepUp);
 
 router.get('/merchant/config', asyncHandler(MerchantAdminController.getConfig));
-router.patch('/merchant/config', validateBody(updateMerchantConfigRequestSchema), asyncHandler(MerchantAdminController.updateConfig));
+router.patch(
+  '/merchant/config',
+  createAdminMutationRateLimiter(),
+  validateBody(updateMerchantConfigRequestSchema),
+  asyncHandler(MerchantAdminController.updateConfig),
+);
 router.get('/merchant/dashboard', asyncHandler(MerchantAdminController.getDashboard));
 router.get('/merchant/orders', asyncHandler(MerchantAdminController.getOrders));
 router.get('/merchant/deposits', asyncHandler(MerchantAdminController.getDeposits));

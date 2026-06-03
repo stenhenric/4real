@@ -32,11 +32,11 @@ export default function RegisterPage() {
   
   const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
   const turnstileRef = useRef<AuthTurnstileRef>(null);
-  const isPasswordValidRef = useRef(false);
   const siteKey = getTurnstileSiteKey();
 
   // Validation States
   const passwordsMatch = password && confirmPassword ? password === confirmPassword : true;
+  const passwordMeetsPolicy = validatePasswordStrength(password);
 
   const handleGoogle = async () => {
     setGoogleLoading(true);
@@ -63,8 +63,8 @@ export default function RegisterPage() {
       showError('Please enter a valid email.');
       return false;
     }
-    if (!isPasswordValidRef.current) {
-      showError('Password requirements not met.');
+    if (!passwordMeetsPolicy) {
+      showError('Password must be 12 to 128 characters.');
       return false;
     }
     if (password !== confirmPassword) {
@@ -174,11 +174,7 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   label="Password"
                   name="password"
-                  onChange={(event) => {
-                    const nextPassword = event.target.value;
-                    setPassword(nextPassword);
-                    isPasswordValidRef.current = validatePasswordStrength(nextPassword);
-                  }}
+                  onChange={(event) => setPassword(event.target.value)}
                   placeholder="At least 12 characters"
                   required
                   value={password}
@@ -202,7 +198,7 @@ export default function RegisterPage() {
               <SketchyButton 
                 className="w-full py-4 text-xl mt-4" 
                 type="submit"
-                activeColor="#fff9c4"
+                variant="primary"
               >
                 Continue
               </SketchyButton>
@@ -230,7 +226,7 @@ export default function RegisterPage() {
               className="w-full py-4 text-xl mt-4" 
               disabled={loading || !siteKey || !turnstileToken}
               type="submit"
-              activeColor="#fff9c4"
+              variant="primary"
             >
               {loading ? 'Creating your account…' : 'Create account'}
             </SketchyButton>

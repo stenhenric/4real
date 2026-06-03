@@ -193,13 +193,14 @@ export class MatchController {
     res.status(result.statusCode).json(result.body);
   }
 
-  static async getUserHistory(req: Request, res: Response): Promise<void> {
+  static async getUserHistory(req: AuthRequest, res: Response): Promise<void> {
+    assertAuthenticated(req);
     const userId = req.params.userId;
     if (!userId) {
       throw badRequest('User id is required', 'USER_ID_REQUIRED');
     }
 
-    const matches = await MatchService.getUserHistory(userId);
+    const matches = await MatchService.getUserHistory(userId, 5, req.user.id);
     res.json(matches.map((match) => serializeMatch(match)));
   }
 }

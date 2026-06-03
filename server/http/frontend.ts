@@ -29,6 +29,7 @@ const frontendRoutes = new Set([
   '/auth/security',
   '/play',
   '/leaderboard',
+  '/community',
   '/bank',
   '/merchant',
   '/merchant/orders',
