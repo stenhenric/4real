@@ -28,6 +28,7 @@ import type { BackgroundJobState, JobSnapshot } from './services/background-jobs
 import { getHotWalletRuntime } from './services/hot-wallet-runtime.service.ts';
 import { probeRedis } from './services/redis.service.ts';
 import { getBuildInfo } from './utils/build-info.ts';
+import type { PublicConfigDTO } from '../shared/types/api.ts';
 
 interface AppStatusProvider {
   isShuttingDown: () => boolean;
@@ -387,6 +388,18 @@ export async function createApp(
   app.use('/api', appDependencies.createGeneralRateLimiter());
   app.use('/api', apiNoStoreMiddleware);
   app.use('/api', csrfProtectionMiddleware);
+
+  app.get('/api/public-config', (_req, res) => {
+    const payload: PublicConfigDTO = {
+      telegram: {
+        communityUrl: env.TELEGRAM_COMMUNITY_URL ?? null,
+        supportUrl: env.TELEGRAM_SUPPORT_URL ?? null,
+      },
+    };
+
+    res.json(payload);
+  });
+
   await appDependencies.registerApiRoutes(app);
   app.use('/api', notFoundApiHandler);
 

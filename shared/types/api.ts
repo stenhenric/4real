@@ -20,6 +20,13 @@ export interface ApiErrorDTO {
   details?: unknown;
 }
 
+export interface PublicConfigDTO {
+  telegram: {
+    communityUrl: string | null;
+    supportUrl: string | null;
+  };
+}
+
 export type UsdtAmountString = string;
 export type KesAmountString = string;
 export type RateString = string;

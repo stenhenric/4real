@@ -14,6 +14,10 @@ const booleanFromEnv = z
   });
 
 const tonAmountString = z.string().trim().regex(/^\d+(?:\.\d{1,9})?$/);
+const publicTelegramUrl = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim().length === 0 ? undefined : value),
+  z.string().trim().regex(/^https:\/\/t\.me\/[A-Za-z0-9_/+-]+$/).optional(),
+);
 
 const rawEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -112,6 +116,8 @@ const rawEnvSchema = z.object({
   RENDER_INSTANCE_COUNT: z.coerce.number().int().positive().optional(),
   WEB_CONCURRENCY: z.coerce.number().int().positive().optional(),
   PRODUCTION_TOPOLOGY: z.enum(['single-instance', 'distributed']).default('single-instance'),
+  TELEGRAM_COMMUNITY_URL: publicTelegramUrl,
+  TELEGRAM_SUPPORT_URL: publicTelegramUrl,
   TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
   TELEGRAM_PROOF_CHANNEL_ID: z.string().trim().optional(),
   TELEGRAM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),

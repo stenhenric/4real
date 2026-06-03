@@ -592,8 +592,10 @@ test('frontend navigation exposes community and keeps logout only on security', 
   const navbarSource = readFileSync(join('src', 'components', 'Navbar.tsx'), 'utf8');
   const securitySource = readFileSync(join('src', 'pages', 'auth', 'SecuritySettingsPage.tsx'), 'utf8');
   const communitySource = readFileSync(join('src', 'pages', 'CommunityPage.tsx'), 'utf8');
-  const viteEnvSource = readFileSync(join('src', 'vite-env.d.ts'), 'utf8');
   const envExampleSource = readFileSync('.env.example', 'utf8');
+  const publicConfigServiceSource = existsSync(join('src', 'services', 'public-config.service.ts'))
+    ? readFileSync(join('src', 'services', 'public-config.service.ts'), 'utf8')
+    : '';
   const passwordMeterSource = readFileSync(join('src', 'features', 'auth', 'components', 'PasswordStrengthMeter.tsx'), 'utf8');
   const registerSource = readFileSync(join('src', 'pages', 'auth', 'RegisterPage.tsx'), 'utf8');
   const turnstileSource = readFileSync(join('src', 'features', 'auth', 'AuthTurnstile.tsx'), 'utf8');
@@ -610,11 +612,13 @@ test('frontend navigation exposes community and keeps logout only on security', 
   assert.match(communitySource, /Telegram Support/);
   assert.match(communitySource, /target="_blank"/);
   assert.match(communitySource, /rel="noopener noreferrer"/);
-  assert.match(viteEnvSource, /VITE_TELEGRAM_COMMUNITY_URL/);
-  assert.match(viteEnvSource, /VITE_TELEGRAM_SUPPORT_URL/);
+  assert.match(communitySource, /getPublicConfig/);
+  assert.match(publicConfigServiceSource, /\/public-config/);
+  assert.doesNotMatch(communitySource, /import\.meta\.env\.VITE_TELEGRAM_/);
   assert.doesNotMatch(communitySource, /https:\/\/t\.me\/4real(?:community|support)/);
-  assert.match(envExampleSource, /^VITE_TELEGRAM_COMMUNITY_URL=$/m);
-  assert.match(envExampleSource, /^VITE_TELEGRAM_SUPPORT_URL=$/m);
+  assert.match(envExampleSource, /^TELEGRAM_COMMUNITY_URL=$/m);
+  assert.match(envExampleSource, /^TELEGRAM_SUPPORT_URL=$/m);
+  assert.doesNotMatch(envExampleSource, /^VITE_TELEGRAM_(?:COMMUNITY|SUPPORT)_URL=/m);
   assert.match(passwordMeterSource, /12 to 128 characters/);
   assert.doesNotMatch(passwordMeterSource, /Upper & lowercase|Number or special|\\\[A-Z\\\]|\\\[a-z\\\]/);
   assert.match(registerSource, /Password must be 12 to 128 characters\./);

@@ -1,14 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ExternalLink, LifeBuoy, MessageCircle, Send } from 'lucide-react';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { getPublicConfig } from '../services/public-config.service';
 
-function getTelegramUrl(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed && /^https:\/\/t\.me\/[A-Za-z0-9_/-]+$/.test(trimmed) ? trimmed : null;
-}
-
-const communityUrl = getTelegramUrl(import.meta.env.VITE_TELEGRAM_COMMUNITY_URL);
-const supportUrl = getTelegramUrl(import.meta.env.VITE_TELEGRAM_SUPPORT_URL);
+type TelegramLinkStatus = 'loading' | 'ready' | 'error';
 
 function CommunityLinkCard({
   title,
@@ -16,13 +11,21 @@ function CommunityLinkCard({
   href,
   icon,
   badge,
+  status,
 }: {
   title: string;
   description: string;
   href: string | null;
   icon: ReactNode;
   badge: string;
+  status: TelegramLinkStatus;
 }) {
+  const unavailableLabel = status === 'loading'
+    ? `Loading ${title}`
+    : status === 'error'
+      ? `${title} unavailable`
+      : `${title} not configured`;
+
   return (
     <article className="rough-border bg-white p-5 shadow-sm">
       <div className="flex items-start gap-4">
@@ -53,7 +56,7 @@ function CommunityLinkCard({
           className="sketchy-border mt-5 inline-flex w-full min-w-0 items-center justify-center gap-2 bg-black/10 px-5 py-3 text-sm font-bold text-black/55 shadow-sm sm:w-auto"
         >
           <Send size={16} />
-          {title} not configured
+          {unavailableLabel}
         </div>
       )}
     </article>
@@ -61,6 +64,34 @@ function CommunityLinkCard({
 }
 
 export default function CommunityPage() {
+  const [communityUrl, setCommunityUrl] = useState<string | null>(null);
+  const [supportUrl, setSupportUrl] = useState<string | null>(null);
+  const [telegramStatus, setTelegramStatus] = useState<TelegramLinkStatus>('loading');
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void getPublicConfig(controller.signal)
+      .then((config) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setCommunityUrl(config.telegram.communityUrl);
+        setSupportUrl(config.telegram.supportUrl);
+        setTelegramStatus('ready');
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setTelegramStatus('error');
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
   return (
     <div className="mx-auto max-w-5xl">
       <header className="mb-6">
@@ -80,6 +111,7 @@ export default function CommunityPage() {
           description="Follow product updates, game announcements, leaderboard chatter, and community discussion."
           href={communityUrl}
           icon={<MessageCircle size={26} />}
+          status={telegramStatus}
           title="Telegram Community"
         />
         <CommunityLinkCard
@@ -87,6 +119,7 @@ export default function CommunityPage() {
           description="Use support for account questions, payment issues, withdrawal help, and issue reporting."
           href={supportUrl}
           icon={<LifeBuoy size={26} />}
+          status={telegramStatus}
           title="Telegram Support"
         />
       </div>

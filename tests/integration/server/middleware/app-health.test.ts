@@ -559,6 +559,34 @@ test('/tonconnect-manifest.json has an explicit short public cache policy', asyn
   });
 });
 
+test('/api/public-config exposes safe runtime Telegram links without auth', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/public-config`);
+    const payload = await response.json() as {
+      telegram?: {
+        communityUrl?: string | null;
+        supportUrl?: string | null;
+      };
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0');
+    assert.deepEqual(payload, {
+      telegram: {
+        communityUrl: 'https://t.me/4realcommunity',
+        supportUrl: 'https://t.me/4realsupport',
+      },
+    });
+  }, {
+    env: {
+      TELEGRAM_COMMUNITY_URL: 'https://t.me/4realcommunity',
+      TELEGRAM_SUPPORT_URL: 'https://t.me/4realsupport',
+      PUBLIC_APP_ORIGIN: 'https://app.example.com',
+      ALLOWED_ORIGINS: 'https://app.example.com',
+    },
+  });
+});
+
 test('API mutation responses inherit no-store from the API cache policy', async () => {
   await withTestServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/cache-contract/mutation`, {
