@@ -2,16 +2,13 @@ import type { ReactNode } from 'react';
 import { ExternalLink, LifeBuoy, MessageCircle, Send } from 'lucide-react';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
-const DEFAULT_COMMUNITY_URL = 'https://t.me/4realcommunity';
-const DEFAULT_SUPPORT_URL = 'https://t.me/4realsupport';
-
-function getTelegramUrl(value: string | undefined, fallback: string): string {
+function getTelegramUrl(value: string | undefined): string | null {
   const trimmed = value?.trim();
-  return trimmed && /^https:\/\/t\.me\/[A-Za-z0-9_/-]+$/.test(trimmed) ? trimmed : fallback;
+  return trimmed && /^https:\/\/t\.me\/[A-Za-z0-9_/-]+$/.test(trimmed) ? trimmed : null;
 }
 
-const communityUrl = getTelegramUrl(import.meta.env.VITE_TELEGRAM_COMMUNITY_URL, DEFAULT_COMMUNITY_URL);
-const supportUrl = getTelegramUrl(import.meta.env.VITE_TELEGRAM_SUPPORT_URL, DEFAULT_SUPPORT_URL);
+const communityUrl = getTelegramUrl(import.meta.env.VITE_TELEGRAM_COMMUNITY_URL);
+const supportUrl = getTelegramUrl(import.meta.env.VITE_TELEGRAM_SUPPORT_URL);
 
 function CommunityLinkCard({
   title,
@@ -22,7 +19,7 @@ function CommunityLinkCard({
 }: {
   title: string;
   description: string;
-  href: string;
+  href: string | null;
   icon: ReactNode;
   badge: string;
 }) {
@@ -39,16 +36,26 @@ function CommunityLinkCard({
         </div>
       </div>
 
-      <a
-        className="sketchy-border mt-5 inline-flex w-full min-w-0 items-center justify-center gap-2 bg-note-yellow px-5 py-3 text-sm font-bold shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue active:scale-95 sm:w-auto"
-        href={href}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        <Send size={16} />
-        Open {title}
-        <ExternalLink size={16} />
-      </a>
+      {href ? (
+        <a
+          className="sketchy-border mt-5 inline-flex w-full min-w-0 items-center justify-center gap-2 bg-note-yellow px-5 py-3 text-sm font-bold shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue active:scale-95 sm:w-auto"
+          href={href}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          <Send size={16} />
+          Open {title}
+          <ExternalLink size={16} />
+        </a>
+      ) : (
+        <div
+          aria-disabled="true"
+          className="sketchy-border mt-5 inline-flex w-full min-w-0 items-center justify-center gap-2 bg-black/10 px-5 py-3 text-sm font-bold text-black/55 shadow-sm sm:w-auto"
+        >
+          <Send size={16} />
+          {title} not configured
+        </div>
+      )}
     </article>
   );
 }

@@ -19,7 +19,8 @@ type CreateOrderPayload =
 type OrderStatus = OrderDTO['status'];
 
 export function getOrders(signal?: AbortSignal) {
-  return request<OrderDTO[]>('/orders', signal ? { signal } : undefined);
+  return request<OrderDTO[] | null>('/orders', signal ? { signal } : undefined)
+    .then((orders) => (Array.isArray(orders) ? orders : []));
 }
 
 export function getMerchantConfig(signal?: AbortSignal) {

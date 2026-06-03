@@ -449,10 +449,23 @@ test('community page renders safe Telegram destinations and desktop nav has no l
     const desktopNav = page.getByRole('navigation').first();
     await expect(desktopNav).toContainText(/community/i);
     await expect(desktopNav).not.toContainText(/log out/i);
-    await expect(page.getByRole('link', { name: /telegram community/i })).toHaveAttribute('target', '_blank');
-    await expect(page.getByRole('link', { name: /telegram community/i })).toHaveAttribute('rel', /noopener noreferrer/);
-    await expect(page.getByRole('link', { name: /telegram support/i })).toHaveAttribute('target', '_blank');
-    await expect(page.getByRole('link', { name: /telegram support/i })).toHaveAttribute('rel', /noopener noreferrer/);
+    const communityLink = page.getByRole('link', { name: /telegram community/i });
+    if (await communityLink.count()) {
+      await expect(communityLink).toHaveAttribute('href', /^https:\/\/t\.me\/[A-Za-z0-9_/-]+$/);
+      await expect(communityLink).toHaveAttribute('target', '_blank');
+      await expect(communityLink).toHaveAttribute('rel', /noopener noreferrer/);
+    } else {
+      await expect(page.getByText(/telegram community not configured/i)).toBeVisible();
+    }
+
+    const supportLink = page.getByRole('link', { name: /telegram support/i });
+    if (await supportLink.count()) {
+      await expect(supportLink).toHaveAttribute('href', /^https:\/\/t\.me\/[A-Za-z0-9_/-]+$/);
+      await expect(supportLink).toHaveAttribute('target', '_blank');
+      await expect(supportLink).toHaveAttribute('rel', /noopener noreferrer/);
+    } else {
+      await expect(page.getByText(/telegram support not configured/i)).toBeVisible();
+    }
 
     await page.goto('/auth/security');
     await expect(page.getByRole('button', { name: /sign out of this device/i })).toBeVisible();

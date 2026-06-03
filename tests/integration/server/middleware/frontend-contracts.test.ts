@@ -284,14 +284,16 @@ test('merchant formatters use unavailable fallback for missing money and invalid
   assert.equal(formatDateTime('not-a-date'), 'Unavailable');
 });
 
-test('bank merchant panel keeps the trade form off SketchyContainer and uses screenshot guidance', () => {
+test('bank merchant panel keeps the trade form off SketchyContainer and stages screenshot proof', () => {
   const panelSource = readFileSync(join('src', 'features', 'bank', 'MerchantPanel.tsx'), 'utf8');
 
   assert.doesNotMatch(
     panelSource,
     /<SketchyContainer[^>]*className="bg-white\/80 shadow-xl"[^>]*>/,
   );
-  assert.match(panelSource, /Upload your payment screenshot here/);
+  assert.match(panelSource, /Step 2: Share proof/);
+  assert.match(panelSource, /Upload payment screenshot/);
+  assert.match(panelSource, /Upload M-Pesa payment screenshot/);
   assert.match(panelSource, /Please verify the M-Pesa screenshot matches the transaction details before approving/);
   assert.doesNotMatch(
     panelSource,
@@ -591,6 +593,7 @@ test('frontend navigation exposes community and keeps logout only on security', 
   const securitySource = readFileSync(join('src', 'pages', 'auth', 'SecuritySettingsPage.tsx'), 'utf8');
   const communitySource = readFileSync(join('src', 'pages', 'CommunityPage.tsx'), 'utf8');
   const viteEnvSource = readFileSync(join('src', 'vite-env.d.ts'), 'utf8');
+  const envExampleSource = readFileSync('.env.example', 'utf8');
   const passwordMeterSource = readFileSync(join('src', 'features', 'auth', 'components', 'PasswordStrengthMeter.tsx'), 'utf8');
   const registerSource = readFileSync(join('src', 'pages', 'auth', 'RegisterPage.tsx'), 'utf8');
   const turnstileSource = readFileSync(join('src', 'features', 'auth', 'AuthTurnstile.tsx'), 'utf8');
@@ -609,6 +612,9 @@ test('frontend navigation exposes community and keeps logout only on security', 
   assert.match(communitySource, /rel="noopener noreferrer"/);
   assert.match(viteEnvSource, /VITE_TELEGRAM_COMMUNITY_URL/);
   assert.match(viteEnvSource, /VITE_TELEGRAM_SUPPORT_URL/);
+  assert.doesNotMatch(communitySource, /https:\/\/t\.me\/4real(?:community|support)/);
+  assert.match(envExampleSource, /^VITE_TELEGRAM_COMMUNITY_URL=$/m);
+  assert.match(envExampleSource, /^VITE_TELEGRAM_SUPPORT_URL=$/m);
   assert.match(passwordMeterSource, /12 to 128 characters/);
   assert.doesNotMatch(passwordMeterSource, /Upper & lowercase|Number or special|\\\[A-Z\\\]|\\\[a-z\\\]/);
   assert.match(registerSource, /Password must be 12 to 128 characters\./);
