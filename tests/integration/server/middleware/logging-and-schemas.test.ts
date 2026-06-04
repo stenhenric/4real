@@ -70,12 +70,12 @@ test('logger redacts bearer tokens and nested secrets before writing output', (t
 });
 
 test('parseExternalResponse accepts valid strict payloads', () => {
-  const schema = z.object({
+  const schema = z.strictObject({
     ok: z.boolean(),
-    payload: z.object({
+    payload: z.strictObject({
       id: z.string(),
-    }).strict(),
-  }).strict();
+    }),
+  });
 
   const result = parseExternalResponse(schema, {
     ok: true,
@@ -93,12 +93,12 @@ test('parseExternalResponse accepts valid strict payloads', () => {
 });
 
 test('parseExternalResponse rejects missing fields and unexpected extra keys', () => {
-  const schema = z.object({
+  const schema = z.strictObject({
     ok: z.boolean(),
-    payload: z.object({
+    payload: z.strictObject({
       id: z.string(),
-    }).strict(),
-  }).strict();
+    }),
+  });
 
   const errorMock = mock.method(logger, 'error', () => {});
 

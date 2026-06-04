@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, LoaderCircle, Medal, Search, ShieldAlert, Trophy } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
@@ -14,7 +14,7 @@ import { getMatch, joinMatch, resignMatch } from '../services/matches.service';
 import { cn } from '../utils/cn';
 import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
 import { getApiErrorMessage } from '../utils/errors';
-import type { MatchDTO } from '../types/api';
+import { createInitialGamePreviewState, gamePreviewReducer } from './gamePreviewReducer';
 
 const BOARD_COLUMNS = Array.from({ length: 7 }, (_, index) => index);
 
@@ -28,9 +28,12 @@ const GamePage = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousRoomStatusRef = useRef<string | null>(null);
   const [selectedColumn, setSelectedColumn] = useState(0);
-  const [matchPreview, setMatchPreview] = useState<MatchDTO | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(true);
-  const [roomAccessReady, setRoomAccessReady] = useState(false);
+  const [previewState, dispatchPreview] = useReducer(
+    gamePreviewReducer,
+    undefined,
+    createInitialGamePreviewState,
+  );
+  const { matchPreview, previewLoading, roomAccessReady } = previewState;
   const [joining, setJoining] = useState(false);
   const [resigning, setResigning] = useState(false);
   const inviteToken = searchParams.get('invite')?.trim() || undefined;
@@ -52,14 +55,12 @@ const GamePage = () => {
 
   useEffect(() => {
     if (!roomId || !user?.id) {
-      setMatchPreview(null);
-      setPreviewLoading(false);
-      setRoomAccessReady(false);
+      dispatchPreview({ type: 'PREVIEW_RESET' });
       return;
     }
 
     const controller = new AbortController();
-    setPreviewLoading(true);
+    dispatchPreview({ type: 'PREVIEW_REQUESTED' });
 
     void getMatch(roomId, controller.signal, inviteToken)
       .then((match) => {
@@ -67,32 +68,30 @@ const GamePage = () => {
           return;
         }
 
-        setMatchPreview(match);
         const isParticipant = match.player1Id === user.id || match.player2Id === user.id;
 
         if (isParticipant) {
-          setRoomAccessReady(true);
+          dispatchPreview({ type: 'PREVIEW_LOADED_AS_PARTICIPANT', matchPreview: match });
           return;
         }
 
-        setRoomAccessReady(false);
         if (match.status !== 'waiting') {
+          dispatchPreview({ type: 'PREVIEW_NOT_JOINABLE', matchPreview: match });
           showError('This match is no longer open for new players.');
           navigate('/play');
+          return;
         }
+
+        dispatchPreview({ type: 'PREVIEW_LOADED_JOINABLE', matchPreview: match });
       })
       .catch((error) => {
         if (controller.signal.aborted) {
           return;
         }
 
+        dispatchPreview({ type: 'PREVIEW_FAILED' });
         showError(getApiErrorMessage(error, 'We could not load that match. Returning to lobby.'));
         navigate('/play');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setPreviewLoading(false);
-        }
       });
 
     return () => {
@@ -144,8 +143,7 @@ const GamePage = () => {
     setJoining(true);
     try {
       const joinedMatch = await joinMatch(roomId, inviteToken);
-      setMatchPreview(joinedMatch);
-      setRoomAccessReady(true);
+      dispatchPreview({ type: 'JOIN_SUCCEEDED', matchPreview: joinedMatch });
       if (moneyToNumber(joinedMatch.wager) > 0) {
         await refreshUser();
       }
@@ -165,7 +163,7 @@ const GamePage = () => {
     setResigning(true);
     try {
       const settledMatch = await resignMatch(roomId);
-      setMatchPreview(settledMatch);
+      dispatchPreview({ type: 'JOIN_SUCCEEDED', matchPreview: settledMatch });
       await refreshUser();
       navigate('/play');
     } catch (error) {

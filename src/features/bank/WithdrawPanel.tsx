@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, type FormEvent } from 'react';
 import { TonConnectButton, useTonAddress, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowUpRight, Clock } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -12,7 +12,7 @@ import { StatusBadge, statusToneFromStatus } from '../../components/ui/StatusBad
 import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { createWithdrawal, getWithdrawalStatus } from '../../services/transactions.service';
-import type { WithdrawRequestDTO, WithdrawalRequestAcceptedDTO, WithdrawalStatusDTO } from '../../types/api';
+import type { WithdrawRequestDTO, WithdrawalStatusDTO } from '../../types/api';
 import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 import { createIdempotencyKey } from '../../utils/idempotency';
@@ -24,6 +24,11 @@ import {
   loadWithdrawalResumeDraft,
   saveWithdrawalResumeDraft,
 } from './withdrawalResume';
+import {
+  createInitialWithdrawalFlowState,
+  withdrawalFlowReducer,
+  type WithdrawalFieldErrors,
+} from './withdrawalFlowReducer';
 
 const WITHDRAW_AMOUNT_ID = 'withdraw-amount';
 const WITHDRAW_ADDRESS_ID = 'withdraw-address';
@@ -31,16 +36,9 @@ const WITHDRAW_DESTINATION_REVIEW_ID = 'withdraw-destination-review';
 const MIN_WITHDRAWAL_USDT = '1.500000';
 const WITHDRAWAL_MFA_RESULTS = new Set(['verified', 'failed', 'cancelled']);
 
-type WithdrawStep = 'form' | 'review' | 'status';
-
 interface WithdrawPanelProps {
   onBackToBank: () => void;
   onViewHistory: () => void;
-}
-
-interface WithdrawalFieldErrors {
-  amount?: string;
-  toAddress?: string;
 }
 
 const WITHDRAWAL_STATUS_LABELS: Record<WithdrawalStatusDTO['status'], string> = {
@@ -97,15 +95,22 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
   const wallet = useTonWallet();
   const connectedWalletAddress = useTonAddress();
   const copyToClipboard = useCopyToClipboard();
-  const [step, setStep] = useState<WithdrawStep>('form');
-  const [amount, setAmount] = useState('');
-  const [toAddress, setToAddress] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<WithdrawalFieldErrors>({});
-  const [reviewAmount, setReviewAmount] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [acceptedWithdrawal, setAcceptedWithdrawal] = useState<WithdrawalRequestAcceptedDTO | null>(null);
-  const [withdrawalStatus, setWithdrawalStatus] = useState<WithdrawalStatusDTO | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
+  const [flowState, dispatchFlow] = useReducer(
+    withdrawalFlowReducer,
+    undefined,
+    createInitialWithdrawalFlowState,
+  );
+  const {
+    step,
+    amount,
+    toAddress,
+    fieldErrors,
+    reviewAmount,
+    loading,
+    acceptedWithdrawal,
+    withdrawalStatus,
+    statusError,
+  } = flowState;
   const panelRef = useRef<HTMLDivElement>(null);
   const resumeAttemptedRef = useRef(false);
   const withdrawalRequestInFlightRef = useRef(false);
@@ -116,8 +121,8 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
   }, [step]);
 
   useEffect(() => {
-    if (connectedWalletAddress && step === 'form' && toAddress.trim().length === 0) {
-      setToAddress(connectedWalletAddress);
+    if (connectedWalletAddress) {
+      dispatchFlow({ type: 'CONNECTED_WALLET_PREFILLED', toAddress: connectedWalletAddress });
     }
   }, [connectedWalletAddress, step, toAddress]);
 
@@ -131,13 +136,15 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       if (signal?.aborted) {
         return;
       }
-      setWithdrawalStatus(nextStatus);
-      setStatusError(null);
+      dispatchFlow({ type: 'STATUS_RECEIVED', withdrawalStatus: nextStatus });
     } catch (error) {
       if (signal?.aborted) {
         return;
       }
-      setStatusError(getApiErrorMessage(error, 'Status updates are temporarily unavailable.'));
+      dispatchFlow({
+        type: 'STATUS_FAILED',
+        message: getApiErrorMessage(error, 'Status updates are temporarily unavailable.'),
+      });
     }
   }, [acceptedWithdrawal]);
 
@@ -154,13 +161,15 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         if (controller.signal.aborted) {
           return;
         }
-        setWithdrawalStatus(nextStatus);
-        setStatusError(null);
+        dispatchFlow({ type: 'STATUS_RECEIVED', withdrawalStatus: nextStatus });
       } catch (error) {
         if (controller.signal.aborted) {
           return;
         }
-        setStatusError(getApiErrorMessage(error, 'Status updates are temporarily unavailable.'));
+        dispatchFlow({
+          type: 'STATUS_FAILED',
+          message: getApiErrorMessage(error, 'Status updates are temporarily unavailable.'),
+        });
       }
     };
 
@@ -209,7 +218,9 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       nextErrors.toAddress = 'Enter a valid TON address.';
     }
 
-    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      dispatchFlow({ type: 'VALIDATION_FAILED', fieldErrors: nextErrors });
+    }
     return Object.keys(nextErrors).length === 0 && normalizedAmount
       ? normalizedAmount
       : null;
@@ -222,25 +233,11 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
       return;
     }
 
-    setStatusError(null);
-    setReviewAmount(normalizedAmount);
-    setStep('review');
+    dispatchFlow({ type: 'REVIEW_READY', amountUsdt: normalizedAmount });
   };
 
   const handleFieldChange = (field: 'amount' | 'toAddress', value: string) => {
-    if (field === 'amount') {
-      setAmount(value);
-    } else {
-      setToAddress(value);
-    }
-
-    setStatusError(null);
-    setFieldErrors((currentErrors) => ({ ...currentErrors, [field]: undefined }));
-    if (step !== 'form') {
-      setAcceptedWithdrawal(null);
-      setWithdrawalStatus(null);
-      setStep('form');
-    }
+    dispatchFlow({ type: 'FIELD_CHANGED', field, value });
   };
 
   const submitWithdrawal = useCallback(async (
@@ -254,7 +251,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     }
 
     withdrawalRequestInFlightRef.current = true;
-    setLoading(true);
+    dispatchFlow({ type: 'SUBMIT_STARTED' });
 
     try {
       const payload: WithdrawRequestDTO = {
@@ -279,16 +276,17 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         }
       }
       withdrawalActionRef.current = null;
-      setAcceptedWithdrawal(response);
-      setWithdrawalStatus({
-        withdrawalId: response.withdrawalId,
-        status: response.status,
-        amountUsdt: normalizedAmount,
-        toAddress: destination,
-        createdAt: new Date().toISOString(),
+      dispatchFlow({
+        type: 'SUBMIT_ACCEPTED',
+        acceptedWithdrawal: response,
+        withdrawalStatus: {
+          withdrawalId: response.withdrawalId,
+          status: response.status,
+          amountUsdt: normalizedAmount,
+          toAddress: destination,
+          createdAt: new Date().toISOString(),
+        },
       });
-      setStatusError(null);
-      setStep('status');
       addToast('Withdrawal queued.', 'success');
       await refreshUser();
     } catch (error) {
@@ -299,15 +297,16 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         } catch {
           // Ignore
         }
+        dispatchFlow({ type: 'SUBMIT_FAILED' });
         return;
       }
 
       if (shouldClearWithdrawalIdempotencyAfterError(error)) {
         withdrawalActionRef.current = null;
       }
+      dispatchFlow({ type: 'SUBMIT_FAILED' });
       addToast(getApiErrorMessage(error, 'Withdrawal failed. Please try again.'), 'error');
     } finally {
-      setLoading(false);
       withdrawalRequestInFlightRef.current = false;
     }
   }, [addToast, refreshUser]);
@@ -334,8 +333,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
 
     if (result.status === 'expired' || result.status === 'invalid') {
       clearResumeStatus();
-      setStep('form');
-      setStatusError(result.message);
+      dispatchFlow({ type: 'RESET_TO_FORM', statusError: result.message });
       addToast(result.message, 'error');
       return;
     }
@@ -345,29 +343,43 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
     }
 
     const { draft } = result;
-    setAmount(draft.amountUsdt);
-    setToAddress(draft.toAddress);
-    setReviewAmount(draft.amountUsdt);
-    setStep(draft.step);
 
     if (resumeStatus === 'failed') {
       clearResumeStatus();
-      setStatusError('Verification failed. Your withdrawal details are still here.');
+      dispatchFlow({
+        type: 'MFA_FAILED',
+        message: 'Verification failed. Your withdrawal details are still here.',
+        amountUsdt: draft.amountUsdt,
+        toAddress: draft.toAddress,
+        step: draft.step,
+      });
       addToast('Verification failed.', 'error');
       return;
     }
 
     if (resumeStatus === 'cancelled') {
       clearResumeStatus();
-      setStatusError('Verification was cancelled. Your withdrawal details are still here.');
+      dispatchFlow({
+        type: 'MFA_CANCELLED',
+        message: 'Verification was cancelled. Your withdrawal details are still here.',
+        amountUsdt: draft.amountUsdt,
+        toAddress: draft.toAddress,
+        step: draft.step,
+      });
       addToast('Verification cancelled.', 'info');
       return;
     }
 
+    dispatchFlow({
+      type: 'MFA_RESUME_READY',
+      amountUsdt: draft.amountUsdt,
+      toAddress: draft.toAddress,
+      step: draft.step,
+    });
+
     if (resumeStatus === 'verified' && draft.resumeAfterMfa && !resumeAttemptedRef.current) {
       resumeAttemptedRef.current = true;
       clearResumeStatus();
-      setStatusError(null);
       void submitWithdrawal(draft.amountUsdt, draft.toAddress, draft.idempotencyKey, withdrawalIntentId || undefined);
     }
   }, [addToast, searchParams, setSearchParams, submitWithdrawal]);
@@ -375,7 +387,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
   const handleConfirmWithdrawal = async () => {
     const normalizedAmount = reviewAmount ?? validateForm();
     if (!normalizedAmount) {
-      setStep('form');
+      dispatchFlow({ type: 'RESET_TO_FORM' });
       return;
     }
 
@@ -489,7 +501,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
             <StatusBadge tone="info">Ready to review</StatusBadge>
             <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Confirm withdrawal</h3>
           </div>
-          <SketchyButton onClick={() => setStep('form')} type="button" variant="secondary">
+          <SketchyButton onClick={() => dispatchFlow({ type: 'RESET_TO_FORM' })} type="button" variant="secondary">
             Edit details
           </SketchyButton>
         </div>

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-const toncenterForwardPayloadSchema = z.object({
+const toncenterForwardPayloadSchema = z.looseObject({
   comment: z.string().optional(),
-}).passthrough();
+});
 
 const rawJettonAmountSchema = z.union([
   z.string().regex(/^\d+$/, 'Expected a non-negative integer raw amount'),
@@ -41,7 +41,7 @@ function normalizeDecodedForwardPayload(
   return null;
 }
 
-export const toncenterJettonTransferSchema = z.object({
+export const toncenterJettonTransferSchema = z.looseObject({
   transaction_hash: z.string(),
   transaction_now: z.number().int().nonnegative(),
   comment: z.string().optional(),
@@ -56,8 +56,8 @@ export const toncenterJettonTransferSchema = z.object({
     .optional(),
   transaction_aborted: z.boolean().nullable().optional(),
   aborted: z.boolean().nullable().optional(),
-}).passthrough();
+});
 
-export const toncenterTransferListSchema = z.object({
+export const toncenterTransferListSchema = z.looseObject({
   jetton_transfers: z.array(toncenterJettonTransferSchema),
-}).passthrough();
+});

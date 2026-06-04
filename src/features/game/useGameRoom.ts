@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { createGameSocket } from '../../sockets/gameSocket';
+import {
+  buildGameRoomSnapshot,
+  getGameRoomSessionKey,
+  getVisibleGameRoomSnapshot,
+  type GameRoomSnapshot,
+} from './gameRoomSnapshot';
 import type { GameOverState, RoomState, WinningLine } from './types';
 
 interface GameOverPayload {
@@ -23,10 +29,10 @@ interface UseGameRoomOptions {
 }
 
 export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoomError }: UseGameRoomOptions) {
-  const [room, setRoom] = useState<RoomState | null>(null);
-  const [gameOver, setGameOver] = useState<GameOverState | null>(null);
-  const roomRef = useRef<RoomState | null>(null);
+  const [snapshot, setSnapshot] = useState<GameRoomSnapshot | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const activeKey = getGameRoomSessionKey({ roomId, userId, enabled });
+  const { gameOver, room } = getVisibleGameRoomSnapshot(snapshot, activeKey);
 
   const handleRoomError = useEffectEvent((message: string) => {
     onRoomError?.(message);
@@ -37,30 +43,20 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
   });
 
   useEffect(() => {
-    roomRef.current = room;
-  }, [room]);
-
-  useEffect(() => {
-    if (!roomId || !userId || !enabled) {
-      setRoom(null);
-      setGameOver(null);
-      roomRef.current = null;
+    if (!activeKey || !roomId || !userId) {
       return undefined;
     }
 
-    setRoom(null);
-    setGameOver(null);
-
+    let disposed = false;
     const socket = createGameSocket();
     socketRef.current = socket;
 
-    const syncRoom = (nextRoom: RoomState) => {
-      roomRef.current = nextRoom;
-      setRoom(nextRoom);
-
-      if (nextRoom.status === 'completed' && nextRoom.winnerId) {
-        setGameOver({ winnerId: nextRoom.winnerId });
+    const syncRoom = (nextRoom: RoomState, nextGameOver?: GameOverState | null) => {
+      if (disposed) {
+        return;
       }
+
+      setSnapshot(buildGameRoomSnapshot(activeKey, nextRoom, nextGameOver));
     };
 
     const handleConnectError = (error: Error) => {
@@ -72,14 +68,11 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
     };
 
     const handleGameStarted = (nextRoom: RoomState) => {
-      roomRef.current = nextRoom;
-      setGameOver(null);
-      setRoom(nextRoom);
+      syncRoom(nextRoom, null);
     };
 
     const handleMoveMade = (nextRoom: RoomState) => {
-      roomRef.current = nextRoom;
-      setRoom(nextRoom);
+      syncRoom(nextRoom);
     };
 
     const handleGameOverEvent = async ({ room: nextRoom, winnerId, winningLine }: GameOverPayload) => {
@@ -87,9 +80,7 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
         winnerId,
         ...(winningLine ? { winningLine } : {}),
       };
-      roomRef.current = nextRoom;
-      setRoom(nextRoom);
-      setGameOver(nextGameOver);
+      syncRoom(nextRoom, nextGameOver);
       await handleGameOver(nextGameOver, nextRoom);
     };
 
@@ -110,6 +101,7 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
     }
 
     return () => {
+      disposed = true;
       socket.off('connect', emitJoinRoom);
       socket.off('connect_error', handleConnectError);
       socket.off('error', handleServerError);
@@ -123,12 +115,12 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
         socketRef.current = null;
       }
     };
-  }, [enabled, roomId, userId]);
+  }, [activeKey, roomId, userId]);
 
   const makeMove = useCallback(
     (col: number) => {
       const socket = socketRef.current;
-      const currentRoom = roomRef.current;
+      const currentRoom = room;
 
       if (!socket || !roomId || !currentRoom) {
         return;
@@ -140,7 +132,7 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
 
       socket.emit('make-move', { roomId, col });
     },
-    [roomId, userId],
+    [room, roomId, userId],
   );
 
   return { gameOver, makeMove, room };

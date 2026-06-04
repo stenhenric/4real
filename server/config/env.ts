@@ -244,6 +244,13 @@ function resolveConfiguredOrigin(value: string | undefined): string | undefined 
   return new URL(value).origin;
 }
 
+function parseCommaSeparatedList(value: string, normalize: (entry: string) => string = (entry) => entry): string[] {
+  return value.split(',').flatMap((entry) => {
+    const normalized = normalize(entry.trim());
+    return normalized ? [normalized] : [];
+  });
+}
+
 function resolveAllowedOrigins(params: {
   value: string | undefined;
   nodeEnv: AppEnv['NODE_ENV'];
@@ -251,12 +258,7 @@ function resolveAllowedOrigins(params: {
   manifestUrl: string | undefined;
 }): string[] {
   const defaults = ['http://localhost:3000', 'http://localhost:5173'];
-  const origins = params.value
-    ? params.value
-    ?.split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    : undefined;
+  const origins = params.value ? parseCommaSeparatedList(params.value) : undefined;
 
   if (origins && origins.length > 0) {
     if (params.nodeEnv === 'production' && origins.some(isLocalOrigin)) {
@@ -284,10 +286,7 @@ function resolveAllowedOrigins(params: {
 }
 
 function resolveProofAllowedMimeTypes(value: string): string[] {
-  return value
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
+  return parseCommaSeparatedList(value, (entry) => entry.toLowerCase());
 }
 
 function isLocalOrigin(origin: string): boolean {
@@ -374,7 +373,7 @@ function requireConfiguredUrl(value: string | undefined, key: string): string {
 
 function requireConfiguredEmail(value: string | undefined, key: string): string {
   const resolved = requireConfiguredString(value, key);
-  const parsed = z.string().email().safeParse(resolved);
+  const parsed = z.email().safeParse(resolved);
 
   if (!parsed.success) {
     throw new Error(`${key} must be a valid email address`);

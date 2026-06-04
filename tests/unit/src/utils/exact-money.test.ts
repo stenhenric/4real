@@ -70,4 +70,7 @@ test('money display helpers fail closed for missing or invalid values', () => {
   assert.equal(formatMoneyValue('0.200000', 6), '0.2');
   assert.equal(formatMoneyValue('1.234567', 3), '1.235');
   assert.equal(formatMoneyValue('5.000000', 6), '5');
+  assert.equal(formatMoneyValue('1.234567', 2), '1.23');
+  assert.equal(formatMoneyValue('1.234567', 4), '1.2346');
+  assert.equal(formatMoneyValue('1.234567', 2), '1.23');
 });

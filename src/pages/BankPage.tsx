@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useReducer, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowDownRight, ArrowUpRight, History, Landmark, Store } from 'lucide-react';
 import { RouteLoading } from '../app/RouteLoading';
@@ -16,13 +16,12 @@ import {
 } from '../features/bank/bankRouting';
 import {
   BANK_TRANSACTION_PAGE_SIZE,
-  getHasMoreTransactions,
-  mergeTransactionPages,
+  createInitialTransactionFeedState,
+  transactionFeedReducer,
 } from '../features/bank/transactionPagination';
 import { getTransactions } from '../services/transactions.service';
 import { isAbortError } from '../utils/isAbortError';
 import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
-import type { TransactionDTO } from '../types/api';
 
 const TRANSACTION_LABELS: Record<string, string> = {
   DEPOSIT_CONFIRMED: 'Deposit',
@@ -52,13 +51,20 @@ const WithdrawPanel = lazy(() => import('../features/bank/WithdrawPanel'));
 const BankPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = getBankViewFromSearchParams(searchParams);
-  const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
-  const [transactionPage, setTransactionPage] = useState(0);
-  const [transactionsLoading, setTransactionsLoading] = useState(false);
-  const [nextTransactionsLoading, setNextTransactionsLoading] = useState(false);
-  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
-  const [transactionsError, setTransactionsError] = useState<string | null>(null);
-  const [nextTransactionsError, setNextTransactionsError] = useState<string | null>(null);
+  const [transactionState, dispatchTransactions] = useReducer(
+    transactionFeedReducer,
+    undefined,
+    createInitialTransactionFeedState,
+  );
+  const {
+    transactions,
+    transactionPage,
+    transactionsLoading,
+    nextTransactionsLoading,
+    hasMoreTransactions,
+    transactionsError,
+    nextTransactionsError,
+  } = transactionState;
   const transactionRequestRef = useRef(0);
   const { error: showError } = useToast();
 
@@ -74,11 +80,9 @@ const BankPage = () => {
     transactionRequestRef.current = requestId;
 
     if (options.replace) {
-      setTransactionsLoading(true);
-      setTransactionsError(null);
+      dispatchTransactions({ type: 'INITIAL_LOAD_STARTED' });
     } else {
-      setNextTransactionsLoading(true);
-      setNextTransactionsError(null);
+      dispatchTransactions({ type: 'NEXT_PAGE_STARTED' });
     }
 
     try {
@@ -96,15 +100,7 @@ const BankPage = () => {
         return;
       }
 
-      setTransactions((currentTransactions) => (
-        options.replace
-          ? mergeTransactionPages([], data.items)
-          : mergeTransactionPages(currentTransactions, data.items)
-      ));
-      setTransactionPage(data.page);
-      setHasMoreTransactions(getHasMoreTransactions(data));
-      setTransactionsError(null);
-      setNextTransactionsError(null);
+      dispatchTransactions({ type: 'PAGE_LOADED', feed: data, replace: options.replace });
     } catch (error) {
       if (isAbortError(error, options.signal)) {
         return;
@@ -112,19 +108,15 @@ const BankPage = () => {
 
       const message = 'Failed to fetch transactions.';
       if (options.replace) {
-        setTransactionsError(message);
+        dispatchTransactions({ type: 'PAGE_FAILED', replace: true, message });
       } else {
-        setNextTransactionsError('Could not load more transactions. Your current history is still shown.');
+        dispatchTransactions({
+          type: 'PAGE_FAILED',
+          replace: false,
+          message: 'Could not load more transactions. Your current history is still shown.',
+        });
       }
       showError(message);
-    } finally {
-      if (transactionRequestRef.current === requestId) {
-        if (options.replace) {
-          setTransactionsLoading(false);
-        } else {
-          setNextTransactionsLoading(false);
-        }
-      }
     }
   }, [showError]);
 

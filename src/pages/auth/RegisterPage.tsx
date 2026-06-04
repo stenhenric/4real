@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from 'react';
+import { useReducer, useRef, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
 import { getTurnstileSiteKey } from '../../features/auth/turnstile-config';
@@ -13,24 +13,28 @@ import { buildVerifyEmailPath, sanitizeInternalPath } from '../../features/auth/
 import { registerAccount, requestGoogleOAuthRedirect } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
 import { ApiClientError } from '../../services/api/apiClient';
-
-type RegisterStep = 'account_details' | 'verification';
+import { createInitialRegisterFormState, registerFormReducer } from './registerFormReducer';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { error: showError } = useToast();
   
-  const [step, setStep] = useState<RegisterStep>('account_details');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  
-  const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [usernameError, setUsernameError] = useState<string | undefined>();
-  
-  const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
+  const [formState, dispatchForm] = useReducer(
+    registerFormReducer,
+    undefined,
+    createInitialRegisterFormState,
+  );
+  const {
+    step,
+    username,
+    email,
+    password,
+    confirmPassword,
+    loading,
+    googleLoading,
+    usernameError,
+    turnstileToken,
+  } = formState;
   const turnstileRef = useRef<AuthTurnstileRef>(null);
   const siteKey = getTurnstileSiteKey();
 
@@ -39,13 +43,13 @@ export default function RegisterPage() {
   const passwordMeetsPolicy = validatePasswordStrength(password);
 
   const handleGoogle = async () => {
-    setGoogleLoading(true);
+    dispatchForm({ type: 'GOOGLE_STARTED' });
     try {
       const response = await requestGoogleOAuthRedirect();
       if (!response.redirectTo) throw new Error('Google sign-in is not available right now.');
       window.location.assign(response.redirectTo);
     } catch (error) {
-      setGoogleLoading(false);
+      dispatchForm({ type: 'GOOGLE_FAILED' });
       showError(getApiErrorMessage(error, 'Unable to start Google sign-in.'));
     }
   };
@@ -85,11 +89,11 @@ export default function RegisterPage() {
     if (siteKey && !turnstileToken) {
       showError('Please complete the verification.');
       turnstileRef.current?.reset();
-      setTurnstileToken(undefined);
+      dispatchForm({ type: 'TURNSTILE_RESET' });
       return;
     }
 
-    setLoading(true);
+    dispatchForm({ type: 'SUBMIT_STARTED' });
 
     try {
       const response = await registerAccount({ username, email, password, ...(turnstileToken && { turnstileToken }) });
@@ -99,23 +103,20 @@ export default function RegisterPage() {
       });
     } catch (error) {
       if (error instanceof ApiClientError && error.code === 'USERNAME_ALREADY_EXISTS') {
-        // Send the user back to the details step so they can pick a different username
-        setStep('account_details');
-        setUsernameError('That username is already taken. Please choose another.');
-        setTurnstileToken(undefined);
+        dispatchForm({
+          type: 'USERNAME_REJECTED',
+          message: 'That username is already taken. Please choose another.',
+        });
       } else {
         showError(getApiErrorMessage(error, 'Could not create account. Please try again.'));
         turnstileRef.current?.reset();
-        setTurnstileToken(undefined);
+        dispatchForm({ type: 'SUBMIT_FAILED', resetTurnstile: true });
       }
-    } finally {
-      setLoading(false);
     }
   };
 
   const resetStep = () => {
-    setStep('account_details');
-    setTurnstileToken(undefined);
+    dispatchForm({ type: 'RESET_TO_DETAILS' });
   };
 
   return (
@@ -140,17 +141,18 @@ export default function RegisterPage() {
             
             <AuthDivider label="Or create account with email" />
 
-            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (requireDetails()) setStep('verification'); }}>
+            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (requireDetails()) dispatchForm({ type: 'DETAILS_ACCEPTED' }); }}>
               <AuthInput
                 autoComplete="username"
                 label="Public Username"
                 name="username"
                 hint={usernameError ? undefined : 'This is your public name that players see in matches and lobbies.'}
                 error={usernameError}
-                onChange={(event) => {
-                  setUsername(event.target.value);
-                  if (usernameError) setUsernameError(undefined);
-                }}
+                onChange={(event) => dispatchForm({
+                  type: 'FIELD_CHANGED',
+                  field: 'username',
+                  value: event.target.value,
+                })}
                 placeholder="connect4killer"
                 required
                 type="text"
@@ -162,7 +164,7 @@ export default function RegisterPage() {
                 autoComplete="email"
                 label="Email"
                 name="email"
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => dispatchForm({ type: 'FIELD_CHANGED', field: 'email', value: event.target.value })}
                 placeholder="name@example.com"
                 required
                 type="email"
@@ -174,7 +176,11 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   label="Password"
                   name="password"
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => dispatchForm({
+                    type: 'FIELD_CHANGED',
+                    field: 'password',
+                    value: event.target.value,
+                  })}
                   placeholder="At least 12 characters"
                   required
                   value={password}
@@ -186,7 +192,11 @@ export default function RegisterPage() {
                 autoComplete="new-password"
                 label="Confirm Password"
                 name="confirmPassword"
-                onChange={(event) => setConfirmPassword(event.target.value)}
+                onChange={(event) => dispatchForm({
+                  type: 'FIELD_CHANGED',
+                  field: 'confirmPassword',
+                  value: event.target.value,
+                })}
                 placeholder="Confirm your password"
                 required
                 type="password"
@@ -220,7 +230,12 @@ export default function RegisterPage() {
               Please complete the security check to finish creating your account for {email}.
             </AuthNotice>
 
-            <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
+            <AuthTurnstile
+              ref={turnstileRef}
+              onSuccess={(token) => dispatchForm({ type: 'TURNSTILE_PASSED', token })}
+              onError={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+              onExpire={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+            />
 
             <SketchyButton 
               className="w-full py-4 text-xl mt-4" 

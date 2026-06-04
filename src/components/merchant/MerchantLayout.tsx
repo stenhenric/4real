@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { ArrowDownUp, BellDot, Landmark, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
@@ -12,6 +12,10 @@ import { SketchyButton } from '../SketchyButton';
 import { StatusBadge, type StatusTone } from '../ui/StatusBadge';
 import type { MerchantDashboardDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
+import {
+  createInitialMerchantDashboardState,
+  merchantDashboardReducer,
+} from './merchantDashboardReducer';
 
 export interface MerchantOutletContext {
   dashboard: MerchantDashboardDTO | null;
@@ -97,11 +101,18 @@ function getSectionLabel(pathname: string) {
 export function MerchantLayout() {
   const location = useLocation();
   const { error: showError } = useToast();
-  const [dashboard, setDashboard] = useState<MerchantDashboardDTO | null>(null);
+  const [dashboardState, dispatchDashboard] = useReducer(
+    merchantDashboardReducer,
+    undefined,
+    createInitialMerchantDashboardState,
+  );
+  const {
+    dashboard,
+    status,
+    isRefreshing,
+    error,
+  } = dashboardState;
   const dashboardRef = useRef<MerchantDashboardDTO | null>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const dashboardRequestRef = useRef<{
     controller: AbortController;
     mode: 'initial' | 'manual' | 'poll';
@@ -120,7 +131,7 @@ export function MerchantLayout() {
         activeRequest.controller.abort();
       } else {
         if (mode === 'manual') {
-          setIsRefreshing(true);
+          dispatchDashboard({ type: 'REFRESH_STARTED' });
         }
 
         await activeRequest.promise;
@@ -143,10 +154,9 @@ export function MerchantLayout() {
     }
 
     if (mode === 'initial') {
-      setStatus((current) => current === 'ready' ? current : 'loading');
-      setError(null);
+      dispatchDashboard({ type: 'INITIAL_LOAD_STARTED' });
     } else {
-      setIsRefreshing(true);
+      dispatchDashboard({ type: mode === 'manual' ? 'REFRESH_STARTED' : 'POLL_STARTED' });
     }
 
     const request = (async () => {
@@ -154,28 +164,21 @@ export function MerchantLayout() {
         const nextDashboard = await getMerchantDashboard(requestSignal);
         dashboardRef.current = nextDashboard;
         startTransition(() => {
-          setDashboard(nextDashboard);
-          setStatus('ready');
-          setError(null);
-          setIsRefreshing(false);
+          dispatchDashboard({ type: 'LOAD_SUCCEEDED', dashboard: nextDashboard });
         });
       } catch (loadError) {
         if (isAbortError(loadError, requestSignal)) {
-          setIsRefreshing(false);
+          dispatchDashboard({ type: 'LOAD_ABORTED' });
           return;
         }
 
         if (loadError instanceof ApiClientError && isHandledAuthRedirectCode(loadError.code)) {
-          setIsRefreshing(false);
+          dispatchDashboard({ type: 'LOAD_ABORTED' });
           return;
         }
 
         const message = loadError instanceof Error ? loadError.message : 'Failed to load merchant dashboard.';
-        setIsRefreshing(false);
-        setError(message);
-        if (!dashboardRef.current) {
-          setStatus('error');
-        }
+        dispatchDashboard({ type: 'LOAD_FAILED', message });
         if (mode === 'manual') {
           showError(message);
         }
@@ -199,6 +202,10 @@ export function MerchantLayout() {
     }
   }, [showError]);
 
+  const abortActiveDashboardRequest = useCallback(() => {
+    dashboardRequestRef.current?.controller.abort();
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     void loadDashboard('initial', controller.signal);
@@ -209,10 +216,10 @@ export function MerchantLayout() {
 
     return () => {
       controller.abort();
-      dashboardRequestRef.current?.controller.abort();
+      abortActiveDashboardRequest();
       window.clearInterval(interval);
     };
-  }, [loadDashboard]);
+  }, [abortActiveDashboardRequest, loadDashboard]);
 
   const pendingBadge = dashboard?.overview.pendingOrderCount ?? 0;
   const alertBadge = dashboard?.alerts.filter((alert) => alert.severity !== 'info').length ?? 0;

@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { SketchyButton } from '../../components/SketchyButton';
@@ -10,6 +10,27 @@ import {
 } from '../../features/auth/AuthShell';
 import { completeMfaChallenge } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
+
+interface WithdrawalDraftDetails {
+  amount: string | null;
+  address: string | null;
+}
+
+function loadWithdrawalDraftDetails(): WithdrawalDraftDetails {
+  try {
+    return {
+      amount: sessionStorage.getItem('withdrawal_draft_amount'),
+      address: sessionStorage.getItem('withdrawal_draft_address'),
+    };
+  } catch {
+    return { amount: null, address: null };
+  }
+}
+
+function truncateAddress(addr: string) {
+  if (addr.length <= 16) return addr;
+  return `${addr.slice(0, 8)}...${addr.slice(-8)}`;
+}
 
 export default function WithdrawalMfaPage() {
   const [searchParams] = useSearchParams();
@@ -24,19 +45,9 @@ export default function WithdrawalMfaPage() {
   const returnTo = searchParams.get('returnTo')?.trim() ?? '/bank';
 
   // Read display context from sessionStorage only (never used as the authorization source of truth)
-  const [draftAmount, setDraftAmount] = useState<string | null>(null);
-  const [draftAddress, setDraftAddress] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      const storedAmount = sessionStorage.getItem('withdrawal_draft_amount');
-      const storedAddress = sessionStorage.getItem('withdrawal_draft_address');
-      if (storedAmount) setDraftAmount(storedAmount);
-      if (storedAddress) setDraftAddress(storedAddress);
-    } catch {
-      // Ignore sessionStorage issues
-    }
-  }, []);
+  const [draftDetails] = useState(loadWithdrawalDraftDetails);
+  const draftAmount = draftDetails.amount;
+  const draftAddress = draftDetails.address;
 
   const returnToBank = (status: 'verified' | 'failed' | 'cancelled', intentId?: string) => {
     // Navigate back to the return URL with the result flags
@@ -86,12 +97,6 @@ export default function WithdrawalMfaPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Helper to truncate TON address
-  const truncateAddress = (addr: string) => {
-    if (addr.length <= 16) return addr;
-    return `${addr.slice(0, 8)}...${addr.slice(-8)}`;
   };
 
   return (

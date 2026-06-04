@@ -1,15 +1,14 @@
-import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import { getCurrentUser, logout as logoutRequest } from '../services/auth.service';
 import { ApiClientError } from '../services/api/apiClient';
 import { shouldClearAuthAfterRefreshError } from '../features/auth/refresh-error';
 import { isAbortError } from '../utils/isAbortError';
-import { resolveCurrentSession } from './auth-state';
 import type { AuthResponseDTO, AuthStatus, SessionListItemDTO, UserDTO } from '../types/api';
-
-interface AuthUser {
-  id: string;
-  email: string;
-}
+import {
+  authReducer,
+  createInitialAuthState,
+  type AuthUser,
+} from './authReducer';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -28,52 +27,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function mapAuthUser(data: UserDTO): AuthUser {
-  return { id: data.id, email: data.email };
-}
-
-function normalizeAuthStatus(data: AuthResponseDTO): AuthStatus {
-  if (
-    data.nextStep === 'complete_profile'
-    || data.status === 'profile_incomplete'
-    || !data.user
-    || data.user.username.trim().length === 0
-  ) {
-    return 'profile_incomplete';
-  }
-
-  return 'authenticated';
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [userData, setUserData] = useState<UserDTO | null>(null);
-  const [currentSession, setCurrentSession] = useState<SessionListItemDTO | null>(null);
-  const [authStatus, setAuthStatus] = useState<AuthStatus | 'anonymous'>('anonymous');
-  const [loading, setLoading] = useState(true);
+  const [authState, dispatchAuth] = useReducer(authReducer, undefined, createInitialAuthState);
+  const {
+    user,
+    userData,
+    currentSession,
+    authStatus,
+    loading,
+  } = authState;
   const authGenerationRef = useRef(0);
   const refreshRequestRef = useRef(0);
 
-  const applyAuthState = useCallback((response: AuthResponseDTO | null) => {
-    if (!response?.user) {
-      setUser(null);
-      setUserData(null);
-      setCurrentSession(null);
-      setAuthStatus('anonymous');
-      return;
-    }
-
-    setUser(mapAuthUser(response.user));
-    setUserData(response.user);
-    setCurrentSession((previousSession) => resolveCurrentSession(previousSession, response));
-    setAuthStatus(normalizeAuthStatus(response));
-  }, []);
-
   const setAuthStateFromResponse = useCallback((response: AuthResponseDTO | null) => {
     authGenerationRef.current += 1;
-    applyAuthState(response);
-    setLoading(false);
-  }, [applyAuthState]);
+    dispatchAuth({ type: 'AUTH_RESPONSE_APPLIED', response });
+  }, []);
 
   const clearAuth = useCallback(() => {
     setAuthStateFromResponse(null);
@@ -100,8 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      applyAuthState(data);
-      setLoading(false);
+      dispatchAuth({ type: 'REFRESH_SUCCEEDED', response: data });
       return data;
     } catch (error) {
       if (isAbortError(error, signal) || isStaleRefresh()) {
@@ -110,14 +78,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (shouldClearAuthAfterRefreshError(error)) {
         clearAuth();
-        setLoading(false);
         return null;
       }
     }
 
-    setLoading(false);
+    dispatchAuth({ type: 'REFRESH_FAILED' });
     return null;
-  }, [applyAuthState, clearAuth]);
+  }, [clearAuth]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -138,7 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     clearAuth();
-    setLoading(false);
   }, [clearAuth]);
 
   const value = useMemo(

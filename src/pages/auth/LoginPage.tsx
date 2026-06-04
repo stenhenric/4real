@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from 'react';
+import { useReducer, useRef, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
 import { getTurnstileSiteKey } from '../../features/auth/turnstile-config';
@@ -21,6 +21,7 @@ import {
   requestGoogleOAuthRedirect,
   requestMagicLink,
 } from '../../services/auth.service';
+import { createInitialLoginFormState, loginFormReducer } from './loginFormReducer';
 
 function getErrorMessage(value: string | null) {
   if (value === 'google') return 'Google sign-in did not complete. Try again or use email and password.';
@@ -36,8 +37,6 @@ function isLikelyEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
-type LoginStep = 'method_selection' | 'password_entry' | 'magic_link_verification';
-
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -47,14 +46,20 @@ export default function LoginPage() {
   const { setAuthStateFromResponse } = useAuth();
   const { success, error: showError, info } = useToast();
   
-  const [step, setStep] = useState<LoginStep>('method_selection');
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [passwordLoading, setPasswordLoading] = useState(false);
-  const [magicLoading, setMagicLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  
-  const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
+  const [formState, dispatchForm] = useReducer(
+    loginFormReducer,
+    undefined,
+    createInitialLoginFormState,
+  );
+  const {
+    step,
+    identifier,
+    password,
+    passwordLoading,
+    magicLoading,
+    googleLoading,
+    turnstileToken,
+  } = formState;
   const turnstileRef = useRef<AuthTurnstileRef>(null);
   const siteKey = getTurnstileSiteKey();
 
@@ -64,13 +69,12 @@ export default function LoginPage() {
     event.preventDefault();
     if (step !== 'password_entry') return;
     
-    setPasswordLoading(true);
+    dispatchForm({ type: 'PASSWORD_SUBMIT_STARTED' });
 
     if (siteKey && !turnstileToken) {
       showError('Please complete the verification.');
       turnstileRef.current?.reset();
-      setTurnstileToken(undefined);
-      setPasswordLoading(false);
+      dispatchForm({ type: 'SUBMIT_FAILED', resetTurnstile: true });
       return;
     }
 
@@ -78,7 +82,7 @@ export default function LoginPage() {
       const loginIdentifier = identifier.trim();
       if (!loginIdentifier) {
         showError('Please enter your email or username.');
-        setPasswordLoading(false);
+        dispatchForm({ type: 'SUBMIT_FAILED' });
         return;
       }
 
@@ -118,10 +122,7 @@ export default function LoginPage() {
     } catch (error) {
       showError('Invalid email or password. Please try again.');
       turnstileRef.current?.reset();
-      setTurnstileToken(undefined);
-      setPassword(''); 
-    } finally {
-      setPasswordLoading(false);
+      dispatchForm({ type: 'SUBMIT_FAILED', clearPassword: true, resetTurnstile: true });
     }
   };
 
@@ -129,13 +130,12 @@ export default function LoginPage() {
     event.preventDefault();
     if (step !== 'magic_link_verification') return;
     
-    setMagicLoading(true);
+    dispatchForm({ type: 'MAGIC_SUBMIT_STARTED' });
 
     if (siteKey && !turnstileToken) {
       showError('Please complete the verification.');
       turnstileRef.current?.reset();
-      setTurnstileToken(undefined);
-      setMagicLoading(false);
+      dispatchForm({ type: 'SUBMIT_FAILED', resetTurnstile: true });
       return;
     }
 
@@ -144,8 +144,7 @@ export default function LoginPage() {
       if (!isLikelyEmail(email)) {
         showError('Enter your email to receive a magic link.');
         turnstileRef.current?.reset();
-        setTurnstileToken(undefined);
-        setMagicLoading(false);
+        dispatchForm({ type: 'SUBMIT_FAILED', resetTurnstile: true });
         return;
       }
 
@@ -158,20 +157,18 @@ export default function LoginPage() {
     } catch (error) {
       showError('Could not send magic link.');
       turnstileRef.current?.reset();
-      setTurnstileToken(undefined);
-    } finally {
-      setMagicLoading(false);
+      dispatchForm({ type: 'SUBMIT_FAILED', resetTurnstile: true });
     }
   };
 
   const handleGoogle = async () => {
-    setGoogleLoading(true);
+    dispatchForm({ type: 'GOOGLE_STARTED' });
     try {
       const response = await requestGoogleOAuthRedirect(redirectTo);
       if (!response.redirectTo) throw new Error('Google sign-in is not available right now.');
       window.location.assign(response.redirectTo);
     } catch (error) {
-      setGoogleLoading(false);
+      dispatchForm({ type: 'SUBMIT_FAILED' });
       showError('Unable to start Google sign-in.');
     }
   };
@@ -197,9 +194,7 @@ export default function LoginPage() {
   };
 
   const resetStep = () => {
-    setStep('method_selection');
-    setTurnstileToken(undefined);
-    setPassword('');
+    dispatchForm({ type: 'RESET_TO_METHODS' });
   };
 
   return (
@@ -231,7 +226,7 @@ export default function LoginPage() {
                 autoComplete="username"
                 label="Email or username"
                 name="identifier"
-                onChange={(event) => setIdentifier(event.target.value)}
+                onChange={(event) => dispatchForm({ type: 'IDENTIFIER_CHANGED', value: event.target.value })}
                 placeholder="name@example.com or SketchMaster"
                 required
                 type="text"
@@ -241,7 +236,7 @@ export default function LoginPage() {
               <div className="pt-4 flex flex-col gap-3">
                 <SketchyButton 
                   className="w-full py-3" 
-                  onClick={() => requireIdentifier() && setStep('password_entry')}
+                  onClick={() => requireIdentifier() && dispatchForm({ type: 'METHOD_SELECTED', step: 'password_entry' })}
                   type="button"
                   variant="primary"
                 >
@@ -250,7 +245,7 @@ export default function LoginPage() {
 
                 <SketchyButton
                   className="w-full py-3 text-sm font-bold text-black/60 opacity-70 hover:opacity-100 transition-opacity"
-                  onClick={() => requireEmail() && setStep('magic_link_verification')}
+                  onClick={() => requireEmail() && dispatchForm({ type: 'METHOD_SELECTED', step: 'magic_link_verification' })}
                   type="button"
                 >
                   Email me a magic link instead
@@ -284,7 +279,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 label="Password"
                 name="password"
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) => dispatchForm({ type: 'PASSWORD_CHANGED', value: event.target.value })}
                 placeholder="Enter your password"
                 required
                 value={password}
@@ -299,7 +294,12 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
+            <AuthTurnstile
+              ref={turnstileRef}
+              onSuccess={(token) => dispatchForm({ type: 'TURNSTILE_PASSED', token })}
+              onError={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+              onExpire={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+            />
 
             <div className="pt-4 flex flex-col gap-3">
               <SketchyButton 
@@ -328,7 +328,12 @@ export default function LoginPage() {
               Please complete the verification below to send a magic link to {identifier.trim()}.
             </AuthNotice>
 
-            <AuthTurnstile ref={turnstileRef} onSuccess={setTurnstileToken} onError={() => setTurnstileToken(undefined)} onExpire={() => setTurnstileToken(undefined)} />
+            <AuthTurnstile
+              ref={turnstileRef}
+              onSuccess={(token) => dispatchForm({ type: 'TURNSTILE_PASSED', token })}
+              onError={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+              onExpire={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+            />
 
             <div className="pt-4 flex flex-col gap-3">
               <SketchyButton 

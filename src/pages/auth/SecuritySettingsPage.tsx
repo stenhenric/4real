@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, type ChangeEvent, type FormEvent } from 'react';
 import * as QRCode from 'qrcode';
 import {
   ArrowLeft,
@@ -37,19 +37,15 @@ import { SECURITY_PAGE_COPY, shouldOpenTotpSetupFlow } from './security-page-con
 import { formatSessionDeviceLabel, formatSessionLastSeen } from './session-device-label';
 import { getApiErrorMessage } from '../../utils/errors';
 import { cn } from '../../utils/cn';
+import {
+  createInitialMfaSettingsState,
+  createInitialSessionSettingsState,
+  mfaSettingsReducer,
+  sessionSettingsReducer,
+  type ConfirmSessionAction,
+} from './securitySettingsReducers';
 
 type SecurityFlow = 'overview' | '2fa' | 'devices';
-type SetupStep = 'intro' | 'scan' | 'confirm' | 'recovery';
-type ConfirmSessionAction =
-  | { type: 'current'; session?: SessionListItemDTO | null }
-  | { type: 'other'; session: SessionListItemDTO }
-  | { type: 'others' };
-
-interface TotpSetupState {
-  setupToken: string;
-  totpSecret: string;
-  otpauthUrl: string;
-}
 
 function SectionCard({
   title,
@@ -176,25 +172,39 @@ export default function SecuritySettingsPage() {
   const { userData, currentSession, logout, setAuthStateFromResponse } = useAuth();
   const { success, info, error: showError } = useToast();
 
-  const [sessions, setSessions] = useState<SessionListItemDTO[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-  const [sessionAction, setSessionAction] = useState<string | null>(null);
-  const [confirmSessionAction, setConfirmSessionAction] = useState<ConfirmSessionAction | null>(null);
+  const [sessionState, dispatchSession] = useReducer(
+    sessionSettingsReducer,
+    undefined,
+    createInitialSessionSettingsState,
+  );
+  const {
+    sessions,
+    sessionsLoading,
+    sessionAction,
+    confirmSessionAction,
+  } = sessionState;
 
-  const [setupBusy, setSetupBusy] = useState(false);
-  const [verifyBusy, setVerifyBusy] = useState(false);
-  const [disableBusy, setDisableBusy] = useState(false);
-  const [recoveryBusy, setRecoveryBusy] = useState(false);
-  const [setupStep, setSetupStep] = useState<SetupStep>('intro');
-  const [setup, setSetup] = useState<TotpSetupState | null>(null);
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
-  const [setupKeyRevealed, setSetupKeyRevealed] = useState(false);
-  const [setupCode, setSetupCode] = useState('');
-  const [disableCode, setDisableCode] = useState('');
-  const [disableRecoveryCode, setDisableRecoveryCode] = useState('');
-  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
-  const [recoveryConfirmOpen, setRecoveryConfirmOpen] = useState(false);
-  const [mfaErrorMessage, setMfaErrorMessage] = useState<string | null>(null);
+  const [mfaState, dispatchMfa] = useReducer(
+    mfaSettingsReducer,
+    undefined,
+    createInitialMfaSettingsState,
+  );
+  const {
+    setupBusy,
+    verifyBusy,
+    disableBusy,
+    recoveryBusy,
+    setupStep,
+    setup,
+    qrCodeDataUrl,
+    setupKeyRevealed,
+    setupCode,
+    disableCode,
+    disableRecoveryCode,
+    recoveryCodes,
+    recoveryConfirmOpen,
+    mfaErrorMessage,
+  } = mfaState;
 
   const setupRequested = searchParams.get('setup') === '1';
   const recentlyVerified = searchParams.get('verified') === '1';
@@ -202,20 +212,19 @@ export default function SecuritySettingsPage() {
   const flow = getFlowFromSearch(searchParams, setupRequested, mfaEnabled);
 
   const loadSessions = useCallback(async (signal?: AbortSignal) => {
-    setSessionsLoading(true);
+    dispatchSession({ type: 'SESSIONS_LOAD_STARTED' });
 
     try {
       const response = await getSessions(signal);
       if (!signal?.aborted) {
-        setSessions(response.sessions ?? []);
-        setSessionsLoading(false);
+        dispatchSession({ type: 'SESSIONS_LOAD_SUCCEEDED', sessions: response.sessions ?? [] });
       }
     } catch (error) {
       if (signal?.aborted) {
         return;
       }
 
-      setSessionsLoading(false);
+      dispatchSession({ type: 'SESSIONS_LOAD_FAILED' });
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
         return;
       }
@@ -235,12 +244,12 @@ export default function SecuritySettingsPage() {
 
   useEffect(() => {
     if (!setup?.otpauthUrl) {
-      setQrCodeDataUrl('');
+      dispatchMfa({ type: 'QR_RENDER_STARTED' });
       return;
     }
 
     let cancelled = false;
-    setQrCodeDataUrl('');
+    dispatchMfa({ type: 'QR_RENDER_STARTED' });
     const qrDark = resolveCanvasColor('var(--color-ink-black)', 'black');
     const qrLight = resolveCanvasColor('var(--color-surface)', 'white');
 
@@ -255,12 +264,15 @@ export default function SecuritySettingsPage() {
     })
       .then((dataUrl) => {
         if (!cancelled) {
-          setQrCodeDataUrl(dataUrl);
+          dispatchMfa({ type: 'QR_READY', dataUrl });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setMfaErrorMessage('Could not render the QR code. Show the setup key and enter it manually.');
+          dispatchMfa({
+            type: 'QR_FAILED',
+            message: 'Could not render the QR code. Show the setup key and enter it manually.',
+          });
         }
       });
 
@@ -274,14 +286,7 @@ export default function SecuritySettingsPage() {
       return;
     }
 
-    setSetup(null);
-    setSetupStep('intro');
-    setSetupCode('');
-    setQrCodeDataUrl('');
-    setSetupKeyRevealed(false);
-    setRecoveryCodes([]);
-    setRecoveryConfirmOpen(false);
-    setMfaErrorMessage(null);
+    dispatchMfa({ type: 'RESET_FLOW' });
   }, [flow]);
 
   const currentDevice = useMemo(() => (
@@ -314,14 +319,7 @@ export default function SecuritySettingsPage() {
   }, [navigate, searchParams]);
 
   const resetSetupState = useCallback(() => {
-    setSetup(null);
-    setSetupStep('intro');
-    setSetupCode('');
-    setQrCodeDataUrl('');
-    setSetupKeyRevealed(false);
-    setRecoveryCodes([]);
-    setRecoveryConfirmOpen(false);
-    setMfaErrorMessage(null);
+    dispatchMfa({ type: 'RESET_FLOW' });
   }, []);
 
   const handleCancelSetup = () => {
@@ -330,8 +328,7 @@ export default function SecuritySettingsPage() {
   };
 
   const handleStartSetup = useCallback(async () => {
-    setSetupBusy(true);
-    setMfaErrorMessage(null);
+    dispatchMfa({ type: 'SETUP_STARTED' });
 
     try {
       const response = await startTotpSetup();
@@ -339,43 +336,42 @@ export default function SecuritySettingsPage() {
         throw new Error('MFA setup details were incomplete.');
       }
 
-      setSetup({
+      dispatchMfa({
+        type: 'SETUP_READY',
+        setup: {
         setupToken: response.setupToken,
         totpSecret: response.totpSecret,
         otpauthUrl: response.otpauthUrl,
+        },
       });
-      setSetupCode('');
-      setSetupKeyRevealed(false);
-      setSetupStep('scan');
     } catch (error) {
       const message = getApiErrorMessage(error, 'We could not start setup. Please try again.');
-      setMfaErrorMessage(message);
+      dispatchMfa({ type: 'SETUP_FAILED', message });
       showError(message);
-    } finally {
-      setSetupBusy(false);
     }
   }, [showError]);
 
   const handleSetupCodeChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setSetupCode(event.target.value.replace(/\D/g, '').slice(0, 6));
-    setMfaErrorMessage(null);
+    dispatchMfa({ type: 'CODE_CHANGED', value: event.target.value });
   };
 
   const handleVerifySetup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!setup) {
-      setMfaErrorMessage('Start setup first, then enter the 6-digit code from your authenticator app.');
+      dispatchMfa({
+        type: 'VERIFY_FAILED',
+        message: 'Start setup first, then enter the 6-digit code from your authenticator app.',
+      });
       return;
     }
 
     if (setupCode.length !== 6) {
-      setMfaErrorMessage(SECURITY_PAGE_COPY.mfa.codeIncompleteError);
+      dispatchMfa({ type: 'VERIFY_FAILED', message: SECURITY_PAGE_COPY.mfa.codeIncompleteError });
       return;
     }
 
-    setVerifyBusy(true);
-    setMfaErrorMessage(null);
+    dispatchMfa({ type: 'VERIFY_STARTED' });
 
     try {
       const response = await verifyTotpSetup({
@@ -384,21 +380,14 @@ export default function SecuritySettingsPage() {
       });
 
       setAuthStateFromResponse(response);
-      setRecoveryCodes(response.recoveryCodes ?? []);
-      setSetup(null);
-      setSetupCode('');
-      setQrCodeDataUrl('');
-      setSetupKeyRevealed(false);
-      setSetupStep('recovery');
+      dispatchMfa({ type: 'VERIFY_SUCCEEDED', recoveryCodes: response.recoveryCodes ?? [] });
       success('Two-factor authentication enabled.');
     } catch (error) {
       const message = error instanceof ApiClientError && error.code === 'INVALID_TOTP_CODE'
         ? SECURITY_PAGE_COPY.mfa.codeInvalidError
         : getApiErrorMessage(error, 'We could not verify the authenticator code. Please try again.');
-      setMfaErrorMessage(message);
+      dispatchMfa({ type: 'VERIFY_FAILED', message });
       showError(message);
-    } finally {
-      setVerifyBusy(false);
     }
   };
 
@@ -420,30 +409,26 @@ export default function SecuritySettingsPage() {
   };
 
   const handleFinalizeRecoveryCodes = () => {
-    setRecoveryConfirmOpen(false);
-    setRecoveryCodes([]);
-    setSetupStep('intro');
+    dispatchMfa({ type: 'RECOVERY_CODES_CONFIRMED' });
     navigateToOverview({ clearSetupFlags: true });
   };
 
   const handleRegenerateRecoveryCodes = async () => {
-    setRecoveryBusy(true);
-    setMfaErrorMessage(null);
+    dispatchMfa({ type: 'RECOVERY_REGENERATE_STARTED' });
 
     try {
       const response = await regenerateRecoveryCodes();
       setAuthStateFromResponse(response);
-      setRecoveryCodes(response.recoveryCodes ?? []);
-      setSetupStep('recovery');
+      dispatchMfa({ type: 'RECOVERY_REGENERATE_SUCCEEDED', recoveryCodes: response.recoveryCodes ?? [] });
       success('Recovery codes generated.');
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        dispatchMfa({ type: 'RECOVERY_REGENERATE_FAILED' });
         return;
       }
 
+      dispatchMfa({ type: 'RECOVERY_REGENERATE_FAILED' });
       showError(getApiErrorMessage(error, 'Could not generate codes. Try again.'));
-    } finally {
-      setRecoveryBusy(false);
     }
   };
 
@@ -454,91 +439,90 @@ export default function SecuritySettingsPage() {
     const trimmedRecoveryCode = disableRecoveryCode.trim();
 
     if (!trimmedCode && !trimmedRecoveryCode) {
-      setMfaErrorMessage('Provide either an authenticator code or a recovery code.');
+      dispatchMfa({
+        type: 'DISABLE_FAILED',
+        message: 'Provide either an authenticator code or a recovery code.',
+      });
       return;
     }
 
     if (trimmedCode && trimmedRecoveryCode) {
-      setMfaErrorMessage('Provide either an authenticator code or a recovery code, not both.');
+      dispatchMfa({
+        type: 'DISABLE_FAILED',
+        message: 'Provide either an authenticator code or a recovery code, not both.',
+      });
       return;
     }
 
-    setDisableBusy(true);
-    setMfaErrorMessage(null);
+    dispatchMfa({ type: 'DISABLE_STARTED' });
 
     try {
       const response = await disableMfa({
         ...(trimmedRecoveryCode ? { recoveryCode: trimmedRecoveryCode } : { code: trimmedCode }),
       });
       setAuthStateFromResponse(response);
-      setRecoveryCodes([]);
-      setDisableCode('');
-      setDisableRecoveryCode('');
+      dispatchMfa({ type: 'DISABLE_SUCCEEDED' });
       success('Two-factor authentication is off.');
       navigateToOverview({ clearSetupFlags: true });
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        dispatchMfa({ type: 'DISABLE_FAILED' });
         return;
       }
 
       const message = getApiErrorMessage(error, 'We could not turn off two-factor authentication. Please try again.');
-      setMfaErrorMessage(message);
+      dispatchMfa({ type: 'DISABLE_FAILED', message });
       showError(message);
-    } finally {
-      setDisableBusy(false);
     }
   };
 
   const handleLogoutCurrentDevice = async () => {
-    setSessionAction('current');
+    dispatchSession({ type: 'SESSION_ACTION_STARTED', actionId: 'current' });
 
     try {
       await logout();
       info('Signed out. Sign in again.');
+      dispatchSession({ type: 'SESSION_ACTION_SUCCEEDED' });
       navigate('/auth/login', { replace: true });
     } catch (error) {
+      dispatchSession({ type: 'SESSION_ACTION_FAILED' });
       showError(getApiErrorMessage(error, 'Could not sign out. Try again.'));
-    } finally {
-      setSessionAction(null);
-      setConfirmSessionAction(null);
     }
   };
 
   const handleRevokeOtherSession = async (session: SessionListItemDTO) => {
-    setSessionAction(session.id);
+    dispatchSession({ type: 'SESSION_ACTION_STARTED', actionId: session.id });
 
     try {
       const response = await revokeSession(session.id);
-      setSessions(response.sessions ?? []);
+      dispatchSession({ type: 'SESSION_ACTION_SUCCEEDED', sessions: response.sessions ?? [] });
       success('Device signed out.');
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        dispatchSession({ type: 'SESSION_ACTION_FAILED' });
         return;
       }
 
+      dispatchSession({ type: 'SESSION_ACTION_FAILED' });
       showError(getApiErrorMessage(error, 'Could not sign out device. Try again.'));
-    } finally {
-      setSessionAction(null);
-      setConfirmSessionAction(null);
     }
   };
 
   const handleRevokeOtherSessions = async () => {
-    setSessionAction('others');
+    dispatchSession({ type: 'SESSION_ACTION_STARTED', actionId: 'others' });
 
     try {
       const response = await revokeOtherSessions();
-      setSessions(response.sessions ?? []);
+      dispatchSession({ type: 'SESSION_ACTION_SUCCEEDED', sessions: response.sessions ?? [] });
       success('Signed out all other devices.');
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        dispatchSession({ type: 'SESSION_ACTION_FAILED' });
         return;
       }
 
+      dispatchSession({ type: 'SESSION_ACTION_FAILED' });
       showError(getApiErrorMessage(error, 'Could not sign out devices. Try again.'));
-    } finally {
-      setSessionAction(null);
-      setConfirmSessionAction(null);
     }
   };
 
@@ -571,7 +555,7 @@ export default function SecuritySettingsPage() {
           busy={sessionAction === 'current'}
           confirmLabel="Sign out"
           description={SECURITY_PAGE_COPY.sessions.revokeCurrentConfirmDescription}
-          onCancel={() => setConfirmSessionAction(null)}
+          onCancel={() => dispatchSession({ type: 'SESSION_CONFIRM_CLOSED' })}
           onConfirm={performConfirmedSessionAction}
           title={SECURITY_PAGE_COPY.sessions.revokeCurrentConfirmTitle}
         />
@@ -583,7 +567,7 @@ export default function SecuritySettingsPage() {
         busy={sessionAction === 'others' || (confirmSessionAction.type === 'other' && sessionAction === confirmSessionAction.session.id)}
         confirmLabel={confirmSessionAction.type === 'others' ? 'Sign out other devices' : SECURITY_PAGE_COPY.sessions.otherAction}
         description={SECURITY_PAGE_COPY.sessions.revokeOthersConfirmDescription}
-        onCancel={() => setConfirmSessionAction(null)}
+        onCancel={() => dispatchSession({ type: 'SESSION_CONFIRM_CLOSED' })}
         onConfirm={performConfirmedSessionAction}
         title={SECURITY_PAGE_COPY.sessions.revokeOthersConfirmTitle}
       />
@@ -650,7 +634,7 @@ export default function SecuritySettingsPage() {
                 </SketchyButton>
                 <SketchyButton
                   className="w-full px-4 py-3 text-sm sm:w-auto"
-                  onClick={() => setRecoveryConfirmOpen(true)}
+                  onClick={() => dispatchMfa({ type: 'RECOVERY_CONFIRM_OPENED' })}
                   type="button"
                 >
                   <CheckCircle2 size={16} />
@@ -665,7 +649,7 @@ export default function SecuritySettingsPage() {
                     {SECURITY_PAGE_COPY.mfa.recoveryConfirmDescription}
                   </p>
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                    <SketchyButton className="px-4 py-3 text-sm" fill="var(--color-surface)" onClick={() => setRecoveryConfirmOpen(false)} type="button">
+                    <SketchyButton className="px-4 py-3 text-sm" fill="var(--color-surface)" onClick={() => dispatchMfa({ type: 'RECOVERY_CONFIRM_CLOSED' })} type="button">
                       {SECURITY_PAGE_COPY.mfa.goBackAction}
                     </SketchyButton>
                     <SketchyButton className="px-4 py-3 text-sm" onClick={handleFinalizeRecoveryCodes} type="button">
@@ -715,7 +699,7 @@ export default function SecuritySettingsPage() {
                     label={SECURITY_PAGE_COPY.mfa.codeLabel}
                     maxLength={6}
                     name="disableCode"
-                    onChange={(event) => setDisableCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(event) => dispatchMfa({ type: 'DISABLE_CODE_CHANGED', value: event.target.value })}
                     placeholder="123456"
                     type="text"
                     value={disableCode}
@@ -723,7 +707,7 @@ export default function SecuritySettingsPage() {
                   <AuthField
                     label="Recovery code"
                     name="disableRecoveryCode"
-                    onChange={(event) => setDisableRecoveryCode(event.target.value)}
+                    onChange={(event) => dispatchMfa({ type: 'DISABLE_RECOVERY_CODE_CHANGED', value: event.target.value })}
                     placeholder="XXXX-XXXX"
                     type="text"
                     value={disableRecoveryCode}
@@ -777,7 +761,7 @@ export default function SecuritySettingsPage() {
                       <SketchyButton
                         className="px-4 py-3 text-sm"
                         fill="var(--color-surface)"
-                        onClick={() => setSetupKeyRevealed(false)}
+                        onClick={() => dispatchMfa({ type: 'SETUP_KEY_VISIBILITY_CHANGED', revealed: false })}
                         type="button"
                       >
                         {SECURITY_PAGE_COPY.mfa.hideSetupKeyAction}
@@ -785,7 +769,7 @@ export default function SecuritySettingsPage() {
                     </div>
                   </div>
                 ) : (
-                  <SketchyButton className="mt-3 px-4 py-3 text-sm" fill="var(--color-surface)" onClick={() => setSetupKeyRevealed(true)} type="button">
+                  <SketchyButton className="mt-3 px-4 py-3 text-sm" fill="var(--color-surface)" onClick={() => dispatchMfa({ type: 'SETUP_KEY_VISIBILITY_CHANGED', revealed: true })} type="button">
                     {SECURITY_PAGE_COPY.mfa.showSetupKeyAction}
                   </SketchyButton>
                 )}
@@ -795,7 +779,7 @@ export default function SecuritySettingsPage() {
                 <SketchyButton className="px-5 py-3 text-sm" fill="var(--color-surface)" onClick={handleCancelSetup} type="button">
                   {SECURITY_PAGE_COPY.mfa.cancelAction}
                 </SketchyButton>
-                <SketchyButton className="px-5 py-3 text-sm" onClick={() => setSetupStep('confirm')} type="button">
+                <SketchyButton className="px-5 py-3 text-sm" onClick={() => dispatchMfa({ type: 'SETUP_STEP_CHANGED', setupStep: 'confirm' })} type="button">
                   Continue
                 </SketchyButton>
               </div>
@@ -822,7 +806,7 @@ export default function SecuritySettingsPage() {
                   value={setupCode}
                 />
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-                  <SketchyButton className="px-5 py-3 text-sm" fill="var(--color-surface)" onClick={() => setSetupStep('scan')} type="button">
+                  <SketchyButton className="px-5 py-3 text-sm" fill="var(--color-surface)" onClick={() => dispatchMfa({ type: 'SETUP_STEP_CHANGED', setupStep: 'scan' })} type="button">
                     {SECURITY_PAGE_COPY.mfa.goBackAction}
                   </SketchyButton>
                   <SketchyButton
@@ -878,7 +862,10 @@ export default function SecuritySettingsPage() {
                   activeColor="var(--color-danger-bg)"
                   className="w-full px-4 py-3 text-sm text-ink-red sm:w-auto"
                   fill="var(--color-danger-bg)"
-                  onClick={() => setConfirmSessionAction({ type: 'current', session: currentDevice })}
+                  onClick={() => dispatchSession({
+                    type: 'SESSION_CONFIRM_OPENED',
+                    action: { type: 'current', session: currentDevice },
+                  })}
                   stroke="var(--color-danger-border)"
                   type="button"
                 >
@@ -907,7 +894,10 @@ export default function SecuritySettingsPage() {
                         activeColor="var(--color-danger-bg)"
                         className="w-full px-4 py-3 text-sm text-ink-red sm:w-auto"
                         fill="var(--color-danger-bg)"
-                        onClick={() => setConfirmSessionAction({ type: 'other', session })}
+                        onClick={() => dispatchSession({
+                          type: 'SESSION_CONFIRM_OPENED',
+                          action: { type: 'other', session },
+                        })}
                         stroke="var(--color-danger-border)"
                         type="button"
                       >
@@ -922,7 +912,10 @@ export default function SecuritySettingsPage() {
                   activeColor="var(--color-danger-bg)"
                   className="w-full px-4 py-3 text-sm text-ink-red sm:w-auto"
                   fill="var(--color-danger-bg)"
-                  onClick={() => setConfirmSessionAction({ type: 'others' })}
+                  onClick={() => dispatchSession({
+                    type: 'SESSION_CONFIRM_OPENED',
+                    action: { type: 'others' },
+                  })}
                   stroke="var(--color-danger-border)"
                   type="button"
                 >
@@ -1019,7 +1012,10 @@ export default function SecuritySettingsPage() {
                 activeColor="var(--color-danger-bg)"
                 className="w-full px-4 py-3 text-sm text-ink-red"
                 fill="var(--color-danger-bg)"
-                onClick={() => setConfirmSessionAction({ type: 'current', session: currentDevice })}
+                onClick={() => dispatchSession({
+                  type: 'SESSION_CONFIRM_OPENED',
+                  action: { type: 'current', session: currentDevice },
+                })}
                 stroke="var(--color-danger-border)"
                 type="button"
               >

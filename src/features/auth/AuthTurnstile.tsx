@@ -68,10 +68,10 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
     const renderWidget = useCallback(() => {
       // Ensure the element actually exists in the DOM
       const el = document.getElementById(containerIdRef.current);
-      if (!el || widgetIdRef.current) return;
+      if (!el) return null;
 
       try {
-        widgetIdRef.current = window.turnstile.render(el, {
+        const widgetId = window.turnstile.render(el, {
           sitekey: siteKey,
           theme: 'light',
           size: 'normal',
@@ -92,10 +92,13 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
             // The parent will set it to undefined, and then 'callback' will be fired when the new token is generated.
           },
         });
+        widgetIdRef.current = widgetId;
+        return widgetId;
       } catch (err) {
         reportTurnstileError(err);
         dispatchWidgetState({ type: 'widget_failed' });
         onErrorRef.current?.();
+        return null;
       }
     }, [siteKey]);
 
@@ -116,13 +119,16 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
 
       let cancelled = false;
       let renderTimer: number | undefined;
+      let widgetIdForCleanup: string | null = null;
 
       ensureScript()
         .then(() => {
           if (!cancelled) {
             // Delay rendering slightly to ensure DOM is fully painted and mounted
             renderTimer = window.setTimeout(() => {
-              if (!cancelled) renderWidget();
+              if (!cancelled) {
+                widgetIdForCleanup = renderWidget();
+              }
             }, 100);
           }
         })
@@ -137,13 +143,12 @@ export function AuthTurnstile({ onSuccess, onError, onExpire, ref }: AuthTurnsti
         if (renderTimer !== undefined) {
           window.clearTimeout(renderTimer);
         }
-        if (widgetIdRef.current && window.turnstile) {
+        if (widgetIdForCleanup && window.turnstile) {
           try {
-            window.turnstile.remove(widgetIdRef.current);
+            window.turnstile.remove(widgetIdForCleanup);
           } catch {
             // ignore — widget may already be gone
           }
-          widgetIdRef.current = null;
         }
       };
     }, [siteKey, renderWidget, widgetState.retryNonce]);

@@ -121,14 +121,15 @@ let attemptDependencies: MpesaCodeAttemptDependencies = {
 };
 
 function parseAllowedYears(value: string): Map<string, number> {
-  const entries = value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
   const allowedYears = new Map<string, number>();
 
-  for (const entry of entries) {
-    const [rawCode, rawYear] = entry.split(':');
+  for (const entry of value.split(',')) {
+    const trimmedEntry = entry.trim();
+    if (!trimmedEntry) {
+      continue;
+    }
+
+    const [rawCode, rawYear] = trimmedEntry.split(':');
     const code = rawCode?.trim().toUpperCase();
     const year = Number(rawYear);
 

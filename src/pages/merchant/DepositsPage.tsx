@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { Check, Clock3, RefreshCw, X } from 'lucide-react';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useToast } from '../../app/ToastProvider';
@@ -15,15 +15,15 @@ import {
   reconcileMerchantDeposit,
   replayMerchantDeposits,
 } from '../../services/merchant-dashboard.service';
-import type {
-  MerchantDepositReplayResultDTO,
-  MerchantDepositReviewItemDTO,
-} from '../../types/api';
+import type { MerchantDepositReviewItemDTO } from '../../types/api';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
 import { getApiErrorMessage } from '../../utils/errors';
-
-type DepositStatusFilter = 'open' | 'resolved';
+import {
+  createInitialDepositsState,
+  depositsReducer,
+  type DepositStatusFilter,
+} from './depositsReducer';
 
 function toLocalDateTimeValue(date: Date) {
   const copy = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -37,16 +37,26 @@ function fromLocalDateTimeValue(value: string): number {
 export default function DepositsPage() {
   const { dashboard, refreshDashboard } = useMerchantOutletContext();
   const { error: showError, success } = useToast();
-  const [statusFilter, setStatusFilter] = useState<DepositStatusFilter>('open');
-  const [deposits, setDeposits] = useState<MerchantDepositReviewItemDTO[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [rowAction, setRowAction] = useState<string | null>(null);
+  const [depositState, dispatchDeposits] = useReducer(
+    depositsReducer,
+    undefined,
+    () => createInitialDepositsState(
+      toLocalDateTimeValue(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+      toLocalDateTimeValue(new Date()),
+    ),
+  );
+  const {
+    statusFilter,
+    deposits,
+    loading,
+    rowAction,
+    replayResult,
+    replayBusy,
+    windowStart,
+    windowEnd,
+  } = depositState;
   const [userOverrides, setUserOverrides] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [replayResult, setReplayResult] = useState<MerchantDepositReplayResultDTO | null>(null);
-  const [replayBusy, setReplayBusy] = useState<'dry-run' | 'apply' | null>(null);
-  const [windowStart, setWindowStart] = useState('');
-  const [windowEnd, setWindowEnd] = useState('');
   const depositsRequestRef = useRef(0);
   const depositsFilterRef = useRef(statusFilter);
 
@@ -58,7 +68,7 @@ export default function DepositsPage() {
   ) => {
     const requestId = depositsRequestRef.current + 1;
     depositsRequestRef.current = requestId;
-    setLoading(true);
+    dispatchDeposits({ type: 'LOAD_STARTED' });
 
     try {
       const nextDeposits = await getMerchantDeposits({
@@ -76,8 +86,7 @@ export default function DepositsPage() {
       }
 
       startTransition(() => {
-        setDeposits(nextDeposits);
-        setLoading(false);
+        dispatchDeposits({ type: 'LOAD_SUCCEEDED', deposits: nextDeposits });
       });
     } catch (error) {
       if (isAbortError(error, signal, { pageUnloading: document.visibilityState === 'hidden' })) {
@@ -89,19 +98,14 @@ export default function DepositsPage() {
       }
 
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
-        setLoading(false);
+        dispatchDeposits({ type: 'LOAD_FAILED' });
         return;
       }
 
-      setLoading(false);
+      dispatchDeposits({ type: 'LOAD_FAILED' });
       showError(getApiErrorMessage(error, 'Could not load deposit reviews.'));
     }
   }, [showError]);
-
-  useEffect(() => {
-    setWindowStart(toLocalDateTimeValue(new Date(Date.now() - 24 * 60 * 60 * 1000)));
-    setWindowEnd(toLocalDateTimeValue(new Date()));
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -130,7 +134,7 @@ export default function DepositsPage() {
       return;
     }
 
-    setRowAction(deposit.txHash);
+    dispatchDeposits({ type: 'ROW_ACTION_STARTED', rowAction: deposit.txHash });
 
     try {
       const updated = await reconcileMerchantDeposit(deposit.txHash, {
@@ -140,14 +144,10 @@ export default function DepositsPage() {
       });
 
       success(action === 'credit' ? 'Deposit credited.' : 'Deposit dismissed.');
-      setDeposits((current) => {
-        if (statusFilter === 'resolved') {
-          const next = current.filter((item) => item.txHash !== deposit.txHash);
-          return [updated, ...next];
-        }
-
-        return current.filter((item) => item.txHash !== deposit.txHash);
-      });
+      const nextDeposits = statusFilter === 'resolved'
+        ? [updated, ...deposits.filter((item) => item.txHash !== deposit.txHash)]
+        : deposits.filter((item) => item.txHash !== deposit.txHash);
+      dispatchDeposits({ type: 'LOAD_SUCCEEDED', deposits: nextDeposits });
       await refreshDashboard();
       if (statusFilter === 'resolved') {
         await loadDeposits(undefined, depositsFilterRef.current);
@@ -159,7 +159,7 @@ export default function DepositsPage() {
 
       showError(getApiErrorMessage(error, 'Could not resolve that deposit review.'));
     } finally {
-      setRowAction(null);
+      dispatchDeposits({ type: 'ROW_ACTION_FINISHED' });
     }
   };
 
@@ -169,7 +169,7 @@ export default function DepositsPage() {
       return;
     }
 
-    setReplayBusy(mode);
+    dispatchDeposits({ type: 'REPLAY_STARTED', mode });
 
     try {
       const result = await replayMerchantDeposits({
@@ -178,7 +178,7 @@ export default function DepositsPage() {
         dryRun: mode === 'dry-run',
       });
 
-      setReplayResult(result);
+      dispatchDeposits({ type: 'REPLAY_SUCCEEDED', result });
       success(mode === 'dry-run' ? 'Replay preview generated.' : 'Replay window applied.');
       const requestedStatus = depositsFilterRef.current;
       await Promise.all([
@@ -187,13 +187,19 @@ export default function DepositsPage() {
       ]);
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        dispatchDeposits({ type: 'REPLAY_FAILED' });
         return;
       }
 
+      dispatchDeposits({ type: 'REPLAY_FAILED' });
       showError(getApiErrorMessage(error, 'Could not execute the deposit replay.'));
-    } finally {
-      setReplayBusy(null);
     }
+  };
+
+  const handleStatusFilterChange = (filter: DepositStatusFilter) => {
+    depositsFilterRef.current = filter;
+    dispatchDeposits({ type: 'FILTER_CHANGED', statusFilter: filter });
+    void loadDeposits(undefined, filter);
   };
 
   return (
@@ -217,7 +223,7 @@ export default function DepositsPage() {
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
               )}
               fill={statusFilter === filter ? 'var(--color-info-bg)' : 'var(--color-surface)'}
-              onClick={() => setStatusFilter(filter)}
+              onClick={() => handleStatusFilterChange(filter)}
               type="button"
             >
               {filter === 'open' ? 'Open reviews' : 'Resolved'}
@@ -255,7 +261,11 @@ export default function DepositsPage() {
             <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Start</p>
             <input
               className="mt-2 w-full bg-transparent text-sm font-mono focus:outline-none"
-              onChange={(event) => setWindowStart(event.target.value)}
+              onChange={(event) => dispatchDeposits({
+                type: 'REPLAY_WINDOW_CHANGED',
+                field: 'windowStart',
+                value: event.target.value,
+              })}
               type="datetime-local"
               value={windowStart}
             />
@@ -264,7 +274,11 @@ export default function DepositsPage() {
             <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">End</p>
             <input
               className="mt-2 w-full bg-transparent text-sm font-mono focus:outline-none"
-              onChange={(event) => setWindowEnd(event.target.value)}
+              onChange={(event) => dispatchDeposits({
+                type: 'REPLAY_WINDOW_CHANGED',
+                field: 'windowEnd',
+                value: event.target.value,
+              })}
               type="datetime-local"
               value={windowEnd}
             />

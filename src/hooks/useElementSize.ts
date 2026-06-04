@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 interface ElementSize {
   width: number;
@@ -26,14 +26,28 @@ function getBorderBoxSize(element: HTMLElement, entry?: ResizeObserverEntry): El
 }
 
 export function useElementSize<T extends HTMLElement>() {
-  const elementRef = useRef<T | null>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
   const [size, setSize] = useState<ElementSize>(INITIAL_SIZE);
 
-  useEffect(() => {
-    const element = elementRef.current;
+  const updateSize = useCallback((nextSize: ElementSize) => {
+    setSize((currentSize) => {
+      if (currentSize.width === nextSize.width && currentSize.height === nextSize.height) {
+        return currentSize;
+      }
+
+      return nextSize;
+    });
+  }, []);
+
+  const elementRef = useCallback((element: T | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+
     if (!element) {
-      return undefined;
+      return;
     }
+
+    updateSize(getBorderBoxSize(element));
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];
@@ -41,23 +55,12 @@ export function useElementSize<T extends HTMLElement>() {
         return;
       }
 
-      const nextSize = getBorderBoxSize(element, entry);
-      setSize((currentSize) => {
-        if (currentSize.width === nextSize.width && currentSize.height === nextSize.height) {
-          return currentSize;
-        }
-
-        return nextSize;
-      });
+      updateSize(getBorderBoxSize(element, entry));
     });
 
-    setSize(getBorderBoxSize(element));
     resizeObserver.observe(element, { box: 'border-box' });
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, []);
+    observerRef.current = resizeObserver;
+  }, [updateSize]);
 
   return { elementRef, size };
 }

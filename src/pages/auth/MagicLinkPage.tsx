@@ -14,12 +14,13 @@ export default function MagicLinkPage() {
   const [searchParams] = useSearchParams();
   const { setAuthStateFromResponse } = useAuth();
   const { success, error: showError } = useToast();
-  const [token] = useState(() => searchParams.get('token')?.trim() ?? '');
+  const tokenRef = useRef(searchParams.get('token')?.trim() ?? '');
+  const token = tokenRef.current;
   const email = searchParams.get('email')?.trim() ?? '';
   const previewUrl = ((location.state ?? null) as { previewUrl?: string } | null)?.previewUrl ?? null;
-  const [consuming, setConsuming] = useState(token.length > 0);
   const [consumeError, setConsumeError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const consuming = token.length > 0 && !consumeError;
 
   useEffect(() => {
     if (!token || startedRef.current) {
@@ -28,7 +29,6 @@ export default function MagicLinkPage() {
 
     startedRef.current = true;
     scrubSensitiveTokenFromCurrentUrl();
-    setConsuming(true);
     setConsumeError(null);
 
     void consumeMagicLink({ token })
@@ -52,7 +52,6 @@ export default function MagicLinkPage() {
       .catch((error) => {
         setConsumeError('That sign-in link is invalid or expired. Request a fresh magic link to continue.');
         showError(getApiErrorMessage(error, 'Unable to complete magic-link sign-in.'));
-        setConsuming(false);
       });
   }, [navigate, setAuthStateFromResponse, showError, success, token]);
 

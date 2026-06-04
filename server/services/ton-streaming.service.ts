@@ -475,13 +475,19 @@ function isTonStreamingEvent(value: unknown): value is TonStreamingEvent {
 
 function normalizeTransactions(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) {
-    return value.map(readObject).filter((entry): entry is Record<string, unknown> => Boolean(entry));
+    return value.flatMap((entry) => {
+      const objectEntry = readObject(entry);
+      return objectEntry ? [objectEntry] : [];
+    });
   }
   const objectValue = readObject(value);
   if (!objectValue) {
     return [];
   }
-  return Object.values(objectValue).map(readObject).filter((entry): entry is Record<string, unknown> => Boolean(entry));
+  return Object.values(objectValue).flatMap((entry) => {
+    const objectEntry = readObject(entry);
+    return objectEntry ? [objectEntry] : [];
+  });
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {
@@ -542,10 +548,11 @@ function isRelevantAssetEvent(event: TonStreamingEvent, expectedJettonMaster: st
   }
 
   if (event.type === 'actions' && Array.isArray(event.actions)) {
-    const jettonMasters = event.actions
-      .map((action) => readObject(action))
-      .map((action) => action?.jetton_master ?? action?.jetton ?? readObject(action?.details)?.jetton_master)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const jettonMasters = event.actions.flatMap((rawAction) => {
+      const action = readObject(rawAction);
+      const value = action?.jetton_master ?? action?.jetton ?? readObject(action?.details)?.jetton_master;
+      return typeof value === 'string' && value.length > 0 ? [value] : [];
+    });
 
     return jettonMasters.length === 0 || jettonMasters.some((jettonMaster) => addressesEqualSafe(jettonMaster, expectedJettonMaster));
   }

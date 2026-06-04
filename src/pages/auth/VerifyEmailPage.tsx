@@ -27,16 +27,17 @@ export default function VerifyEmailPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { info, success, error: showError } = useToast();
-  const [token] = useState(() => searchParams.get('token')?.trim() ?? '');
+  const tokenRef = useRef(searchParams.get('token')?.trim() ?? '');
+  const token = tokenRef.current;
   const initialEmail = searchParams.get('email')?.trim() || userData?.email || '';
   const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
-  const [consuming, setConsuming] = useState(token.length > 0);
   const [consumeError, setConsumeError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
     ((location.state ?? null) as { previewUrl?: string } | null)?.previewUrl ?? null,
   );
   const startedRef = useRef(false);
+  const consuming = token.length > 0 && !consumeError;
 
   const errorMessage = useMemo(
     () => getVerificationError(searchParams.get('error')),
@@ -50,7 +51,6 @@ export default function VerifyEmailPage() {
 
     startedRef.current = true;
     scrubSensitiveTokenFromCurrentUrl();
-    setConsuming(true);
     setConsumeError(null);
 
     void consumeVerificationEmail({ token })
@@ -62,7 +62,6 @@ export default function VerifyEmailPage() {
       .catch((error) => {
         setConsumeError('That verification link is invalid or expired. Request a fresh one below.');
         showError(getApiErrorMessage(error, 'Could not verify email. Request a fresh link.'));
-        setConsuming(false);
       });
   }, [navigate, setAuthStateFromResponse, showError, success, token]);
 

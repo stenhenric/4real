@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { AlertTriangle, CheckCircle, History, StickyNote, Upload } from 'lucide-react';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
@@ -28,9 +28,12 @@ import {
   getPendingP2pOrders,
   isSellAmountWithinAvailableBalance,
 } from './p2pPresentation';
+import {
+  createInitialMerchantTradeState,
+  merchantTradeReducer,
+  type MerchantTab,
+} from './merchantTradeReducer';
 import type { MerchantConfigDTO, OrderDTO } from '../../types/api';
-
-type MerchantTab = 'buy' | 'sell';
 
 const MERCHANT_AMOUNT_ID = 'merchant-amount';
 const MERCHANT_PROOF_ID = 'merchant-proof';
@@ -54,14 +57,21 @@ function shouldClearOrderIdempotencyAfterError(error: unknown): boolean {
 const MerchantPanel = () => {
   const { isAdmin, refreshUser, userData } = useAuth();
   const { success, error: showError } = useToast();
-  const [activeTab, setActiveTab] = useState<MerchantTab>('buy');
-  const [amount, setAmount] = useState('');
-  const [proofImage, setProofImage] = useState<File | null>(null);
-  const [transactionCode, setTransactionCode] = useState('');
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
-  const [mpesaNumber, setMpesaNumber] = useState('');
-  const [mpesaName, setMpesaName] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [tradeState, dispatchTrade] = useReducer(
+    merchantTradeReducer,
+    undefined,
+    createInitialMerchantTradeState,
+  );
+  const {
+    activeTab,
+    amount,
+    proofImage,
+    transactionCode,
+    paymentConfirmed,
+    mpesaNumber,
+    mpesaName,
+    loading,
+  } = tradeState;
   const [orders, setOrders] = useState<OrderDTO[]>([]);
   const [merchantConfig, setMerchantConfig] = useState<MerchantConfigDTO | null>(null);
   const [viewError, setViewError] = useState<string | null>(null);
@@ -112,24 +122,15 @@ const MerchantPanel = () => {
   }, [reloadKey, showError]);
 
   const resetTradeForm = () => {
-    setAmount('');
-    setProofImage(null);
-    setTransactionCode('');
-    setPaymentConfirmed(false);
-    setMpesaNumber('');
-    setMpesaName('');
+    dispatchTrade({ type: 'RESET' });
   };
 
   const handleTabChange = (nextTab: MerchantTab) => {
-    setActiveTab(nextTab);
-    resetTradeForm();
+    dispatchTrade({ type: 'TAB_CHANGED', tab: nextTab });
   };
 
   const handleAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setAmount(event.target.value);
-    setProofImage(null);
-    setTransactionCode('');
-    setPaymentConfirmed(false);
+    dispatchTrade({ type: 'AMOUNT_CHANGED', value: event.target.value });
   };
 
   const normalizedAmount = useMemo(() => {
@@ -246,7 +247,7 @@ const MerchantPanel = () => {
       return;
     }
 
-    setLoading(true);
+    dispatchTrade({ type: 'SUBMIT_STARTED' });
 
     try {
       if (!normalizedAmount) {
@@ -317,10 +318,11 @@ const MerchantPanel = () => {
       }
 
       orderActionRef.current = null;
-      resetTradeForm();
+      dispatchTrade({ type: 'SUBMIT_SUCCEEDED' });
       await refreshUser();
     } catch (error) {
       if (error instanceof Error && !(error instanceof ApiClientError)) {
+        dispatchTrade({ type: 'SUBMIT_FAILED' });
         showError(error.message);
         return;
       }
@@ -328,9 +330,9 @@ const MerchantPanel = () => {
       if (shouldClearOrderIdempotencyAfterError(error)) {
         orderActionRef.current = null;
       }
+      dispatchTrade({ type: 'SUBMIT_FAILED' });
       showError(getApiErrorMessage(error, 'Could not submit P2P order. Please try again.'));
     } finally {
-      setLoading(false);
       orderRequestInFlightRef.current = false;
     }
   };
@@ -398,7 +400,10 @@ const MerchantPanel = () => {
           aria-label="Upload M-Pesa payment screenshot"
           className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
           id={MERCHANT_PROOF_ID}
-          onChange={(event) => setProofImage(event.target.files?.[0] ?? null)}
+          onChange={(event) => dispatchTrade({
+            type: 'BUY_PROOF_SELECTED',
+            proofImage: event.target.files?.[0] ?? null,
+          })}
           type="file"
         />
         <div className="pointer-events-none flex min-h-[190px] flex-col items-center justify-center p-6">
@@ -638,7 +643,7 @@ const MerchantPanel = () => {
                           aria-describedby="buy-requirements"
                           className="w-full py-3 text-lg uppercase tracking-tighter"
                           disabled={!hasValidAmount || !rateConfigured || loading}
-                          onClick={() => setPaymentConfirmed(true)}
+                          onClick={() => dispatchTrade({ type: 'PAYMENT_CONFIRMED' })}
                           type="button"
                         >
                           I sent this payment
@@ -684,7 +689,10 @@ const MerchantPanel = () => {
                           <input
                             className="w-full text-lg font-mono bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors"
                             id="sell-mpesa-number"
-                            onChange={(e) => setMpesaNumber(e.target.value)}
+                            onChange={(e) => dispatchTrade({
+                              type: 'SELL_DETAILS_CHANGED',
+                              mpesaNumber: e.target.value,
+                            })}
                             placeholder="07XXXXXXXXX or 254XXXXXXXXX"
                             type="text"
                             value={mpesaNumber}
@@ -697,7 +705,10 @@ const MerchantPanel = () => {
                           <input
                             className="w-full text-lg font-mono bg-transparent border-b-2 border-black/10 focus:border-black p-2 transition-colors uppercase"
                             id="sell-mpesa-name"
-                            onChange={(e) => setMpesaName(e.target.value)}
+                            onChange={(e) => dispatchTrade({
+                              type: 'SELL_DETAILS_CHANGED',
+                              mpesaName: e.target.value,
+                            })}
                             placeholder="JOHN DOE"
                             type="text"
                             value={mpesaName}
@@ -708,7 +719,7 @@ const MerchantPanel = () => {
                           aria-describedby="sell-submit-requirements"
                           className="w-full py-3 text-lg uppercase tracking-tighter mt-4"
                           disabled={!hasValidAmount || !rateConfigured || !sellAmountWithinAvailable || !mpesaNumber.trim() || !mpesaName.trim()}
-                          onClick={() => setPaymentConfirmed(true)}
+                          onClick={() => dispatchTrade({ type: 'PAYMENT_CONFIRMED' })}
                           type="button"
                         >
                           Review & Confirm
@@ -739,7 +750,7 @@ const MerchantPanel = () => {
                           </p>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <SketchyButton onClick={() => setPaymentConfirmed(false)} type="button" variant="secondary">
+                          <SketchyButton onClick={() => dispatchTrade({ type: 'PAYMENT_UNCONFIRMED' })} type="button" variant="secondary">
                             Edit details
                           </SketchyButton>
                           <SketchyButton onClick={resetTradeForm} type="button" variant="secondary">
@@ -772,7 +783,7 @@ const MerchantPanel = () => {
                       id={MERCHANT_TRANSACTION_CODE_ID}
                       inputMode="text"
                       maxLength={13}
-                      onChange={(event) => setTransactionCode(event.target.value)}
+                      onChange={(event) => dispatchTrade({ type: 'BUY_CODE_CHANGED', value: event.target.value })}
                       placeholder="10-character code"
                       required
                       type="text"

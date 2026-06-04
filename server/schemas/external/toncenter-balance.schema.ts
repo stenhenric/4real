@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-export const toncenterJettonWalletBalanceSchema = z.object({
+export const toncenterJettonWalletBalanceSchema = z.looseObject({
   jetton_wallets: z.array(
-    z.object({
+    z.looseObject({
       balance: z.union([z.string(), z.number()]).optional(),
-    }).passthrough(),
+    }),
   ),
-}).passthrough();
+});

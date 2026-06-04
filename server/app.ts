@@ -101,9 +101,14 @@ function getMandatoryBackgroundJobReadiness(backgroundJobs: unknown): {
     };
   }
 
-  const failed = MANDATORY_BACKGROUND_JOBS
-    .map((key) => ({ key, ...backgroundJobs[key] }))
-    .filter((snapshot) => snapshot.enabled !== true || Boolean(snapshot.lastError));
+  const failed = MANDATORY_BACKGROUND_JOBS.reduce<Array<JobSnapshot & { key: keyof BackgroundJobState }>>((entries, key) => {
+    const snapshot = { key, ...backgroundJobs[key] };
+    if (snapshot.enabled !== true || Boolean(snapshot.lastError)) {
+      entries.push(snapshot);
+    }
+
+    return entries;
+  }, []);
 
   return {
     status: failed.length === 0 ? 'up' : 'down',
@@ -303,17 +308,19 @@ export async function createApp(
     const bullmq = bullmqProbe.result;
     const backgroundJobs = statusProvider.getBackgroundJobs();
     const mandatoryBackgroundJobs = getMandatoryBackgroundJobReadiness(backgroundJobs);
-    const databaseProbe = await timeReadinessDependency('database', () => (
-      mongoose.connection.readyState === 1 ? 'up' as const : 'down' as const
-    ), (result) => result);
-    const hotWalletRuntimeProbe = await timeReadinessDependency('hotWalletRuntime', () => {
-      try {
-        appDependencies.getHotWalletRuntime();
-        return 'up' as const;
-      } catch {
-        return 'down' as const;
-      }
-    }, (result) => result);
+    const [databaseProbe, hotWalletRuntimeProbe] = await Promise.all([
+      timeReadinessDependency('database', () => (
+        mongoose.connection.readyState === 1 ? 'up' as const : 'down' as const
+      ), (result) => result),
+      timeReadinessDependency('hotWalletRuntime', () => {
+        try {
+          appDependencies.getHotWalletRuntime();
+          return 'up' as const;
+        } catch {
+          return 'down' as const;
+        }
+      }, (result) => result),
+    ]);
     const hotWalletRuntime = hotWalletRuntimeProbe.result;
     const checks = {
       database: databaseProbe.result,

@@ -30,16 +30,20 @@ function createToastId() {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const timeoutsRef = useRef(new Map<string, number>());
+  const timeoutsRef = useRef<Map<string, number> | null>(null);
+  if (timeoutsRef.current === null) {
+    timeoutsRef.current = new Map<string, number>();
+  }
 
   const clearToastTimeout = useCallback((id: string) => {
-    const timeoutId = timeoutsRef.current.get(id);
+    const timeouts = timeoutsRef.current;
+    const timeoutId = timeouts?.get(id);
     if (!timeoutId) {
       return;
     }
 
     window.clearTimeout(timeoutId);
-    timeoutsRef.current.delete(id);
+    timeouts?.delete(id);
   }, []);
 
   const removeToast = useCallback((id: string) => {
@@ -68,15 +72,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         removeToast(id);
       }, TOAST_AUTO_DISMISS_MS);
 
-      timeoutsRef.current.set(id, timeoutId);
+      timeoutsRef.current?.set(id, timeoutId);
     },
     [clearToastTimeout, removeToast],
   );
 
   useEffect(() => {
+    const timeouts = timeoutsRef.current;
+
     return () => {
-      timeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
-      timeoutsRef.current.clear();
+      timeouts?.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      timeouts?.clear();
     };
   }, []);
 

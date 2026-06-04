@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
 import { TonConnectButton, useTonAddress, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowDownRight, CheckCircle, Clock } from 'lucide-react';
 import { useToast } from '../../app/ToastProvider';
@@ -7,25 +7,18 @@ import { CopyField } from '../../components/ui/CopyField';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { createDepositMemo, prepareTonConnectDeposit } from '../../services/transactions.service';
-import type { DepositMemoDTO } from '../../types/api';
 import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
+import { createInitialDepositFlowState, depositFlowReducer } from './depositFlowReducer';
 
 const DEPOSIT_AMOUNT_ID = 'deposit-amount';
 const DEPOSIT_ADDRESS_ID = 'deposit-address';
 const DEPOSIT_MEMO_ID = 'deposit-memo';
 const WALLET_CONNECT_REQUIRED_ID = 'wallet-connect-required';
 
-type DepositStep = 'amount' | 'review' | 'details' | 'pending';
-
 interface DepositPanelProps {
   onBackToBank: () => void;
   onViewHistory: () => void;
-}
-
-interface PaymentDetails {
-  data: DepositMemoDTO;
-  amountUsdt: string;
 }
 
 function getExpiryState(expiresAt?: string): { expired: boolean; label: string | null } {
@@ -54,13 +47,20 @@ function getExpiryState(expiresAt?: string): { expired: boolean; label: string |
 }
 
 const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
-  const [step, setStep] = useState<DepositStep>('amount');
-  const [depositAmount, setDepositAmount] = useState('');
-  const [amountError, setAmountError] = useState<string | null>(null);
-  const [reviewAmount, setReviewAmount] = useState<string | null>(null);
-  const [paymentDetails, setPaymentDetails] = useState<PaymentDetails | null>(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [sendingTransaction, setSendingTransaction] = useState(false);
+  const [flowState, dispatchFlow] = useReducer(
+    depositFlowReducer,
+    undefined,
+    createInitialDepositFlowState,
+  );
+  const {
+    step,
+    depositAmount,
+    amountError,
+    reviewAmount,
+    paymentDetails,
+    loadingDetails,
+    sendingTransaction,
+  } = flowState;
   const [expiryTick, setExpiryTick] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
   const [tonConnectUI] = useTonConnectUI();
@@ -101,23 +101,16 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
         allowZero: false,
         label: 'Deposit amount',
       });
-      setAmountError(null);
       return normalizedAmount;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Enter a valid deposit amount.';
-      setAmountError(message);
+      dispatchFlow({ type: 'AMOUNT_INVALID', message });
       return null;
     }
   };
 
   const handleAmountChange = (value: string) => {
-    setDepositAmount(value);
-    setAmountError(null);
-    setReviewAmount(null);
-    setPaymentDetails(null);
-    if (step !== 'amount') {
-      setStep('amount');
-    }
+    dispatchFlow({ type: 'AMOUNT_CHANGED', value });
   };
 
   const handleReviewDeposit = (event: FormEvent<HTMLFormElement>) => {
@@ -127,9 +120,7 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
       return;
     }
 
-    setReviewAmount(normalizedAmount);
-    setPaymentDetails(null);
-    setStep('review');
+    dispatchFlow({ type: 'REVIEW_READY', amountUsdt: normalizedAmount });
   };
 
   const handleGeneratePaymentDetails = async () => {
@@ -138,17 +129,15 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
       return;
     }
 
-    setLoadingDetails(true);
+    dispatchFlow({ type: 'DETAILS_REQUESTED' });
 
     try {
       const data = await createDepositMemo();
-      setPaymentDetails({ data, amountUsdt });
-      setStep('details');
+      dispatchFlow({ type: 'DETAILS_READY', data, amountUsdt });
       addToast('Payment details ready.', 'success');
     } catch (error) {
+      dispatchFlow({ type: 'DETAILS_FAILED' });
       addToast(getApiErrorMessage(error, 'Could not prepare payment details.'), 'error');
-    } finally {
-      setLoadingDetails(false);
     }
   };
 
@@ -168,7 +157,7 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
       return;
     }
 
-    setSendingTransaction(true);
+    dispatchFlow({ type: 'TRANSACTION_STARTED' });
 
     try {
       const prepared = await prepareTonConnectDeposit({
@@ -178,12 +167,11 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
       });
 
       await tonConnectUI.sendTransaction(prepared.transaction);
-      setStep('pending');
+      dispatchFlow({ type: 'TRANSACTION_SENT' });
       addToast('Transaction sent.', 'success');
     } catch (error) {
+      dispatchFlow({ type: 'TRANSACTION_FAILED' });
       addToast(getApiErrorMessage(error, 'Transaction failed. Please try again.'), 'error');
-    } finally {
-      setSendingTransaction(false);
     }
   };
 
@@ -234,7 +222,7 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
           <StatusBadge tone="info">Ready to review</StatusBadge>
           <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Review Deposit</h3>
         </div>
-        <SketchyButton onClick={() => setStep('amount')} type="button" variant="secondary">
+        <SketchyButton onClick={() => dispatchFlow({ type: 'RESET_TO_AMOUNT' })} type="button" variant="secondary">
           Change amount
         </SketchyButton>
       </div>
@@ -290,7 +278,7 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
               Send exactly {formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT
             </h3>
           </div>
-          <SketchyButton onClick={() => setStep('amount')} type="button" variant="secondary">
+          <SketchyButton onClick={() => dispatchFlow({ type: 'RESET_TO_AMOUNT' })} type="button" variant="secondary">
             Change amount
           </SketchyButton>
         </div>

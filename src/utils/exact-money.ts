@@ -73,9 +73,39 @@ export function isPositiveMoney(value: MoneyLike): boolean {
   return moneyToNumber(value) > 0;
 }
 
+const MONEY_FORMATTERS: readonly Intl.NumberFormat[] = [
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 3, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 5, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 6, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 7, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 8, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 9, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 10, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 11, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 12, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 13, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 14, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 15, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 16, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 17, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 18, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 19, minimumFractionDigits: 0 }),
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 20, minimumFractionDigits: 0 }),
+];
+
+function getMoneyFormatter(maximumFractionDigits: number): Intl.NumberFormat {
+  const formatter = MONEY_FORMATTERS[maximumFractionDigits];
+  if (!formatter) {
+    throw new RangeError('maximumFractionDigits must be an integer between 0 and 20.');
+  }
+
+  return formatter;
+}
+
 export function formatMoneyValue(value: MoneyLike, maximumFractionDigits = 3): string {
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits,
-    minimumFractionDigits: 0,
-  }).format(moneyToNumber(value));
+  return getMoneyFormatter(maximumFractionDigits).format(moneyToNumber(value));
 }

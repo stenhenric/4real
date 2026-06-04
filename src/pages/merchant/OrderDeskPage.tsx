@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useReducer, useRef } from 'react';
 import { AlertTriangle, Check, ExternalLink, ShieldAlert, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ApiClientError } from '../../services/api/apiClient';
@@ -12,13 +12,16 @@ import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { formatDateTime, formatMoney, formatRelativeMinutes } from '../../features/merchant/format';
 import { getMerchantOrders } from '../../services/merchant-dashboard.service';
 import { updateOrderStatus } from '../../services/orders.service';
-import type { MerchantOrderDeskResponseDTO, OrderDTO } from '../../types/api';
+import type { OrderDTO } from '../../types/api';
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
 import { getApiErrorMessage } from '../../utils/errors';
-
-type OrderTypeFilter = 'ALL' | 'BUY' | 'SELL';
-type OrderStatusFilter = 'ALL' | OrderDTO['status'];
+import {
+  createInitialOrderDeskState,
+  orderDeskReducer,
+  type OrderStatusFilter,
+  type OrderTypeFilter,
+} from './orderDeskReducer';
 
 const ORDER_STATUS_FILTERS: OrderStatusFilter[] = ['PENDING', 'DONE', 'REJECTED', 'ALL'];
 const ORDER_TYPE_FILTERS: OrderTypeFilter[] = ['ALL', 'BUY', 'SELL'];
@@ -30,12 +33,19 @@ function getRowActionKey(orderId: string) {
 export default function OrderDeskPage() {
   const { dashboard, refreshDashboard } = useMerchantOutletContext();
   const { error: showError, success } = useToast();
-  const [typeFilter, setTypeFilter] = useState<OrderTypeFilter>('ALL');
-  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('PENDING');
-  const [page, setPage] = useState(1);
-  const [deskData, setDeskData] = useState<MerchantOrderDeskResponseDTO | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [rowActions, setRowActions] = useState<Record<string, true>>({});
+  const [deskState, dispatchDesk] = useReducer(
+    orderDeskReducer,
+    undefined,
+    createInitialOrderDeskState,
+  );
+  const {
+    typeFilter,
+    statusFilter,
+    page,
+    deskData,
+    loading,
+    rowActions,
+  } = deskState;
   const ordersRequestRef = useRef(0);
   const ordersQueryRef = useRef({
     page,
@@ -55,7 +65,7 @@ export default function OrderDeskPage() {
   ) => {
     const requestId = ordersRequestRef.current + 1;
     ordersRequestRef.current = requestId;
-    setLoading(true);
+    dispatchDesk({ type: 'LOAD_STARTED' });
 
     try {
       const nextData = await getMerchantOrders({
@@ -78,8 +88,7 @@ export default function OrderDeskPage() {
       }
 
       startTransition(() => {
-        setDeskData(nextData);
-        setLoading(false);
+        dispatchDesk({ type: 'LOAD_SUCCEEDED', deskData: nextData });
       });
     } catch (error) {
       if (isAbortError(error, signal, { pageUnloading: document.visibilityState === 'hidden' })) {
@@ -91,11 +100,11 @@ export default function OrderDeskPage() {
       }
 
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
-        setLoading(false);
+        dispatchDesk({ type: 'LOAD_FAILED' });
         return;
       }
 
-      setLoading(false);
+      dispatchDesk({ type: 'LOAD_FAILED' });
       showError(getApiErrorMessage(error, 'Could not load merchant orders.'));
     }
   }, [showError]);
@@ -111,7 +120,7 @@ export default function OrderDeskPage() {
 
   const handleStatusUpdate = async (orderId: string, nextStatus: OrderDTO['status']) => {
     const rowActionKey = getRowActionKey(orderId);
-    setRowActions((current) => ({ ...current, [rowActionKey]: true }));
+    dispatchDesk({ type: 'ROW_ACTION_STARTED', rowActionKey });
 
     try {
       await updateOrderStatus(orderId, nextStatus);
@@ -127,11 +136,32 @@ export default function OrderDeskPage() {
 
       showError(getApiErrorMessage(error, 'Could not update that order.'));
     } finally {
-      setRowActions((current) => {
-        const { [rowActionKey]: _finishedAction, ...remaining } = current;
-        return remaining;
-      });
+      dispatchDesk({ type: 'ROW_ACTION_FINISHED', rowActionKey });
     }
+  };
+
+  const requestOrdersForQuery = (query: typeof ordersQueryRef.current) => {
+    ordersQueryRef.current = query;
+    void loadOrders(undefined, query);
+  };
+
+  const handleTypeFilterChange = (filter: OrderTypeFilter) => {
+    const nextQuery = { page: 1, status: statusFilter, type: filter };
+    dispatchDesk({ type: 'TYPE_FILTER_CHANGED', typeFilter: filter });
+    requestOrdersForQuery(nextQuery);
+  };
+
+  const handleStatusFilterChange = (filter: OrderStatusFilter) => {
+    const nextQuery = { page: 1, status: filter, type: typeFilter };
+    dispatchDesk({ type: 'STATUS_FILTER_CHANGED', statusFilter: filter });
+    requestOrdersForQuery(nextQuery);
+  };
+
+  const handlePageChange = (nextPage: number) => {
+    const boundedPage = Math.max(1, nextPage);
+    const nextQuery = { page: boundedPage, status: statusFilter, type: typeFilter };
+    dispatchDesk({ type: 'PAGE_CHANGED', page: boundedPage });
+    requestOrdersForQuery(nextQuery);
   };
 
   const orders = deskData?.orders ?? [];
@@ -157,10 +187,7 @@ export default function OrderDeskPage() {
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
               )}
               fill={typeFilter === filter ? 'var(--color-info-bg)' : 'var(--color-surface)'}
-              onClick={() => {
-                setPage(1);
-                setTypeFilter(filter);
-              }}
+              onClick={() => handleTypeFilterChange(filter)}
               type="button"
             >
               {filter}
@@ -177,10 +204,7 @@ export default function OrderDeskPage() {
                   : 'border-black/10 bg-white text-ink-black/70 hover:bg-black/5',
               )}
               fill={statusFilter === filter ? 'var(--color-info-bg)' : 'var(--color-surface)'}
-              onClick={() => {
-                setPage(1);
-                setStatusFilter(filter);
-              }}
+              onClick={() => handleStatusFilterChange(filter)}
               type="button"
             >
               {filter}
@@ -430,7 +454,7 @@ export default function OrderDeskPage() {
             <SketchyButton
               className="border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
               disabled={deskData.pagination.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              onClick={() => handlePageChange(page - 1)}
               type="button"
             >
               Previous
@@ -438,7 +462,7 @@ export default function OrderDeskPage() {
             <SketchyButton
               className="border-2 border-black/10 px-4 py-2 text-sm font-bold disabled:opacity-40"
               disabled={deskData.pagination.page >= deskData.pagination.totalPages}
-              onClick={() => setPage((current) => Math.min(deskData.pagination.totalPages, current + 1))}
+              onClick={() => handlePageChange(Math.min(deskData.pagination.totalPages, page + 1))}
               type="button"
             >
               Next

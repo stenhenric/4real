@@ -14,12 +14,13 @@ export default function ApproveLoginPage() {
   const [searchParams] = useSearchParams();
   const { setAuthStateFromResponse } = useAuth();
   const { success, error: showError } = useToast();
-  const [token] = useState(() => searchParams.get('token')?.trim() ?? '');
+  const tokenRef = useRef(searchParams.get('token')?.trim() ?? '');
+  const token = tokenRef.current;
   const email = searchParams.get('email')?.trim() ?? '';
   const previewUrl = ((location.state ?? null) as { previewUrl?: string } | null)?.previewUrl ?? null;
-  const [consuming, setConsuming] = useState(token.length > 0);
   const [consumeError, setConsumeError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const consuming = token.length > 0 && !consumeError;
 
   useEffect(() => {
     if (!token || startedRef.current) {
@@ -28,7 +29,6 @@ export default function ApproveLoginPage() {
 
     startedRef.current = true;
     scrubSensitiveTokenFromCurrentUrl();
-    setConsuming(true);
     setConsumeError(null);
 
     void consumeSuspiciousLogin({ token })
@@ -40,7 +40,6 @@ export default function ApproveLoginPage() {
       .catch((error) => {
         setConsumeError('That sign-in approval link is invalid or expired. Start the sign-in flow again.');
         showError(getApiErrorMessage(error, 'Unable to approve this sign-in.'));
-        setConsuming(false);
       });
   }, [navigate, setAuthStateFromResponse, showError, success, token]);
 

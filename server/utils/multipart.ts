@@ -15,6 +15,10 @@ export interface ParsedMultipartForm {
   files: Record<string, ParsedMultipartFile>;
 }
 
+const MULTIPART_CLOSING_MARKER = Buffer.from('--');
+const MULTIPART_CLOSING_LINE = Buffer.from('--\r\n');
+const MULTIPART_HEADER_SEPARATOR = Buffer.from('\r\n\r\n');
+
 export function matchesDeclaredImageType(contentType: string, data: Buffer): boolean {
   const normalizedContentType = contentType.split(';', 1)[0]?.trim().toLowerCase();
 
@@ -87,9 +91,12 @@ function parseContentDisposition(value: string): Record<string, string> {
   return value
     .split(';')
     .slice(1)
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .reduce<Record<string, string>>((acc, segment) => {
+    .reduce<Record<string, string>>((acc, rawSegment) => {
+      const segment = rawSegment.trim();
+      if (!segment) {
+        return acc;
+      }
+
       const separatorIndex = segment.indexOf('=');
       if (separatorIndex === -1) {
         return acc;
@@ -102,7 +109,39 @@ function parseContentDisposition(value: string): Record<string, string> {
         : rawValue;
       acc[key] = normalized;
       return acc;
-    }, {});
+  }, {});
+}
+
+function parsePartHeaders(headerText: string): Map<string, string> {
+  const headers = new Map<string, string>();
+
+  for (const line of headerText.split('\r\n')) {
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const name = line.slice(0, separatorIndex).trim().toLowerCase();
+    if (!name || headers.has(name)) {
+      continue;
+    }
+
+    headers.set(name, line.slice(separatorIndex + 1).trim());
+  }
+
+  return headers;
+}
+
+function splitPartHeaderAndContent(part: Buffer): { headerText: string; content: Buffer } | null {
+  const headerSeparator = part.indexOf(MULTIPART_HEADER_SEPARATOR);
+  if (headerSeparator === -1) {
+    return null;
+  }
+
+  return {
+    headerText: part.subarray(0, headerSeparator).toString('utf8'),
+    content: trimTrailingCrlf(part.subarray(headerSeparator + MULTIPART_HEADER_SEPARATOR.length)),
+  };
 }
 
 async function parseMultipartFormImpl(
@@ -139,11 +178,11 @@ async function parseMultipartFormImpl(
       continue;
     }
 
-    if (part.equals(Buffer.from('--\r\n')) || part.equals(Buffer.from('--'))) {
+    if (part.equals(MULTIPART_CLOSING_LINE) || part.equals(MULTIPART_CLOSING_MARKER)) {
       continue;
     }
 
-    if (part.subarray(part.length - 2).equals(Buffer.from('--'))) {
+    if (part.subarray(part.length - 2).equals(MULTIPART_CLOSING_MARKER)) {
       part = part.subarray(0, part.length - 2);
     }
 
@@ -152,30 +191,26 @@ async function parseMultipartFormImpl(
       continue;
     }
 
-    const headerSeparator = part.indexOf(Buffer.from('\r\n\r\n'));
-    if (headerSeparator === -1) {
+    const parsedPart = splitPartHeaderAndContent(part);
+    if (!parsedPart) {
       continue;
     }
 
-    const headerText = part.subarray(0, headerSeparator).toString('utf8');
-    const content = trimTrailingCrlf(part.subarray(headerSeparator + 4));
-    const headerLines = headerText.split('\r\n');
-    const dispositionLine = headerLines.find((line) => line.toLowerCase().startsWith('content-disposition:'));
+    const { headerText, content } = parsedPart;
+    const headers = parsePartHeaders(headerText);
+    const dispositionHeader = headers.get('content-disposition');
 
-    if (!dispositionLine) {
+    if (!dispositionHeader) {
       continue;
     }
 
-    const disposition = parseContentDisposition(dispositionLine.slice('content-disposition:'.length).trim());
+    const disposition = parseContentDisposition(dispositionHeader);
     const fieldName = disposition.name;
     if (!fieldName) {
       continue;
     }
 
-    const contentTypeLine = headerLines.find((line) => line.toLowerCase().startsWith('content-type:'));
-    const partContentType = contentTypeLine
-      ? contentTypeLine.slice('content-type:'.length).trim().toLowerCase()
-      : 'text/plain';
+    const partContentType = headers.get('content-type')?.toLowerCase() ?? 'text/plain';
 
     if (disposition.filename) {
       files[fieldName] = {

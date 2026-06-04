@@ -3,6 +3,9 @@ import crypto from 'node:crypto';
 import { getEnv } from '../config/env.ts';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const BASE32_INDEX = new Map(
+  Array.from(BASE32_ALPHABET, (character, index) => [character, index]),
+);
 
 function getEncryptionKey(): Buffer {
   return Buffer.from(getEnv().TOTP_ENCRYPTION_KEY, 'base64');
@@ -57,8 +60,8 @@ export function decodeBase32(value: string): Buffer {
   const output: number[] = [];
 
   for (const character of normalized) {
-    const index = BASE32_ALPHABET.indexOf(character);
-    if (index < 0) {
+    const index = BASE32_INDEX.get(character);
+    if (index === undefined) {
       throw new Error('Invalid base32 secret');
     }
 

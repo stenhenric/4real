@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Clock, Play, Plus, Trophy, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
@@ -13,6 +13,7 @@ import { isAbortError } from '../utils/isAbortError';
 import { formatMoneyValue, moneyToNumber, normalizeFixedScaleAmount } from '../utils/exact-money.ts';
 import { getApiErrorMessage } from '../utils/errors';
 import type { LeaderboardUserDTO, MatchDTO } from '../types/api';
+import { createInitialDashboardDraftState, dashboardDraftReducer } from './dashboardDraftReducer';
 
 type DashboardTab = 'lobby' | 'leaderboard' | 'archives' | 'stats';
 
@@ -28,11 +29,18 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   const [activeMatches, setActiveMatches] = useState<MatchDTO[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUserDTO[]>([]);
   const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
-  const [wager, setWager] = useState('0');
-  const [isDrafting, setIsDrafting] = useState(false);
-  const [isCreatingMatch, setIsCreatingMatch] = useState(false);
-  const [draftStep, setDraftStep] = useState<1 | 2>(1);
-  const [draftType, setDraftType] = useState<'private' | 'free_public' | 'paid_public' | null>(null);
+  const [draftState, dispatchDraft] = useReducer(
+    dashboardDraftReducer,
+    undefined,
+    createInitialDashboardDraftState,
+  );
+  const {
+    wager,
+    isDrafting,
+    isCreatingMatch,
+    draftStep,
+    draftType,
+  } = draftState;
   const creatingMatchRef = useRef(false);
   const activeMatchesRequestRef = useRef(0);
 
@@ -96,7 +104,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   }, [activeTab, leaderboardLoaded]);
 
   useEffect(() => {
-    if (!user) {
+    if (!user?.id) {
       return undefined;
     }
 
@@ -160,7 +168,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
     }
 
     creatingMatchRef.current = true;
-    setIsCreatingMatch(true);
+    dispatchDraft({ type: 'CREATE_STARTED' });
     try {
       const match = await createMatch({ wager: normalizedWager, isPrivate });
       if (normalizedWager !== '0.000000') {
@@ -171,15 +179,12 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
       showError(getApiErrorMessage(error, 'Could not create match. Please try again.'));
     } finally {
       creatingMatchRef.current = false;
-      setIsCreatingMatch(false);
+      dispatchDraft({ type: 'CREATE_FAILED' });
     }
   };
 
   const resetDraft = () => {
-    setIsDrafting(false);
-    setDraftType(null);
-    setDraftStep(1);
-    setWager('0');
+    dispatchDraft({ type: 'DRAFT_RESET' });
   };
 
   const freeMatches = activeMatches.filter((m) => moneyToNumber(m.wager) === 0);
@@ -262,7 +267,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                 {!isDrafting && (
                   <SketchyButton
                     className="flex items-center gap-2 text-xl px-10 w-full md:w-auto justify-center"
-                    onClick={() => setIsDrafting(true)}
+                    onClick={() => dispatchDraft({ type: 'DRAFT_OPENED' })}
                   >
                     <Plus size={24} /> New Draft
                   </SketchyButton>
@@ -288,7 +293,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                         aria-checked={draftType === 'private'}
                         fill={draftType === 'private' ? 'var(--color-note-yellow)' : 'transparent'}
                         className="flex size-full flex-col items-center justify-center p-4 text-center"
-                        onClick={() => setDraftType('private')}
+                        onClick={() => dispatchDraft({ type: 'DRAFT_TYPE_SELECTED', draftType: 'private' })}
                         role="radio"
                         type="button"
                       >
@@ -299,7 +304,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                         aria-checked={draftType === 'free_public'}
                         fill={draftType === 'free_public' ? 'var(--color-note-yellow)' : 'transparent'}
                         className="flex size-full flex-col items-center justify-center p-4 text-center"
-                        onClick={() => setDraftType('free_public')}
+                        onClick={() => dispatchDraft({ type: 'DRAFT_TYPE_SELECTED', draftType: 'free_public' })}
                         role="radio"
                         type="button"
                       >
@@ -310,7 +315,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                         aria-checked={draftType === 'paid_public'}
                         fill={draftType === 'paid_public' ? 'var(--color-note-yellow)' : 'transparent'}
                         className="flex size-full flex-col items-center justify-center p-4 text-center"
-                        onClick={() => setDraftType('paid_public')}
+                        onClick={() => dispatchDraft({ type: 'DRAFT_TYPE_SELECTED', draftType: 'paid_public' })}
                         role="radio"
                         type="button"
                       >
@@ -327,7 +332,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                           if (draftType === 'free_public') {
                             void createGameHandler();
                           } else {
-                            setDraftStep(2);
+                            dispatchDraft({ type: 'DRAFT_STEP_CHANGED', draftStep: 2 });
                           }
                         }}
                         type="button"
@@ -348,7 +353,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                       <input
                         className="w-full max-w-xs bg-transparent border-b-4 border-black font-bold text-2xl outline-none p-2 focus:bg-white/50 transition-colors"
                         id="draft-wager"
-                        onChange={(event) => setWager(event.target.value)}
+                        onChange={(event) => dispatchDraft({ type: 'WAGER_CHANGED', wager: event.target.value })}
                         type="number"
                         value={wager}
                         min={draftType === 'paid_public' ? '0.000001' : '0'}
@@ -358,7 +363,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
                     </div>
                     
                     <div className="flex justify-between mt-6">
-                      <SketchyButton onClick={() => setDraftStep(1)} type="button">Back</SketchyButton>
+                      <SketchyButton onClick={() => dispatchDraft({ type: 'DRAFT_STEP_CHANGED', draftStep: 1 })} type="button">Back</SketchyButton>
                       <SketchyButton
                         onClick={() => {
                           if (!isCreatingMatch) {

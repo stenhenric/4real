@@ -308,9 +308,10 @@ export async function buildTransferLookupContext(transfers: JettonTransferEvent[
   const txHashes = transfers.map((transfer) => transfer.transaction_hash);
   const comments = [
     ...new Set(
-      transfers
-        .map((transfer) => extractJettonTransferComment(transfer))
-        .filter((comment) => comment.length > 0),
+      transfers.flatMap((transfer) => {
+        const comment = extractJettonTransferComment(transfer);
+        return comment.length > 0 ? [comment] : [];
+      }),
     ),
   ];
 
