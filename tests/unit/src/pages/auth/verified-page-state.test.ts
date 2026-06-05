@@ -15,6 +15,7 @@ const completeUser: UserDTO = {
   elo: 1000,
   isAdmin: false,
   stats: { wins: 0, losses: 0, draws: 0 },
+  avatar: { preset: 'pencil-face-01', color: 'ink' },
 };
 
 describe('verified page state', () => {

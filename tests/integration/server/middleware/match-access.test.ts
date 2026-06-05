@@ -164,10 +164,33 @@ test('public profile serialization no longer exposes balance', () => {
   } as any);
 
   assert.equal('balance' in serialized, false);
+  assert.equal('email' in serialized, false);
   assert.deepEqual(serialized, {
     id: serialized.id,
     username: 'public-user',
     elo: 1234,
     stats: { wins: 2, losses: 1, draws: 3 },
+    avatar: {
+      preset: serialized.avatar.preset,
+      color: serialized.avatar.color,
+    },
+  });
+});
+
+test('public profile serialization includes explicit avatar metadata', () => {
+  const serialized = serializeUserProfile({
+    _id: new mongoose.Types.ObjectId(),
+    username: 'avatar-user',
+    email: 'avatar@example.com',
+    balance: '10.000000',
+    elo: 1200,
+    isAdmin: false,
+    stats: { wins: 1, losses: 0, draws: 0 },
+    avatar: { preset: 'pencil-face-04', color: 'rose' },
+  } as any);
+
+  assert.deepEqual(serialized.avatar, {
+    preset: 'pencil-face-04',
+    color: 'rose',
   });
 });

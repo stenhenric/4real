@@ -64,6 +64,7 @@ export function transactionFeedReducer(
       return {
         ...state,
         transactionsLoading: true,
+        nextTransactionsLoading: false,
         transactionsError: null,
       };
     case 'NEXT_PAGE_STARTED':
@@ -81,7 +82,7 @@ export function transactionFeedReducer(
         transactionPage: action.feed.page,
         hasMoreTransactions: getHasMoreTransactions(action.feed),
         transactionsLoading: action.replace ? false : state.transactionsLoading,
-        nextTransactionsLoading: action.replace ? state.nextTransactionsLoading : false,
+        nextTransactionsLoading: false,
         transactionsError: null,
         nextTransactionsError: null,
       };
@@ -89,7 +90,7 @@ export function transactionFeedReducer(
       return {
         ...state,
         transactionsLoading: action.replace ? false : state.transactionsLoading,
-        nextTransactionsLoading: action.replace ? state.nextTransactionsLoading : false,
+        nextTransactionsLoading: false,
         transactionsError: action.replace ? action.message : state.transactionsError,
         nextTransactionsError: action.replace ? state.nextTransactionsError : action.message,
       };

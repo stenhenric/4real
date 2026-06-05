@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { getEnv } from '../config/env.ts';
 import { MIN_WITHDRAWAL_USDT } from '../config/withdrawal-limits.ts';
+import { AVATAR_COLORS, AVATAR_PRESETS } from '../types/api.ts';
 import {
   formatRate,
   formatUsdtAmount,
@@ -205,6 +206,11 @@ export const completeProfileRequestSchema = z.object({
   username: usernameSchema,
 });
 
+export const avatarSettingsRequestSchema = z.object({
+  preset: z.enum(AVATAR_PRESETS),
+  color: z.enum(AVATAR_COLORS),
+});
+
 export const createMatchRequestSchema = z.object({
   wager: nonNegativeUsdtSchema.default(formatUsdtAmount(0n)),
   isPrivate: z.boolean().optional().default(false),
@@ -298,6 +304,7 @@ export type MfaChallengeRequest = z.infer<typeof mfaChallengeRequestSchema>;
 export type MfaTotpVerifyRequest = z.infer<typeof mfaTotpVerifyRequestSchema>;
 export type MfaDisableRequest = z.infer<typeof mfaDisableRequestSchema>;
 export type CompleteProfileRequest = z.infer<typeof completeProfileRequestSchema>;
+export type AvatarSettingsRequest = z.infer<typeof avatarSettingsRequestSchema>;
 export type CreateMatchRequest = z.infer<typeof createMatchRequestSchema>;
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 export type UpdateOrderStatusRequest = z.infer<typeof updateOrderStatusRequestSchema>;

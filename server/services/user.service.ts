@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { User, SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import type { IUser } from '../models/User.ts';
+import type { AvatarSettingsDTO } from '../types/api.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { TransactionService } from './transaction.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
@@ -180,6 +181,19 @@ export class UserService {
         $set: {
           username: cleaned,
           usernameNormalized: normalizeUsername(cleaned),
+        },
+      },
+      { returnDocument: 'after' },
+    );
+  }
+
+  static async updateAvatarSettings(id: string, avatar: AvatarSettingsDTO): Promise<IUser | null> {
+    return User.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          'avatar.preset': avatar.preset,
+          'avatar.color': avatar.color,
         },
       },
       { returnDocument: 'after' },

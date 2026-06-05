@@ -38,6 +38,32 @@ export interface UserStatsDTO {
   draws: number;
 }
 
+export const AVATAR_PRESETS = [
+  'pencil-face-01',
+  'pencil-face-02',
+  'pencil-face-03',
+  'pencil-face-04',
+  'pencil-face-05',
+  'pencil-face-06',
+] as const;
+
+export const AVATAR_COLORS = [
+  'ink',
+  'blue',
+  'teal',
+  'yellow',
+  'rose',
+  'violet',
+] as const;
+
+export type AvatarPreset = typeof AVATAR_PRESETS[number];
+export type AvatarColor = typeof AVATAR_COLORS[number];
+
+export interface AvatarSettingsDTO {
+  preset: AvatarPreset;
+  color: AvatarColor;
+}
+
 export interface UserDTO {
   id: string;
   username: string;
@@ -46,6 +72,7 @@ export interface UserDTO {
   elo: number;
   isAdmin: boolean;
   stats: UserStatsDTO;
+  avatar: AvatarSettingsDTO;
   emailVerifiedAt?: string;
   hasPassword?: boolean;
   mfaEnabled?: boolean;
@@ -56,6 +83,7 @@ export interface UserProfileDTO {
   username: string;
   elo: number;
   stats: UserStatsDTO;
+  avatar: AvatarSettingsDTO;
 }
 
 export interface LeaderboardUserDTO {

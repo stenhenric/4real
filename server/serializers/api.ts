@@ -1,5 +1,6 @@
 import type { ITransaction } from '../models/Transaction.ts';
 import type {
+  AvatarSettingsDTO,
   AuthResponseDTO,
   LeaderboardUserDTO,
   MatchDTO,
@@ -12,6 +13,7 @@ import type {
   UserStatsDTO,
   WithdrawalStatusDTO,
 } from '../types/api.ts';
+import { AVATAR_COLORS, AVATAR_PRESETS } from '../types/api.ts';
 import type { IUser } from '../models/User.ts';
 import type { IMatch } from '../models/Match.ts';
 import type { IOrder } from '../models/Order.ts';
@@ -42,12 +44,35 @@ function serializeStats(stats?: IUser['stats']): UserStatsDTO {
   };
 }
 
+function getSeedIndex(seed: string, modulo: number): number {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+
+  return hash % modulo;
+}
+
 function serializeId(value: unknown): string {
   if (value && typeof value === 'object' && 'toString' in value && typeof value.toString === 'function') {
     return value.toString();
   }
 
   return String(value ?? '');
+}
+
+function serializeAvatarSettings(user: IUser): AvatarSettingsDTO {
+  const userId = serializeId(user._id);
+  const defaultPreset = AVATAR_PRESETS[getSeedIndex(userId, AVATAR_PRESETS.length)] ?? AVATAR_PRESETS[0];
+  const defaultColor = AVATAR_COLORS[getSeedIndex(`${userId}:color`, AVATAR_COLORS.length)] ?? AVATAR_COLORS[0];
+  const preset = AVATAR_PRESETS.includes(user.avatar?.preset as AvatarSettingsDTO['preset'])
+    ? user.avatar?.preset as AvatarSettingsDTO['preset']
+    : defaultPreset;
+  const color = AVATAR_COLORS.includes(user.avatar?.color as AvatarSettingsDTO['color'])
+    ? user.avatar?.color as AvatarSettingsDTO['color']
+    : defaultColor;
+
+  return { preset, color };
 }
 
 function serializeOrderUser(user: unknown): string | OrderUserDTO {
@@ -107,6 +132,7 @@ export function serializeAuthUser(user: IUser, balance: string): UserDTO {
     elo: user.elo,
     isAdmin: user.isAdmin,
     stats: serializeStats(user.stats),
+    avatar: serializeAvatarSettings(user),
     ...(user.emailVerifiedAt ? { emailVerifiedAt: user.emailVerifiedAt.toISOString() } : {}),
     hasPassword: typeof user.passwordHash === 'string' && user.passwordHash.length > 0,
     mfaEnabled: user.mfa?.enabledAt instanceof Date,
@@ -150,6 +176,7 @@ export function serializeUserProfile(user: IUser): UserProfileDTO {
     username: user.username ?? 'Pending profile',
     elo: user.elo,
     stats: serializeStats(user.stats),
+    avatar: serializeAvatarSettings(user),
   };
 }
 

@@ -98,6 +98,49 @@ describe('transactionFeedReducer', () => {
     assert.equal(failed.nextTransactionsError, 'Could not load more transactions.');
     assert.equal(transactionFeedReducer(failed, { type: 'CLEAR_ERROR' }).nextTransactionsError, null);
   });
+
+  it('clears stale next-page loading when a replacement page supersedes it', () => {
+    let state = transactionFeedReducer(createInitialTransactionFeedState(), { type: 'INITIAL_LOAD_STARTED' });
+    state = transactionFeedReducer(state, {
+      type: 'PAGE_LOADED',
+      feed: feed(1, Array.from({ length: BANK_TRANSACTION_PAGE_SIZE }, (_, index) => transaction(`tx-${index}`))),
+      replace: true,
+    });
+    state = transactionFeedReducer(state, { type: 'NEXT_PAGE_STARTED' });
+    assert.equal(state.nextTransactionsLoading, true);
+
+    state = transactionFeedReducer(state, { type: 'INITIAL_LOAD_STARTED' });
+    state = transactionFeedReducer(state, {
+      type: 'PAGE_LOADED',
+      feed: feed(1, [transaction('tx-replacement')]),
+      replace: true,
+    });
+
+    assert.equal(state.transactionsLoading, false);
+    assert.equal(state.nextTransactionsLoading, false);
+    assert.deepEqual(state.transactions.map((item) => item._id), ['tx-replacement']);
+  });
+
+  it('clears stale next-page loading when a replacement page fails', () => {
+    let state = transactionFeedReducer(createInitialTransactionFeedState(), { type: 'INITIAL_LOAD_STARTED' });
+    state = transactionFeedReducer(state, {
+      type: 'PAGE_LOADED',
+      feed: feed(1, [transaction('tx-initial')]),
+      replace: true,
+    });
+    state = transactionFeedReducer(state, { type: 'NEXT_PAGE_STARTED' });
+    state = transactionFeedReducer(state, { type: 'INITIAL_LOAD_STARTED' });
+
+    state = transactionFeedReducer(state, {
+      type: 'PAGE_FAILED',
+      replace: true,
+      message: 'Failed to fetch transactions.',
+    });
+
+    assert.equal(state.transactionsLoading, false);
+    assert.equal(state.nextTransactionsLoading, false);
+    assert.equal(state.transactionsError, 'Failed to fetch transactions.');
+  });
 });
 
 describe('dashboardDraftReducer', () => {

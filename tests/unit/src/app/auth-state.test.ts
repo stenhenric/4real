@@ -11,6 +11,7 @@ const user: UserDTO = {
   elo: 1000,
   isAdmin: false,
   stats: { wins: 0, losses: 0, draws: 0 },
+  avatar: { preset: 'pencil-face-01', color: 'ink' },
 };
 
 const existingSession: SessionListItemDTO = {

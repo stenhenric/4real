@@ -417,7 +417,7 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
   const [activeMatches, setActiveMatches] = useState<MatchDTO[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUserDTO[]>([]);
-  const leaderboardLoadedRef = useRef(false);
+  const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
   const [draftState, dispatchDraft] = useReducer(
     dashboardDraftReducer,
     undefined,
@@ -476,21 +476,21 @@ const DashboardPage = ({ initialTab = 'lobby' }: DashboardPageProps) => {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== 'leaderboard' || leaderboardLoadedRef.current) {
+    if (activeTab !== 'leaderboard' || leaderboardLoaded) {
       return undefined;
     }
 
     const controller = new AbortController();
     void refreshLeaderboard(controller.signal).then((loaded) => {
       if (loaded && !controller.signal.aborted) {
-        leaderboardLoadedRef.current = true;
+        setLeaderboardLoaded(true);
       }
     });
 
     return () => {
       controller.abort();
     };
-  }, [activeTab]);
+  }, [activeTab, leaderboardLoaded]);
 
   useEffect(() => {
     if (!user?.id) {

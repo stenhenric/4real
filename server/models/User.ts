@@ -27,6 +27,10 @@ export interface IUser extends Document {
     losses: number;
     draws: number;
   };
+  avatar?: {
+    preset?: string | null;
+    color?: string | null;
+  } | null;
   mfa: IUserMfaState;
   security: IUserSecurityState;
   isAdmin: boolean;
@@ -47,6 +51,10 @@ const UserSchema: Schema = new Schema({
     wins: { type: Number, default: 0 },
     losses: { type: Number, default: 0 },
     draws: { type: Number, default: 0 },
+  },
+  avatar: {
+    preset: { type: String, default: undefined },
+    color: { type: String, default: undefined },
   },
   mfa: {
     totpSecretEncrypted: { type: String, default: null },

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { withdrawRequestSchema } from '../../../../server/validation/request-schemas.ts';
+import {
+  avatarSettingsRequestSchema,
+  withdrawRequestSchema,
+} from '../../../../server/validation/request-schemas.ts';
 
 const VALID_TON_ADDRESS = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c';
 
@@ -23,4 +26,18 @@ test('withdrawRequestSchema accepts the 1.5 USDT withdrawal minimum', () => {
 
   assert.equal(result.success, true);
   assert.equal(result.data.amountUsdt, '1.500000');
+});
+
+test('avatarSettingsRequestSchema accepts only known metadata values', () => {
+  const valid = avatarSettingsRequestSchema.safeParse({
+    preset: 'pencil-face-03',
+    color: 'teal',
+  });
+  assert.equal(valid.success, true);
+
+  const invalid = avatarSettingsRequestSchema.safeParse({
+    preset: 'https://example.com/avatar.png',
+    color: 'teal',
+  });
+  assert.equal(invalid.success, false);
 });

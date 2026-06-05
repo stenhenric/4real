@@ -1,10 +1,13 @@
 import type { Request, Response } from 'express';
 
 import { applyPublicSharedCacheHeaders } from '../http/cache-policy.ts';
+import type { AuthRequest } from '../middleware/auth.middleware.ts';
+import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeLeaderboardUser, serializeUserProfile } from '../serializers/api.ts';
 import { CacheKeys, CACHE_TTLS, getOrPopulateJson } from '../services/cache.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { badRequest, notFound } from '../utils/http-error.ts';
+import type { AvatarSettingsRequest } from '../validation/request-schemas.ts';
 
 export class UserController {
   static async getProfile(req: Request, res: Response): Promise<void> {
@@ -19,6 +22,16 @@ export class UserController {
     }
 
     res.json(serializeUserProfile(user));
+  }
+
+  static async updateAvatar(req: AuthRequest, res: Response): Promise<void> {
+    assertAuthenticated(req);
+    const updatedUser = await UserService.updateAvatarSettings(req.user.id, req.body as AvatarSettingsRequest);
+    if (!updatedUser) {
+      throw notFound('User not found');
+    }
+
+    res.json(serializeUserProfile(updatedUser));
   }
 
   static async getLeaderboard(_req: Request, res: Response): Promise<void> {
