@@ -1,5 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+import { RATING_SYSTEM } from '../../shared/rating.ts';
+
 export interface IUserMfaState {
   totpSecretEncrypted?: string | null;
   enabledAt?: Date | null;
@@ -46,7 +48,7 @@ const UserSchema: Schema = new Schema({
   emailVerifiedAt: { type: Date, default: undefined, index: true },
   googleSubject: { type: String, default: undefined, unique: true, sparse: true },
   balance: { type: String, default: '0.000000', match: /^\d+\.\d{6}$/ },
-  elo: { type: Number, default: 1000, min: 0 },
+  elo: { type: Number, default: RATING_SYSTEM.startingRating, min: RATING_SYSTEM.minimumRating },
   stats: {
     wins: { type: Number, default: 0 },
     losses: { type: Number, default: 0 },

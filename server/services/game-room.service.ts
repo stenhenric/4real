@@ -1,7 +1,8 @@
 import type { IMatch } from '../models/Match.ts';
-import type { MatchMoveDTO } from '../types/api.ts';
+import type { MatchMoveDTO, MatchOutcome, MatchRatingResultDTO } from '../types/api.ts';
 import { MATCH_COMMISSION_RATE, calculateProjectedWinnerAmount } from './match-payout.service.ts';
 import { UserService } from './user.service.ts';
+import { RATING_SYSTEM } from '../../shared/rating.ts';
 
 export interface RoomPlayer {
   userId: string;
@@ -21,6 +22,9 @@ export interface RoomState {
   isPrivate: boolean;
   dbMatchId?: string;
   winnerId?: string;
+  settlementReason?: IMatch['settlementReason'];
+  outcome?: MatchOutcome;
+  ratingResult?: MatchRatingResultDTO;
   projectedWinnerAmount: string;
   commissionRate: string;
 }
@@ -83,13 +87,13 @@ export async function createRoomStateFromMatch(match: IMatch): Promise<RoomState
         userId: player1Id,
         username: player1?.username ?? match.p1Username,
         socketId: null,
-        elo: player1?.elo ?? 1000,
+        elo: player1?.elo ?? RATING_SYSTEM.startingRating,
       },
       ...(player2Id ? [{
         userId: player2Id,
         username: player2?.username ?? match.p2Username ?? 'Opponent',
         socketId: null,
-        elo: player2?.elo ?? 1000,
+        elo: player2?.elo ?? RATING_SYSTEM.startingRating,
       }] : []),
     ],
     board: buildBoardFromMoves(normalizedMoves, player1Id, player2Id),
@@ -100,6 +104,9 @@ export async function createRoomStateFromMatch(match: IMatch): Promise<RoomState
     isPrivate: match.isPrivate ?? false,
     ...(match._id ? { dbMatchId: match._id.toString() } : {}),
     ...(match.winnerId ? { winnerId: match.winnerId } : {}),
+    ...(match.settlementReason ? { settlementReason: match.settlementReason } : {}),
+    ...(match.outcome ? { outcome: match.outcome } : {}),
+    ...(match.ratingResult ? { ratingResult: match.ratingResult } : {}),
     projectedWinnerAmount: calculateProjectedWinnerAmount(match.wager ?? '0.000000'),
     commissionRate: MATCH_COMMISSION_RATE,
   };

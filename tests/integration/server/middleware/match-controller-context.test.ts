@@ -104,6 +104,28 @@ test('match controller user history serializes matches without private invite in
     status: 'completed',
     winnerId: player2Id.toString(),
     settlementReason: 'winner',
+    outcome: 'player2_win',
+    ratingResult: {
+      status: 'applied',
+      outcome: 'player2_win',
+      formulaVersion: 'fresh-db-elo-v1',
+      player1: {
+        userId: player1Id.toString(),
+        before: 300,
+        delta: -20,
+        after: 280,
+      },
+      player2: {
+        userId: player2Id.toString(),
+        before: 300,
+        delta: 20,
+        after: 320,
+      },
+      ratingEventId: new mongoose.Types.ObjectId().toString(),
+      kFactor: 40,
+      repeatPairMultiplier: 1,
+      previousPairRatedMatches: 0,
+    },
     wager: '2.000000',
     isPrivate: true,
     inviteTokenHash: 'do-not-serialize',
@@ -141,5 +163,9 @@ test('match controller user history serializes matches without private invite in
   assert.equal(serializedMatch.isPrivate, true);
   assert.equal(serializedMatch.winnerId, player2Id.toString());
   assert.equal(serializedMatch.settlementReason, 'winner');
+  assert.equal(serializedMatch.outcome, 'player2_win');
+  assert.deepEqual((serializedMatch.ratingResult as { player1?: { delta?: number }; player2?: { after?: number } }), {
+    ...match.ratingResult,
+  });
   assert.equal('inviteTokenHash' in serializedMatch, false);
 });

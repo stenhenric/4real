@@ -144,6 +144,50 @@ export interface MatchMoveDTO {
   row: number;
 }
 
+export type MatchOutcome =
+  | 'player1_win'
+  | 'player2_win'
+  | 'draw'
+  | 'no_contest';
+
+export type RatingStatus =
+  | 'applied'
+  | 'skipped'
+  | 'pending'
+  | 'reversed';
+
+export type RatingSkipReason =
+  | 'waiting_expired'
+  | 'waiting_cancelled'
+  | 'no_opponent'
+  | 'invalid_winner'
+  | 'no_contest'
+  | 'suspicious'
+  | 'disputed'
+  | 'refunded'
+  | 'repeat_pair_limit'
+  | 'rating_not_required';
+
+export interface MatchRatingPlayerDTO {
+  userId: string;
+  before: number;
+  delta: number;
+  after: number;
+}
+
+export interface MatchRatingResultDTO {
+  status: RatingStatus;
+  outcome: MatchOutcome;
+  formulaVersion: string;
+  player1: MatchRatingPlayerDTO;
+  player2: MatchRatingPlayerDTO;
+  ratingEventId?: string;
+  skipReason?: RatingSkipReason;
+  kFactor?: number;
+  repeatPairMultiplier?: number;
+  previousPairRatedMatches?: number;
+}
+
 export interface MatchDTO {
   _id?: string;
   roomId: string;
@@ -159,6 +203,8 @@ export interface MatchDTO {
   projectedWinnerAmount?: UsdtAmountString;
   commissionRate?: RateString;
   settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
+  outcome?: MatchOutcome;
+  ratingResult?: MatchRatingResultDTO;
   lastActivityAt?: string;
   createdAt?: string;
   inviteUrl?: string;

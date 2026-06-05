@@ -12,6 +12,8 @@ import type { GameOverState, RoomState, WinningLine } from './types';
 interface GameOverPayload {
   room: RoomState;
   winnerId: string;
+  outcome?: RoomState['outcome'];
+  ratingResult?: RoomState['ratingResult'];
   winningLine?: WinningLine;
 }
 
@@ -75,9 +77,13 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
       syncRoom(nextRoom);
     };
 
-    const handleGameOverEvent = async ({ room: nextRoom, winnerId, winningLine }: GameOverPayload) => {
+    const handleGameOverEvent = async ({ room: nextRoom, winnerId, outcome, ratingResult, winningLine }: GameOverPayload) => {
+      const resolvedOutcome = outcome ?? nextRoom.outcome;
+      const resolvedRatingResult = ratingResult ?? nextRoom.ratingResult;
       const nextGameOver = {
         winnerId,
+        ...(resolvedOutcome ? { outcome: resolvedOutcome } : {}),
+        ...(resolvedRatingResult ? { ratingResult: resolvedRatingResult } : {}),
         ...(winningLine ? { winningLine } : {}),
       };
       syncRoom(nextRoom, nextGameOver);

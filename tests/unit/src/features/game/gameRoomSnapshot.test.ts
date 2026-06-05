@@ -48,14 +48,37 @@ describe('game room snapshot helpers', () => {
     const key = getGameRoomSessionKey({ roomId: 'room-1', userId: 'user-1', enabled: true });
     assert.ok(key);
 
+    const ratingResult = {
+      status: 'applied' as const,
+      outcome: 'player2_win' as const,
+      formulaVersion: 'fresh-db-elo-v1',
+      player1: {
+        userId: 'user-1',
+        before: 300,
+        delta: -20,
+        after: 280,
+      },
+      player2: {
+        userId: 'user-2',
+        before: 300,
+        delta: 20,
+        after: 320,
+      },
+    };
     const snapshot = buildGameRoomSnapshot(key, makeRoom({
       status: 'completed',
       winnerId: 'user-2',
+      outcome: 'player2_win',
+      ratingResult,
     }));
 
     assert.deepEqual(getVisibleGameRoomSnapshot(snapshot, key), {
       room: snapshot.room,
-      gameOver: { winnerId: 'user-2' },
+      gameOver: {
+        winnerId: 'user-2',
+        outcome: 'player2_win',
+        ratingResult,
+      },
     });
   });
 

@@ -17,6 +17,7 @@ const deviceCookieName = '4real-did';
 const publicMatchesUpdatedEvent = 'public-matches-updated';
 const defaultPassword = 'CorrectHorseBatteryStaple!';
 const commissionRate = 0.1;
+const startingElo = 300;
 
 if (!fs.existsSync(indexPath)) {
   console.error('Missing dist/index.html. Run `npm run build` before Playwright.');
@@ -607,7 +608,7 @@ function buildRoomState(match) {
         userId,
         username: user?.username ?? (index === 0 ? match.p1Username : match.p2Username ?? 'Player'),
         socketId: null,
-        elo: user?.elo ?? 1000,
+        elo: user?.elo ?? startingElo,
       };
     });
 
@@ -881,7 +882,7 @@ function createApp() {
       username,
       password,
       balance: 0,
-      elo: 1000,
+      elo: startingElo,
       isAdmin: false,
       emailVerified: false,
       mfaEnabled: false,

@@ -1,5 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+import type { MatchOutcome, MatchRatingResultDTO } from '../types/api.ts';
+
 export interface IMatch extends Document {
   roomId: string;
   player1Id: mongoose.Types.ObjectId;
@@ -9,6 +11,8 @@ export interface IMatch extends Document {
   status: 'waiting' | 'active' | 'completed';
   winnerId?: string; // 'draw', player1Id, or player2Id
   settlementReason?: 'winner' | 'draw' | 'waiting_expired' | 'active_expired' | 'resigned';
+  outcome?: MatchOutcome;
+  ratingResult?: MatchRatingResultDTO;
   wager: string;
   isPrivate: boolean;
   inviteTokenHash?: string;
@@ -29,6 +33,52 @@ const MatchSchema: Schema = new Schema({
   settlementReason: {
     type: String,
     enum: ['winner', 'draw', 'waiting_expired', 'active_expired', 'resigned'],
+  },
+  outcome: {
+    type: String,
+    enum: ['player1_win', 'player2_win', 'draw', 'no_contest'],
+  },
+  ratingResult: {
+    status: {
+      type: String,
+      enum: ['applied', 'skipped', 'pending', 'reversed'],
+    },
+    outcome: {
+      type: String,
+      enum: ['player1_win', 'player2_win', 'draw', 'no_contest'],
+    },
+    formulaVersion: { type: String },
+    player1: {
+      userId: { type: String },
+      before: { type: Number },
+      delta: { type: Number },
+      after: { type: Number },
+    },
+    player2: {
+      userId: { type: String },
+      before: { type: Number },
+      delta: { type: Number },
+      after: { type: Number },
+    },
+    ratingEventId: { type: String },
+    skipReason: {
+      type: String,
+      enum: [
+        'waiting_expired',
+        'waiting_cancelled',
+        'no_opponent',
+        'invalid_winner',
+        'no_contest',
+        'suspicious',
+        'disputed',
+        'refunded',
+        'repeat_pair_limit',
+        'rating_not_required',
+      ],
+    },
+    kFactor: { type: Number },
+    repeatPairMultiplier: { type: Number },
+    previousPairRatedMatches: { type: Number },
   },
   wager: { type: String, default: '0.000000', match: /^\d+\.\d{6}$/ },
   isPrivate: { type: Boolean, default: false },

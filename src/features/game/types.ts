@@ -1,4 +1,4 @@
-import type { MatchMoveDTO } from '../../types/api';
+import type { MatchDTO, MatchMoveDTO, MatchOutcome, MatchRatingResultDTO } from '../../types/api';
 
 export type BoardCell = 'R' | 'B' | null;
 export type WinningLine = [number, number][];
@@ -19,11 +19,16 @@ export interface RoomState {
   moves: MatchMoveDTO[];
   wager: number;
   winnerId?: string;
+  settlementReason?: MatchDTO['settlementReason'];
+  outcome?: MatchOutcome;
+  ratingResult?: MatchRatingResultDTO;
   projectedWinnerAmount: number;
   commissionRate: number;
 }
 
 export interface GameOverState {
   winnerId: string;
+  outcome?: MatchOutcome;
+  ratingResult?: MatchRatingResultDTO;
   winningLine?: WinningLine;
 }

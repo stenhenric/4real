@@ -3,8 +3,10 @@ import test, { mock, type TestContext } from 'node:test';
 import mongoose from 'mongoose';
 
 import { Match } from '../../../../server/models/Match.ts';
+import { User } from '../../../../server/models/User.ts';
 import { AuditService } from '../../../../server/services/audit.service.ts';
 import { MatchService } from '../../../../server/services/match.service.ts';
+import { RatingService } from '../../../../server/services/rating.service.ts';
 import { TransactionService } from '../../../../server/services/transaction.service.ts';
 import { UserService } from '../../../../server/services/user.service.ts';
 import { createMatchRequestSchema } from '../../../../server/validation/request-schemas.ts';
@@ -48,6 +50,8 @@ function createMatchDocument({
     status,
     winnerId: undefined as string | undefined,
     settlementReason: undefined as string | undefined,
+    outcome: undefined as 'player1_win' | 'player2_win' | 'draw' | 'no_contest' | undefined,
+    ratingResult: undefined as unknown,
     wager,
     isPrivate,
     moveHistory: [],
@@ -75,6 +79,16 @@ function createResolvedQuery<T>(result: T) {
     },
   };
 }
+
+test('fresh users default to 300 Elo at the model layer', () => {
+  const user = new User({
+    email: 'fresh-player@example.com',
+    username: 'freshplayer',
+    passwordHash: 'hashed-password',
+  });
+
+  assert.equal(user.elo, 300);
+});
 
 test('joinMatch rejects the host joining their own waiting match without locking a wager', async (t) => {
   registerSessionCleanup(t);
@@ -252,6 +266,42 @@ test('resignMatch rejects non-participants without settling the match', async (t
   assert.equal(match.settlementReason, undefined);
 });
 
+test('completeMatch rejects non-participant winners before rating or settlement', async (t) => {
+  registerSessionCleanup(t);
+
+  const hostId = new mongoose.Types.ObjectId();
+  const guestId = new mongoose.Types.ObjectId();
+  const outsiderId = new mongoose.Types.ObjectId();
+  const match = createMatchDocument({
+    roomId: 'invalid-winner-room',
+    player1Id: hostId,
+    player2Id: guestId,
+    status: 'active',
+    wager: '0.000000',
+  });
+  const getMatchMock = mock.method(MatchService, 'getMatchByRoomId', async () => match as any);
+  const ratingMock = mock.method(RatingService, 'applyMatchRating', async () => {
+    throw new Error('rating must not run for invalid winners');
+  });
+
+  t.after(() => getMatchMock.mock.restore());
+  t.after(() => ratingMock.mock.restore());
+
+  await assert.rejects(
+    MatchService.completeMatch(match.roomId, outsiderId.toString(), []),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, 'MATCH_INVALID_WINNER');
+      return true;
+    },
+  );
+
+  assert.equal(ratingMock.mock.callCount(), 0);
+  assert.equal(match.status, 'active');
+  assert.equal(match.winnerId, undefined);
+  assert.equal(match.settlementReason, undefined);
+  assert.equal(match.savedWithSession, false);
+});
+
 test('getActiveMatches only returns public waiting matches using the indexed listing query', async (t) => {
   let capturedFilter: Record<string, unknown> | undefined;
   const findMock = mock.method(Match, 'find', (filter: Record<string, unknown>) => {
@@ -301,15 +351,21 @@ test('expireStaleMatches does not settle an active match after fresh activity wi
   assert.equal(refreshedMatch.savedWithSession, false);
 });
 
-test('expireStaleMatches settles a still-stale active match once', async (t) => {
+test('expireStaleMatches settles a still-stale active match as an inactive-player loss', async (t) => {
   registerSessionCleanup(t);
 
+  const hostId = new mongoose.Types.ObjectId();
+  const guestId = new mongoose.Types.ObjectId();
   const activeCandidate = createMatchDocument({
     roomId: 'stale-room',
+    player1Id: hostId,
+    player2Id: guestId,
     status: 'active',
   });
   const staleMatch = createMatchDocument({
     roomId: 'stale-room',
+    player1Id: hostId,
+    player2Id: guestId,
     status: 'active',
   });
   staleMatch.lastActivityAt = new Date(0);
@@ -320,16 +376,47 @@ test('expireStaleMatches settles a still-stale active match once', async (t) => 
       : createResolvedQuery([])
   ));
   const getMatchMock = mock.method(MatchService, 'getMatchByRoomId', async () => staleMatch as any);
+  const ratingMock = mock.method(RatingService, 'applyMatchRating', async () => ({
+    status: 'applied',
+    outcome: 'player2_win',
+    formulaVersion: 'fresh-db-elo-v1',
+    player1: {
+      userId: hostId.toString(),
+      before: 300,
+      delta: -20,
+      after: 280,
+    },
+    player2: {
+      userId: guestId.toString(),
+      before: 300,
+      delta: 20,
+      after: 320,
+    },
+    ratingEventId: new mongoose.Types.ObjectId().toString(),
+    kFactor: 40,
+    repeatPairMultiplier: 1,
+    previousPairRatedMatches: 0,
+  } as const));
 
   t.after(() => findMock.mock.restore());
   t.after(() => getMatchMock.mock.restore());
+  t.after(() => ratingMock.mock.restore());
 
   const result = await MatchService.expireStaleMatches();
 
   assert.deepEqual(result, { waitingExpired: 0, activeExpired: 1 });
   assert.equal(staleMatch.status, 'completed');
+  assert.equal(staleMatch.winnerId, guestId.toString());
   assert.equal(staleMatch.settlementReason, 'active_expired');
+  assert.equal(staleMatch.outcome, 'player2_win');
   assert.equal(staleMatch.savedWithSession, true);
+  assert.equal(ratingMock.mock.callCount(), 1);
+  const ratingInput = ratingMock.mock.calls[0]?.arguments[0];
+  assert.ok(ratingInput);
+  assert.equal(ratingInput.player1Id, hostId.toString());
+  assert.equal(ratingInput.player2Id, guestId.toString());
+  assert.equal(ratingInput.outcome, 'player2_win');
+  assert.equal(ratingInput.settlementReason, 'active_expired');
 });
 
 test('match create request validation defaults free public matches and rejects malformed input', () => {

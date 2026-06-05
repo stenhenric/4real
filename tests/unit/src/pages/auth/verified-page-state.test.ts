@@ -12,7 +12,7 @@ const completeUser: UserDTO = {
   username: 'sten',
   email: 'sten@example.test',
   balance: '0',
-  elo: 1000,
+  elo: 300,
   isAdmin: false,
   stats: { wins: 0, losses: 0, draws: 0 },
   avatar: { preset: 'pencil-face-01', color: 'ink' },

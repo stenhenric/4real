@@ -2,6 +2,7 @@ import { ensureAuthSessionIndexes } from '../models/AuthSession.ts';
 import { Match } from '../models/Match.ts';
 import { OneTimeToken } from '../models/OneTimeToken.ts';
 import { Order } from '../models/Order.ts';
+import { RatingEvent } from '../models/RatingEvent.ts';
 import { Transaction } from '../models/Transaction.ts';
 import { User } from '../models/User.ts';
 import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
@@ -28,6 +29,8 @@ export const REQUIRED_DATABASE_INDEXES = [
   { collection: 'transactions', name: 'createdAt_-1__id_-1' },
   { collection: 'withdrawals', name: 'status_1_startedAt_1' },
   { collection: 'users', name: 'leaderboard_public_by_elo' },
+  { collection: 'ratingevents', name: 'rating_events_match_unique' },
+  { collection: 'ratingevents', name: 'rating_events_pair_status_created_at' },
   {
     collection: FailedDepositIngestionRepository.collectionName,
     name: 'status_1_resolvedAt_1_transferData.transaction_now_1',
@@ -90,6 +93,7 @@ export async function setupIndexes() {
     User.createIndexes(),
     OneTimeToken.createIndexes(),
     Match.createIndexes(),
+    RatingEvent.createIndexes(),
     Order.createIndexes(),
     Transaction.createIndexes(),
   ]);

@@ -34,7 +34,11 @@ function getCompletedRoomGameOver(room: RoomState): GameOverState | null {
     return null;
   }
 
-  return { winnerId: room.winnerId };
+  return {
+    winnerId: room.winnerId,
+    ...(room.outcome ? { outcome: room.outcome } : {}),
+    ...(room.ratingResult ? { ratingResult: room.ratingResult } : {}),
+  };
 }
 
 export function buildGameRoomSnapshot(

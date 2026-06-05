@@ -206,6 +206,8 @@ export function serializeMatch(match: IMatch, options?: { inviteUrl?: string }):
     ...(match.player2Id ? { player2Id: serializeId(match.player2Id) } : {}),
     ...(match.winnerId ? { winnerId: match.winnerId } : {}),
     ...(match.settlementReason ? { settlementReason: match.settlementReason } : {}),
+    ...(match.outcome ? { outcome: match.outcome } : {}),
+    ...(match.ratingResult ? { ratingResult: match.ratingResult } : {}),
     ...(match.lastActivityAt ? { lastActivityAt: match.lastActivityAt.toISOString() } : {}),
     ...(match.createdAt ? { createdAt: match.createdAt.toISOString() } : {}),
     ...(options?.inviteUrl ? { inviteUrl: options.inviteUrl } : {}),

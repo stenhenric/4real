@@ -9,6 +9,7 @@ import { trustFilter } from '../utils/trusted-filter.ts';
 import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 import { conflict } from '../utils/http-error.ts';
 import { cleanUsername, normalizeEmail, normalizeUsername } from './auth-identity.service.ts';
+import { RATING_SYSTEM } from '../../shared/rating.ts';
 
 export interface CreateUserInput {
   username?: string | null;
@@ -49,7 +50,7 @@ export class UserService {
         passwordHash: 'none',
         emailVerifiedAt: new Date(),
         balance: '0.000000',
-        elo: 1000,
+        elo: RATING_SYSTEM.startingRating,
         isAdmin: true,
       });
       await user.save();
@@ -83,7 +84,7 @@ export class UserService {
         emailVerifiedAt: userData.emailVerifiedAt ?? undefined,
         googleSubject: userData.googleSubject ?? undefined,
         balance: '0.000000',
-        elo: userData.elo ?? 1000,
+        elo: userData.elo ?? RATING_SYSTEM.startingRating,
         isAdmin: userData.isAdmin ?? false,
       });
       const saved = await user.save({ session });
@@ -329,14 +330,24 @@ export class UserService {
     result: 'win' | 'loss' | 'draw',
     session?: mongoose.ClientSession,
   ): Promise<IUser | null> {
-    const incQuery: Record<string, number> = { elo: eloChange };
+    const existingUser = await this.findById(id, session);
+    if (!existingUser) {
+      return null;
+    }
+
+    const incQuery: Record<string, number> = {};
     if (result === 'win') incQuery['stats.wins'] = 1;
     else if (result === 'loss') incQuery['stats.losses'] = 1;
     else if (result === 'draw') incQuery['stats.draws'] = 1;
 
     return User.findByIdAndUpdate(
       id,
-      { $inc: incQuery },
+      {
+        $set: {
+          elo: Math.max(RATING_SYSTEM.minimumRating, existingUser.elo + eloChange),
+        },
+        ...(Object.keys(incQuery).length > 0 ? { $inc: incQuery } : {}),
+      },
       { returnDocument: 'after', ...(session ? { session } : {}) },
     );
   }

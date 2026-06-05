@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import { getEnv } from '../config/env.ts';
 import { Match } from '../models/Match.ts';
 import type { IMatch } from '../models/Match.ts';
-import type { MatchMoveDTO } from '../types/api.ts';
+import type { MatchMoveDTO, MatchOutcome, MatchRatingResultDTO } from '../types/api.ts';
 import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 import { badRequest, conflict, internalServerError, notFound } from '../utils/http-error.ts';
 import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
@@ -14,6 +14,7 @@ import { AuditService } from './audit.service.ts';
 import { TransactionService } from './transaction.service.ts';
 import { CacheKeys, invalidateCacheKeys } from './cache.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
+import { RatingService } from './rating.service.ts';
 
 type MatchSettlementReason = NonNullable<IMatch['settlementReason']>;
 
@@ -42,6 +43,36 @@ interface MatchSettlementOptions {
   session: mongoose.ClientSession;
   requestId?: string | undefined;
   timeoutPlayerId?: string | undefined;
+}
+
+function getParticipantOutcome({
+  p1IdStr,
+  p2IdStr,
+  winnerId,
+  settlementReason,
+}: {
+  p1IdStr: string;
+  p2IdStr?: string | undefined;
+  winnerId: string;
+  settlementReason: MatchSettlementReason;
+}): MatchOutcome {
+  if (winnerId === 'draw') {
+    if (settlementReason !== 'draw') {
+      throw conflict('This match outcome cannot be settled as a draw', 'MATCH_INVALID_WINNER');
+    }
+
+    return 'draw';
+  }
+
+  if (winnerId === p1IdStr) {
+    return 'player1_win';
+  }
+
+  if (p2IdStr && winnerId === p2IdStr) {
+    return 'player2_win';
+  }
+
+  throw conflict('Winner must be one of the match participants', 'MATCH_INVALID_WINNER');
 }
 
 function now(): Date {
@@ -350,6 +381,7 @@ export class MatchService {
         match.status = 'completed';
         match.winnerId = 'draw';
         match.settlementReason = 'resigned';
+        match.outcome = 'no_contest';
         match.lastActivityAt = now();
         return match.save({ session: activeSession });
       }
@@ -523,6 +555,7 @@ export class MatchService {
         match.status = 'completed';
         match.winnerId = 'draw';
         match.settlementReason = 'waiting_expired';
+        match.outcome = 'no_contest';
         match.lastActivityAt = now();
         await match.save({ session });
         expired = true;
@@ -556,9 +589,16 @@ export class MatchService {
 
       const moveHistory = match.moveHistory ?? [];
       const timeoutPlayerId = moveHistory.length % 2 === 0 ? match.player1Id.toString() : match.player2Id?.toString();
+      const player1Id = match.player1Id.toString();
+      const player2Id = match.player2Id?.toString();
+      if (!timeoutPlayerId || !player2Id) {
+        return null;
+      }
+      const winnerId = timeoutPlayerId === player1Id ? player2Id : player1Id;
+
       return this.finalizeMatch({
         match,
-        winnerId: 'draw',
+        winnerId,
         settlementReason: 'active_expired',
         moveHistory,
         session,
@@ -593,10 +633,24 @@ export class MatchService {
 
     const p1IdStr = match.player1Id.toString();
     const p2IdStr = match.player2Id?.toString();
+    const outcome = getParticipantOutcome({
+      p1IdStr,
+      p2IdStr,
+      winnerId,
+      settlementReason,
+    });
 
-    const shouldUpdateElo = Boolean(p2IdStr) && settlementReason !== 'waiting_expired';
-    if (shouldUpdateElo) {
-      await this.handleEloUpdate(p1IdStr, p2IdStr, winnerId, session);
+    let ratingResult: MatchRatingResultDTO | undefined;
+    if (p2IdStr) {
+      ratingResult = await RatingService.applyMatchRating({
+        matchId: match._id,
+        roomId: match.roomId,
+        player1Id: p1IdStr,
+        player2Id: p2IdStr,
+        outcome,
+        settlementReason,
+        session,
+      });
     }
 
     if (isPositiveUsdtAmount(match.wager)) {
@@ -616,57 +670,14 @@ export class MatchService {
     match.status = 'completed';
     match.winnerId = winnerId;
     match.settlementReason = settlementReason;
+    match.outcome = outcome;
+    if (ratingResult) {
+      match.ratingResult = ratingResult;
+    }
     match.moveHistory = moveHistory;
     match.lastActivityAt = now();
 
     return match.save({ session });
-  }
-
-  private static async handleEloUpdate(
-    p1IdStr: string,
-    p2IdStr: string | undefined,
-    winnerId: string,
-    session: mongoose.ClientSession,
-  ): Promise<void> {
-    const p1 = await UserService.findById(p1IdStr, session);
-    const p2 = p2IdStr ? await UserService.findById(p2IdStr, session) : null;
-
-    if (!p1 || !p2 || !p2IdStr) {
-      return;
-    }
-
-    const K = 32;
-    const r1 = Math.pow(10, p1.elo / 400);
-    const r2 = Math.pow(10, p2.elo / 400);
-    const e1 = r1 / (r1 + r2);
-    const e2 = r2 / (r1 + r2);
-
-    let s1 = 0.5;
-    let s2 = 0.5;
-    if (winnerId === p1IdStr) {
-      s1 = 1;
-      s2 = 0;
-    } else if (winnerId === p2IdStr) {
-      s1 = 0;
-      s2 = 1;
-    }
-
-    const eloChange1 = Math.round(K * (s1 - e1));
-    const eloChange2 = Math.round(K * (s2 - e2));
-
-    let p1Result: 'win' | 'loss' | 'draw' = 'draw';
-    let p2Result: 'win' | 'loss' | 'draw' = 'draw';
-
-    if (winnerId === p1IdStr) {
-      p1Result = 'win';
-      p2Result = 'loss';
-    } else if (winnerId === p2IdStr) {
-      p1Result = 'loss';
-      p2Result = 'win';
-    }
-
-    await UserService.updateStatsAndElo(p1IdStr, eloChange1, p1Result, session);
-    await UserService.updateStatsAndElo(p2IdStr, eloChange2, p2Result, session);
   }
 
   private static async handleWagerSettlement({

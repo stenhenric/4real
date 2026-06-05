@@ -167,6 +167,8 @@ export function registerGameSocketHandlers(io: Server, realtimeMatchService: Rea
               io.to(result.room.roomId).emit('game-over', {
                 room: result.room,
                 winnerId: result.winnerId,
+                ...(result.room.outcome ? { outcome: result.room.outcome } : {}),
+                ...(result.room.ratingResult ? { ratingResult: result.room.ratingResult } : {}),
                 ...(result.winningLine ? { winningLine: result.winningLine } : {}),
               });
               return;

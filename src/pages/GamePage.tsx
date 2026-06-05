@@ -19,6 +19,7 @@ import { getApiErrorMessage } from '../utils/errors';
 import { createInitialGamePreviewState, gamePreviewReducer } from './gamePreviewReducer';
 import type { GameOverState, RoomPlayer, RoomState } from '../features/game/types';
 import type { MatchDTO } from '../types/api';
+import { RATING_SYSTEM } from '../../shared/rating';
 
 const BOARD_COLUMNS = Array.from({ length: 7 }, (_, index) => index);
 
@@ -93,7 +94,7 @@ function PlayerSummary({
         {isRightAligned ? <div aria-label={`${label} plays ${colorClass.includes('red') ? 'Red' : 'Blue'}`} className={cn('size-4 border-2 border-black', colorClass)} /> : null}
       </span>
       <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold">
-        <span className="bg-black/5 px-2 py-0.5">ELO {elo || 1000}</span>
+        <span className="bg-black/5 px-2 py-0.5">ELO {elo ?? RATING_SYSTEM.startingRating}</span>
       </div>
     </div>
   );
@@ -365,6 +366,90 @@ function GameSidebar({
 }
 
 
+function formatRatingDelta(delta: number): string {
+  return delta > 0 ? `+${delta}` : String(delta);
+}
+
+function getRatingSkipLabel(skipReason: NonNullable<GameOverState['ratingResult']>['skipReason']): string {
+  if (skipReason === 'repeat_pair_limit') {
+    return 'repeat match limit';
+  }
+
+  if (skipReason === 'no_contest') {
+    return 'no contest';
+  }
+
+  if (skipReason === 'refunded') {
+    return 'refunded match';
+  }
+
+  return 'not rated';
+}
+
+function getRatingSummary(gameOver: GameOverState, userId: string | undefined): string | null {
+  const ratingResult = gameOver.ratingResult;
+  if (!ratingResult || !userId) {
+    return null;
+  }
+
+  const playerRating = ratingResult.player1.userId === userId
+    ? ratingResult.player1
+    : ratingResult.player2.userId === userId
+      ? ratingResult.player2
+      : null;
+  const opponentRating = ratingResult.player1.userId === userId
+    ? ratingResult.player2
+    : ratingResult.player2.userId === userId
+      ? ratingResult.player1
+      : null;
+
+  if (!playerRating) {
+    return null;
+  }
+
+  if (ratingResult.status === 'applied') {
+    const opponentDelta = opponentRating ? ` · Opponent ${formatRatingDelta(opponentRating.delta)}` : '';
+    return `ELO ${formatRatingDelta(playerRating.delta)} -> ${playerRating.after}${opponentDelta}`;
+  }
+
+  if (ratingResult.status === 'skipped') {
+    return `Rating unchanged: ${getRatingSkipLabel(ratingResult.skipReason)}`;
+  }
+
+  if (ratingResult.status === 'pending') {
+    return 'Rating update pending';
+  }
+
+  return 'Rating update reversed';
+}
+
+function getVerdictHeadline({
+  gameOver,
+  isDraw,
+  isWin,
+  room,
+}: {
+  gameOver: GameOverState;
+  isDraw: boolean;
+  isWin: boolean;
+  room: RoomState;
+}): string {
+  if (isDraw || gameOver.outcome === 'draw') {
+    return 'This match is a draw';
+  }
+
+  if (room.settlementReason === 'active_expired') {
+    return isWin ? 'Opponent timed out' : 'You timed out';
+  }
+
+  if (room.settlementReason === 'resigned') {
+    return isWin ? 'Opponent resigned' : 'You resigned';
+  }
+
+  return isWin ? 'You are victorious!' : 'You lost this match';
+}
+
+
 function VerdictModal({
   gameOver,
   onReturnToLobby,
@@ -379,6 +464,7 @@ function VerdictModal({
   const lobbyButtonRef = useRef<HTMLButtonElement>(null);
   const isWin = gameOver.winnerId === userId;
   const isDraw = gameOver.winnerId === 'draw';
+  const ratingSummary = getRatingSummary(gameOver, userId);
 
   const fill = isWin
     ? 'var(--color-success-bg)'
@@ -388,11 +474,7 @@ function VerdictModal({
 
   const Icon = isWin ? Trophy : isDraw ? Scale : AlertTriangle;
 
-  const headline = isWin
-    ? 'You are victorious!'
-    : isDraw
-      ? 'This match is a draw'
-      : 'You lost this match';
+  const headline = getVerdictHeadline({ gameOver, isDraw, isWin, room });
 
   const hasWager = moneyToNumber(room.wager) > 0;
 
@@ -443,6 +525,12 @@ function VerdictModal({
             ) : (
               <div className="mb-4" />
             )}
+
+            {ratingSummary ? (
+              <p className="mb-4 font-mono text-xs font-bold uppercase opacity-70">
+                {ratingSummary}
+              </p>
+            ) : null}
 
             <SketchyButton
               className="w-full"

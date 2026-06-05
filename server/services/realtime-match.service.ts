@@ -181,11 +181,19 @@ export class RealtimeMatchService {
 
       const winner = checkWin(room.board, row, col, symbol);
       if (winner) {
-        room.status = 'completed';
-        room.currentTurn = null;
-        room.winnerId = userId;
-        await MatchService.completeMatch(normalizedRoomId, userId, room.moves);
-        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, room);
+        const knownSocketIds = new Map(room.players.map((entry) => [entry.userId, entry.socketId]));
+        const completedMatch = await MatchService.completeMatch(normalizedRoomId, userId, room.moves);
+        const completedRoom = completedMatch ? await createRoomStateFromMatch(completedMatch) : {
+          ...room,
+          status: 'completed' as const,
+          currentTurn: null,
+          winnerId: userId,
+        };
+        completedRoom.players = completedRoom.players.map((entry) => ({
+          ...entry,
+          socketId: knownSocketIds.get(entry.userId) ?? null,
+        }));
+        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, completedRoom);
 
         return {
           type: 'game-over',
@@ -196,11 +204,19 @@ export class RealtimeMatchService {
       }
 
       if (room.moves.length === 42) {
-        room.status = 'completed';
-        room.currentTurn = null;
-        room.winnerId = 'draw';
-        await MatchService.completeMatch(normalizedRoomId, 'draw', room.moves);
-        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, room);
+        const knownSocketIds = new Map(room.players.map((entry) => [entry.userId, entry.socketId]));
+        const completedMatch = await MatchService.completeMatch(normalizedRoomId, 'draw', room.moves);
+        const completedRoom = completedMatch ? await createRoomStateFromMatch(completedMatch) : {
+          ...room,
+          status: 'completed' as const,
+          currentTurn: null,
+          winnerId: 'draw',
+        };
+        completedRoom.players = completedRoom.players.map((entry) => ({
+          ...entry,
+          socketId: knownSocketIds.get(entry.userId) ?? null,
+        }));
+        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, completedRoom);
 
         return {
           type: 'game-over',
