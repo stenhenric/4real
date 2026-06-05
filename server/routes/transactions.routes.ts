@@ -3,6 +3,7 @@ import {
   getUserTransactions,
   getAllTransactions,
   generateDepositMemoHandler,
+  getDepositStatusHandler,
   getWithdrawalStatusHandler,
   prepareTonConnectDepositHandler,
   requestWithdrawalHandler,
@@ -26,6 +27,7 @@ router.use(authenticateToken, requireVerifiedAccount);
 router.get('/', asyncHandler(getUserTransactions));
 router.get('/all', requireAdmin, requireMfaStepUp, asyncHandler(getAllTransactions));
 router.get('/withdrawals/:withdrawalId', asyncHandler(getWithdrawalStatusHandler));
+router.get('/deposit/status/:memo', asyncHandler(getDepositStatusHandler));
 router.post('/deposit/memo', createDepositOperationRateLimiter(), asyncHandler(generateDepositMemoHandler));
 router.post('/deposit/prepare', createDepositOperationRateLimiter(), validateBody(prepareTonConnectDepositRequestSchema), asyncHandler(prepareTonConnectDepositHandler));
 router.post('/withdraw', createWithdrawalRateLimiter(), validateBody(withdrawRequestSchema), asyncHandler(requestWithdrawalHandler));

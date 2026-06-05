@@ -11,6 +11,7 @@ import { isHandledAuthRedirectCode } from '../../features/auth/auth-routing';
 import { updateMerchantAdminConfig } from '../../services/merchant-config.service';
 import type { MerchantConfigDTO, MerchantDashboardDTO } from '../../types/api';
 import { formatDateTime, formatMoney } from '../../features/merchant/format';
+import { formatWalletAddressForDisplay } from '../../features/bank/walletAddressPresentation';
 import { moneyToNumber, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 
@@ -104,11 +105,15 @@ function WalletAddressesPanel({ liquidity }: { liquidity: MerchantDashboardDTO['
       <div className="mt-4 space-y-4 font-mono text-sm">
         <div className="border border-black/10 bg-black/5 p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Hot wallet</p>
-          <p className="mt-2 break-all">{liquidity.hotWalletAddress}</p>
+          <p className="mt-2 break-all" title={formatWalletAddressForDisplay(liquidity.hotWalletAddress)}>
+            {formatWalletAddressForDisplay(liquidity.hotWalletAddress)}
+          </p>
         </div>
         <div className="border border-black/10 bg-black/5 p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-50">Hot USDT jetton wallet</p>
-          <p className="mt-2 break-all">{liquidity.hotJettonWallet}</p>
+          <p className="mt-2 break-all" title={formatWalletAddressForDisplay(liquidity.hotJettonWallet)}>
+            {formatWalletAddressForDisplay(liquidity.hotJettonWallet)}
+          </p>
         </div>
       </div>
     </SketchyContainer>

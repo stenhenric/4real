@@ -22,6 +22,8 @@ describe('depositFlowReducer', () => {
       amountError: null,
       reviewAmount: null,
       paymentDetails: null,
+      confirmedDeposit: null,
+      statusError: null,
       loadingDetails: false,
       sendingTransaction: false,
     });
@@ -40,6 +42,8 @@ describe('depositFlowReducer', () => {
       amountError: null,
       reviewAmount: null,
       paymentDetails: null,
+      confirmedDeposit: null,
+      statusError: null,
       loadingDetails: false,
       sendingTransaction: false,
     });
@@ -105,5 +109,66 @@ describe('depositFlowReducer', () => {
     assert.equal(reset.step, 'amount');
     assert.equal(reset.reviewAmount, null);
     assert.equal(reset.paymentDetails, null);
+  });
+
+  it('keeps the sent transaction pending until a confirmed deposit status arrives', () => {
+    const details = depositFlowReducer(createInitialDepositFlowState(), {
+      type: 'DETAILS_READY',
+      data: memo,
+      amountUsdt: '20.000000',
+    });
+    const pending = depositFlowReducer(details, { type: 'TRANSACTION_SENT' });
+
+    const stillPending = depositFlowReducer(pending, {
+      type: 'STATUS_RECEIVED',
+      depositStatus: {
+        memo: 'deposit-memo',
+        status: 'pending',
+        expiresAt: '2026-01-01T00:15:00.000Z',
+      },
+    });
+
+    assert.equal(stillPending.step, 'pending');
+    assert.equal(stillPending.statusError, null);
+
+    const confirmed = depositFlowReducer(stillPending, {
+      type: 'STATUS_RECEIVED',
+      depositStatus: {
+        memo: 'deposit-memo',
+        status: 'confirmed',
+        amountUsdt: '20.000000',
+        txHash: 'tx-confirmed',
+        confirmedAt: '2026-01-01T00:01:00.000Z',
+      },
+    });
+
+    assert.equal(confirmed.step, 'confirmed');
+    assert.deepEqual(confirmed.confirmedDeposit, {
+      memo: 'deposit-memo',
+      status: 'confirmed',
+      amountUsdt: '20.000000',
+      txHash: 'tx-confirmed',
+      confirmedAt: '2026-01-01T00:01:00.000Z',
+    });
+  });
+
+  it('keeps pending deposit details visible when a status refresh fails', () => {
+    const pending = depositFlowReducer(
+      depositFlowReducer(createInitialDepositFlowState(), {
+        type: 'DETAILS_READY',
+        data: memo,
+        amountUsdt: '20.000000',
+      }),
+      { type: 'TRANSACTION_SENT' },
+    );
+
+    const failed = depositFlowReducer(pending, {
+      type: 'STATUS_FAILED',
+      message: 'Status updates are temporarily unavailable.',
+    });
+
+    assert.equal(failed.step, 'pending');
+    assert.equal(failed.statusError, 'Status updates are temporarily unavailable.');
+    assert.deepEqual(failed.paymentDetails, pending.paymentDetails);
   });
 });

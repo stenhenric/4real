@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 
-import { getAllTransactions, getUserTransactions, getWithdrawalStatusHandler } from '../../../../server/controllers/transaction.controller.ts';
+import {
+  getAllTransactions,
+  getDepositStatusHandler,
+  getUserTransactions,
+  getWithdrawalStatusHandler,
+} from '../../../../server/controllers/transaction.controller.ts';
 import { Transaction } from '../../../../server/models/Transaction.ts';
+import { DepositMemoRepository } from '../../../../server/repositories/deposit-memo.repository.ts';
+import { DepositRepository } from '../../../../server/repositories/deposit.repository.ts';
 import { WithdrawalRepository } from '../../../../server/repositories/withdrawal.repository.ts';
 import { TransactionService } from '../../../../server/services/transaction.service.ts';
 
@@ -67,6 +74,70 @@ test('getAllTransactions bounds limit and offset before fetching admin transacti
 
   assert.deepEqual(capturedArgs, [500, 10_000]);
   assert.deepEqual(res.payload, []);
+});
+
+test('getDepositStatusHandler returns pending status for an active user memo', async (t) => {
+  const depositLookupMock = mock.method(DepositRepository, 'findByUserAndMemo', async () => null);
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByUserAndMemo', async () => ({
+    userId: 'user-1',
+    memo: 'memo-user-1',
+    createdAt: new Date('2026-06-06T08:00:00.000Z'),
+    expiresAt: new Date('2099-06-06T08:15:00.000Z'),
+  }));
+  t.after(() => depositLookupMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+
+  const req = {
+    params: { memo: 'memo-user-1' },
+    user: { id: 'user-1' },
+  };
+  const res = createResponseMock();
+
+  await getDepositStatusHandler(req as any, res as any);
+
+  assert.equal(depositLookupMock.mock.callCount(), 1);
+  assert.deepEqual(res.payload, {
+    memo: 'memo-user-1',
+    status: 'pending',
+    expiresAt: '2099-06-06T08:15:00.000Z',
+  });
+});
+
+test('getDepositStatusHandler returns confirmed deposit details for the current user memo', async (t) => {
+  const depositLookupMock = mock.method(DepositRepository, 'findByUserAndMemo', async () => ({
+    txHash: 'tx-confirmed',
+    userId: 'user-1',
+    amountRaw: '12340000',
+    amountDisplay: '12.340000',
+    comment: 'memo-user-1',
+    senderJettonWallet: 'EQSenderJetton',
+    senderAddress: 'EQSenderOwner',
+    txTime: new Date('2026-06-06T08:01:00.000Z'),
+    status: 'confirmed' as const,
+    createdAt: new Date('2026-06-06T08:01:05.000Z'),
+  }));
+  const memoLookupMock = mock.method(DepositMemoRepository, 'findByUserAndMemo', async () => {
+    throw new Error('memo lookup should not be needed after confirmation');
+  });
+  t.after(() => depositLookupMock.mock.restore());
+  t.after(() => memoLookupMock.mock.restore());
+
+  const req = {
+    params: { memo: 'memo-user-1' },
+    user: { id: 'user-1' },
+  };
+  const res = createResponseMock();
+
+  await getDepositStatusHandler(req as any, res as any);
+
+  assert.equal(memoLookupMock.mock.callCount(), 0);
+  assert.deepEqual(res.payload, {
+    memo: 'memo-user-1',
+    status: 'confirmed',
+    amountUsdt: '12.340000',
+    txHash: 'tx-confirmed',
+    confirmedAt: '2026-06-06T08:01:00.000Z',
+  });
 });
 
 test('getWithdrawalStatusHandler returns a generic public error for stuck withdrawals', async (t) => {

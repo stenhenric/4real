@@ -358,6 +358,15 @@ export interface DepositMemoDTO {
   expiresAt?: string;
 }
 
+export interface DepositStatusDTO {
+  memo: string;
+  status: 'pending' | 'confirmed' | 'expired';
+  expiresAt?: string;
+  amountUsdt?: UsdtAmountString;
+  txHash?: string;
+  confirmedAt?: string;
+}
+
 export interface WithdrawRequestDTO {
   toAddress: string;
   amountUsdt: UsdtAmountString;

@@ -28,6 +28,13 @@ export class DepositRepository {
     return this.collection().findOne({ txHash }, session ? { session } : undefined);
   }
 
+  static async findByUserAndMemo(userId: string, memo: string, session?: mongoose.ClientSession) {
+    return this.collection().findOne(
+      { userId, comment: memo },
+      session ? { session } : undefined,
+    );
+  }
+
   static async findByUserId(userId: string, limit?: number) {
     const cursor = this.collection().find({ userId }).sort({ createdAt: -1 });
     return (limit ? cursor.limit(limit) : cursor).toArray();
@@ -37,6 +44,7 @@ export class DepositRepository {
     await this.collection().createIndexes([
       { key: { txHash: 1 }, unique: true },
       { key: { userId: 1, createdAt: -1 } },
+      { key: { userId: 1, comment: 1 } },
       { key: { txTime: -1 } },
     ]);
   }

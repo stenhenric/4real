@@ -2,6 +2,7 @@ import request from './api/apiClient.ts';
 import { createIdempotencyKey } from '../utils/idempotency.ts';
 import type {
   DepositMemoDTO,
+  DepositStatusDTO,
   PreparedTonConnectDepositDTO,
   TransactionFeedDTO,
   WithdrawRequestDTO,
@@ -51,6 +52,13 @@ export function prepareTonConnectDeposit(payload: PrepareTonConnectDepositPayloa
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export function getDepositStatus(memo: string, signal?: AbortSignal) {
+  return request<DepositStatusDTO>(
+    `/transactions/deposit/status/${encodeURIComponent(memo)}`,
+    signal ? { signal } : undefined,
+  );
 }
 
 export function createWithdrawal(payload: WithdrawRequestDTO, options?: { idempotencyKey?: string }) {

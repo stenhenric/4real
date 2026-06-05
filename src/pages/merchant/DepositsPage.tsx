@@ -19,6 +19,7 @@ import type { MerchantDepositReplayResultDTO, MerchantDepositReviewItemDTO } fro
 import { isAbortError } from '../../utils/isAbortError';
 import { cn } from '../../utils/cn';
 import { getApiErrorMessage } from '../../utils/errors';
+import { formatWalletAddressForDisplay } from '../../features/bank/walletAddressPresentation';
 import {
   createInitialDepositsState,
   depositsReducer,
@@ -436,7 +437,9 @@ function DesktopDepositReviews({
                   <div>{formatDateTime(deposit.txTime)}</div>
                   <div className="mt-2 opacity-60">Recorded {formatDateTime(deposit.recordedAt)}</div>
                   {deposit.senderOwnerAddress ? (
-                    <div className="mt-2 break-all opacity-60">Sender {deposit.senderOwnerAddress}</div>
+                    <div className="mt-2 break-all opacity-60" title={formatWalletAddressForDisplay(deposit.senderOwnerAddress)}>
+                      Sender {formatWalletAddressForDisplay(deposit.senderOwnerAddress)}
+                    </div>
                   ) : null}
                 </td>
                 <td className="p-4 text-sm font-mono">

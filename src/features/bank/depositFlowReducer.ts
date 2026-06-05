@@ -1,6 +1,6 @@
-import type { DepositMemoDTO } from '../../types/api';
+import type { DepositMemoDTO, DepositStatusDTO } from '../../types/api';
 
-export type DepositStep = 'amount' | 'review' | 'details' | 'pending';
+export type DepositStep = 'amount' | 'review' | 'details' | 'pending' | 'confirmed';
 
 export interface PaymentDetails {
   data: DepositMemoDTO;
@@ -13,6 +13,8 @@ export interface DepositFlowState {
   amountError: string | null;
   reviewAmount: string | null;
   paymentDetails: PaymentDetails | null;
+  confirmedDeposit: DepositStatusDTO | null;
+  statusError: string | null;
   loadingDetails: boolean;
   sendingTransaction: boolean;
 }
@@ -27,6 +29,8 @@ export type DepositFlowAction =
   | { type: 'TRANSACTION_STARTED' }
   | { type: 'TRANSACTION_SENT' }
   | { type: 'TRANSACTION_FAILED' }
+  | { type: 'STATUS_RECEIVED'; depositStatus: DepositStatusDTO }
+  | { type: 'STATUS_FAILED'; message: string }
   | { type: 'RESET_TO_AMOUNT' };
 
 export function createInitialDepositFlowState(): DepositFlowState {
@@ -36,6 +40,8 @@ export function createInitialDepositFlowState(): DepositFlowState {
     amountError: null,
     reviewAmount: null,
     paymentDetails: null,
+    confirmedDeposit: null,
+    statusError: null,
     loadingDetails: false,
     sendingTransaction: false,
   };
@@ -54,6 +60,8 @@ export function depositFlowReducer(
         amountError: null,
         reviewAmount: null,
         paymentDetails: null,
+        confirmedDeposit: null,
+        statusError: null,
         loadingDetails: false,
         sendingTransaction: false,
       };
@@ -64,6 +72,8 @@ export function depositFlowReducer(
         amountError: action.message,
         reviewAmount: null,
         paymentDetails: null,
+        confirmedDeposit: null,
+        statusError: null,
       };
     case 'REVIEW_READY':
       return {
@@ -72,6 +82,8 @@ export function depositFlowReducer(
         amountError: null,
         reviewAmount: action.amountUsdt,
         paymentDetails: null,
+        confirmedDeposit: null,
+        statusError: null,
         loadingDetails: false,
       };
     case 'DETAILS_REQUESTED':
@@ -88,6 +100,8 @@ export function depositFlowReducer(
           data: action.data,
           amountUsdt: action.amountUsdt,
         },
+        confirmedDeposit: null,
+        statusError: null,
         loadingDetails: false,
       };
     case 'DETAILS_FAILED':
@@ -105,11 +119,30 @@ export function depositFlowReducer(
         ...state,
         step: 'pending',
         sendingTransaction: false,
+        statusError: null,
       };
     case 'TRANSACTION_FAILED':
       return {
         ...state,
         sendingTransaction: false,
+      };
+    case 'STATUS_RECEIVED':
+      if (action.depositStatus.status === 'confirmed') {
+        return {
+          ...state,
+          step: 'confirmed',
+          confirmedDeposit: action.depositStatus,
+          statusError: null,
+        };
+      }
+      return {
+        ...state,
+        statusError: null,
+      };
+    case 'STATUS_FAILED':
+      return {
+        ...state,
+        statusError: action.message,
       };
     case 'RESET_TO_AMOUNT':
       return {
@@ -118,6 +151,8 @@ export function depositFlowReducer(
         amountError: null,
         reviewAmount: null,
         paymentDetails: null,
+        confirmedDeposit: null,
+        statusError: null,
         loadingDetails: false,
         sendingTransaction: false,
       };

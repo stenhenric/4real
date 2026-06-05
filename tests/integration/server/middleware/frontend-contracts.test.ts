@@ -11,6 +11,7 @@ import {
 } from '../../../../src/app/toast-rules.ts';
 import { scrubSensitiveTokenFromCurrentUrl } from '../../../../src/features/auth/url-token.ts';
 import { getTransactionAccentClass, isCreditTransaction } from '../../../../src/features/bank/transactionPresentation.ts';
+import { formatWalletAddressForDisplay } from '../../../../src/features/bank/walletAddressPresentation.ts';
 import { formatDateTime, formatMoney } from '../../../../src/features/merchant/format.ts';
 import { isAbortError } from '../../../../src/utils/isAbortError.ts';
 import {
@@ -343,7 +344,32 @@ test('bank USDT panels use intent-first copy and expose withdrawal status suppor
   assert.match(withdrawSource, /Covered by platform/);
   assert.match(withdrawSource, /Refresh status/);
   assert.doesNotMatch(withdrawSource, /href=\{acceptedWithdrawal\.statusUrl\}/);
+  assert.match(depositSource, /getDepositStatus/);
+  assert.match(depositSource, /Deposit credited/);
   assert.match(transactionServiceSource, /getWithdrawalStatus/);
+  assert.match(transactionServiceSource, /getDepositStatus/);
+  assert.match(depositSource, /formatMoneyValue\(displayAmount, 6\)/);
+  assert.doesNotMatch(depositSource, /\{displayAmount\} USDT/);
+});
+
+test('wallet address display uses full user-friendly UQ form on read-only payment surfaces', () => {
+  const depositSource = readFileSync(join('src', 'features', 'bank', 'DepositPanel.tsx'), 'utf8');
+  const withdrawSource = readFileSync(join('src', 'features', 'bank', 'WithdrawPanel.tsx'), 'utf8');
+  const merchantPanelSource = readFileSync(join('src', 'features', 'bank', 'MerchantPanel.tsx'), 'utf8');
+  const liquiditySource = readFileSync(join('src', 'pages', 'merchant', 'LiquidityPage.tsx'), 'utf8');
+  const depositsSource = readFileSync(join('src', 'pages', 'merchant', 'DepositsPage.tsx'), 'utf8');
+  const withdrawalMfaSource = readFileSync(join('src', 'pages', 'auth', 'WithdrawalMfaPage.tsx'), 'utf8');
+
+  assert.equal(
+    formatWalletAddressForDisplay('0:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f'),
+    'UQBvb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb3J8',
+  );
+  for (const source of [depositSource, withdrawSource, merchantPanelSource, liquiditySource, depositsSource, withdrawalMfaSource]) {
+    assert.match(source, /formatWalletAddressForDisplay/);
+    assert.doesNotMatch(source, /formatWalletAddressPreview|formatAddressPreview|truncateAddress/);
+  }
+  assert.match(depositSource, /multilineValue/);
+  assert.match(withdrawSource, /multilineValue/);
 });
 
 test('element size hook measures the border box so SketchyContainer borders fit padded cards', () => {

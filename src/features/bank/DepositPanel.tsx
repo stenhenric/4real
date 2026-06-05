@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
 import { TonConnectButton, useTonAddress, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { ArrowDownRight, CheckCircle, Clock } from 'lucide-react';
+import { useAuth } from '../../app/AuthProvider';
 import { useToast } from '../../app/ToastProvider';
 import { SketchyButton } from '../../components/SketchyButton';
 import { CopyField } from '../../components/ui/CopyField';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
-import { createDepositMemo, prepareTonConnectDeposit } from '../../services/transactions.service';
+import { createDepositMemo, getDepositStatus, prepareTonConnectDeposit } from '../../services/transactions.service';
 import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
 import { createInitialDepositFlowState, depositFlowReducer, type PaymentDetails } from './depositFlowReducer';
+import { formatWalletAddressForCopy, formatWalletAddressForDisplay } from './walletAddressPresentation';
 
 const DEPOSIT_AMOUNT_ID = 'deposit-amount';
 const DEPOSIT_ADDRESS_ID = 'deposit-address';
 const DEPOSIT_MEMO_ID = 'deposit-memo';
 const WALLET_CONNECT_REQUIRED_ID = 'wallet-connect-required';
+const DEPOSIT_STATUS_POLL_INTERVAL_MS = 5_000;
 
 interface DepositPanelProps {
   onBackToBank: () => void;
@@ -126,7 +129,9 @@ function DepositReviewStep({
       <div className="grid gap-3 bg-black/5 p-4 sm:grid-cols-2">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
-          <p className="text-2xl font-bold text-ink-blue">{displayAmount} USDT</p>
+          <p className="text-2xl font-bold text-ink-blue">
+            {displayAmount ? formatMoneyValue(displayAmount, 6) : '0'} USDT
+          </p>
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-widest opacity-50">Network</p>
@@ -178,6 +183,9 @@ function DepositDetailsStep({
   sendingTransaction: boolean;
   walletConnected: boolean;
 }) {
+  const depositAddress = formatWalletAddressForCopy(paymentDetails.data.address);
+  const depositAddressDisplay = formatWalletAddressForDisplay(paymentDetails.data.address);
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -219,8 +227,10 @@ function DepositDetailsStep({
         <CopyField
           id={DEPOSIT_ADDRESS_ID}
           label="Deposit Address"
-          onCopy={() => void copyToClipboard(paymentDetails.data.address)}
-          value={paymentDetails.data.address}
+          displayValue={depositAddressDisplay}
+          multilineValue
+          onCopy={() => void copyToClipboard(depositAddress)}
+          value={depositAddress}
         />
         <CopyField
           id={DEPOSIT_MEMO_ID}
@@ -269,10 +279,12 @@ function DepositPendingStep({
   onBackToBank,
   onViewHistory,
   paymentDetails,
+  statusError,
 }: {
   onBackToBank: () => void;
   onViewHistory: () => void;
   paymentDetails: PaymentDetails | null;
+  statusError: string | null;
 }) {
   return (
     <div className="space-y-6 text-center">
@@ -286,6 +298,54 @@ function DepositPendingStep({
           {paymentDetails ? `${formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT is on the way.` : 'Your deposit is on the way.'}
           {' '}Your balance will update once the deposit is confirmed.
         </p>
+        <p className="mt-2 text-xs font-bold uppercase tracking-widest opacity-50" role="status">
+          Checking for confirmation...
+        </p>
+        {statusError ? (
+          <p className="mt-2 text-sm font-bold text-warning-text" role="status">
+            {statusError}
+          </p>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SketchyButton className="w-full py-4" onClick={onViewHistory} type="button">
+          View transaction history
+        </SketchyButton>
+        <SketchyButton className="w-full py-4" onClick={onBackToBank} type="button" variant="secondary">
+          Return to Bank
+        </SketchyButton>
+      </div>
+    </div>
+  );
+}
+
+function DepositConfirmedStep({
+  amountUsdt,
+  onBackToBank,
+  onViewHistory,
+  txHash,
+}: {
+  amountUsdt: string | null;
+  onBackToBank: () => void;
+  onViewHistory: () => void;
+  txHash?: string | undefined;
+}) {
+  return (
+    <div className="space-y-6 text-center">
+      <div className="mx-auto rough-border flex size-16 items-center justify-center bg-success-bg">
+        <CheckCircle size={32} className="text-success-text" />
+      </div>
+      <div>
+        <StatusBadge tone="success">Deposit credited</StatusBadge>
+        <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Deposit credited</h3>
+        <p className="mt-2 text-sm font-bold opacity-70">
+          {amountUsdt ? `${formatMoneyValue(amountUsdt, 6)} USDT has been credited to your balance.` : 'Your deposit has been credited to your balance.'}
+        </p>
+        {txHash ? (
+          <p className="mt-2 break-all text-xs font-mono font-bold opacity-50">
+            Tx {txHash}
+          </p>
+        ) : null}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <SketchyButton className="w-full py-4" onClick={onViewHistory} type="button">
@@ -311,16 +371,20 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
     amountError,
     reviewAmount,
     paymentDetails,
+    confirmedDeposit,
+    statusError,
     loadingDetails,
     sendingTransaction,
   } = flowState;
   const [expiryTick, setExpiryTick] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
+  const creditedMemoRef = useRef<string | null>(null);
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
   const connectedWalletAddress = useTonAddress();
   const copyToClipboard = useCopyToClipboard();
   const { addToast } = useToast();
+  const { refreshUser } = useAuth();
 
   useEffect(() => {
     if (!paymentDetails?.data.expiresAt || step !== 'details') {
@@ -346,6 +410,46 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
   useEffect(() => {
     panelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [step]);
+
+  useEffect(() => {
+    if (step !== 'pending' || !paymentDetails) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+
+    const refreshDepositStatus = async () => {
+      try {
+        const nextStatus = await getDepositStatus(paymentDetails.data.memo, controller.signal);
+        if (controller.signal.aborted) {
+          return;
+        }
+        dispatchFlow({ type: 'STATUS_RECEIVED', depositStatus: nextStatus });
+        if (nextStatus.status === 'confirmed' && creditedMemoRef.current !== nextStatus.memo) {
+          creditedMemoRef.current = nextStatus.memo;
+          void refreshUser();
+        }
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        dispatchFlow({
+          type: 'STATUS_FAILED',
+          message: getApiErrorMessage(error, 'Status updates are temporarily unavailable.'),
+        });
+      }
+    };
+
+    void refreshDepositStatus();
+    const intervalId = window.setInterval(() => {
+      void refreshDepositStatus();
+    }, DEPOSIT_STATUS_POLL_INTERVAL_MS);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(intervalId);
+    };
+  }, [paymentDetails, refreshUser, step]);
 
   const validateDepositAmount = () => {
     try {
@@ -489,6 +593,15 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
             onBackToBank={onBackToBank}
             onViewHistory={onViewHistory}
             paymentDetails={paymentDetails}
+            statusError={statusError}
+          />
+        ) : null}
+        {step === 'confirmed' ? (
+          <DepositConfirmedStep
+            amountUsdt={confirmedDeposit?.amountUsdt ?? paymentDetails?.amountUsdt ?? null}
+            onBackToBank={onBackToBank}
+            onViewHistory={onViewHistory}
+            txHash={confirmedDeposit?.txHash}
           />
         ) : null}
       </div>

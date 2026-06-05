@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 
 import request, { ApiClientError } from '../../../../../src/services/api/apiClient.ts';
+import { getDepositStatus } from '../../../../../src/services/transactions.service.ts';
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -107,4 +108,28 @@ test('request does not refresh invalid TOTP setup codes', async (t) => {
   );
 
   assert.deepEqual(calls, ['/api/auth/mfa/totp/verify']);
+});
+
+test('getDepositStatus requests the memo-scoped deposit status endpoint', async (t) => {
+  const calls: string[] = [];
+  const fetchMock = mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    calls.push(url);
+    return jsonResponse(200, {
+      memo: 'memo with spaces',
+      status: 'pending',
+      expiresAt: '2099-06-06T08:15:00.000Z',
+    });
+  });
+
+  t.after(() => fetchMock.mock.restore());
+
+  const result = await getDepositStatus('memo with spaces');
+
+  assert.deepEqual(result, {
+    memo: 'memo with spaces',
+    status: 'pending',
+    expiresAt: '2099-06-06T08:15:00.000Z',
+  });
+  assert.deepEqual(calls, ['/api/transactions/deposit/status/memo%20with%20spaces']);
 });

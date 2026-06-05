@@ -18,6 +18,8 @@ const publicMatchesUpdatedEvent = 'public-matches-updated';
 const defaultPassword = 'CorrectHorseBatteryStaple!';
 const commissionRate = 0.1;
 const startingElo = 300;
+const demoTonRawAddress = '0:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f';
+const demoTonRawJettonAddress = '0:1111111111111111111111111111111111111111111111111111111111111111';
 
 if (!fs.existsSync(indexPath)) {
   console.error('Missing dist/index.html. Run `npm run build` before Playwright.');
@@ -212,8 +214,8 @@ function createBaseDepositReviews() {
       amountRaw: '12500000',
       amountUsdt: '12.500000',
       comment: 'memo-user-player-one',
-      senderJettonWallet: 'EQ-OPEN-JETTON',
-      senderOwnerAddress: 'EQ-OPEN-SENDER',
+      senderJettonWallet: demoTonRawJettonAddress,
+      senderOwnerAddress: demoTonRawAddress,
       txTime: '2026-05-02T07:20:00.000Z',
       recordedAt: '2026-05-02T07:25:00.000Z',
       memoStatus: 'active',
@@ -230,8 +232,8 @@ function createBaseDepositReviews() {
       amountRaw: '8000000',
       amountUsdt: '8.000000',
       comment: 'unknown-memo',
-      senderJettonWallet: 'EQ-RESOLVED-JETTON',
-      senderOwnerAddress: 'EQ-RESOLVED-SENDER',
+      senderJettonWallet: demoTonRawJettonAddress,
+      senderOwnerAddress: demoTonRawAddress,
       txTime: '2026-05-01T06:10:00.000Z',
       recordedAt: '2026-05-01T06:11:00.000Z',
       memoStatus: 'missing',
@@ -254,7 +256,7 @@ function createBaseState() {
     transactions: createBaseTransactions(users),
     merchantConfig: {
       mpesaNumber: '900800700',
-      walletAddress: 'EQ-DEMO-WALLET',
+      walletAddress: demoTonRawAddress,
       instructions: 'Send the exact amount and upload proof for review.',
       fiatCurrency: 'KES',
       buyRateKesPerUsdt: 132.5,
@@ -515,8 +517,8 @@ function createMerchantDashboard() {
     },
     actionQueue: pendingOrders.map(serializeMerchantDeskItem),
     liquidity: {
-      hotWalletAddress: 'EQ-DEMO-WALLET',
-      hotJettonWallet: 'EQ-DEMO-JETTON-WALLET',
+      hotWalletAddress: demoTonRawAddress,
+      hotJettonWallet: demoTonRawJettonAddress,
       merchantConfig: serializeMerchantConfig(),
       tonBalanceTon: formatTon(12.75),
       onChainUsdtBalanceUsdt: formatUsdt(255.5),
@@ -1239,7 +1241,7 @@ function createApp() {
   app.post('/api/transactions/deposit/memo', requireAuth, (req, res) => {
     res.json({
       memo: `memo-${req.user.id}`,
-      address: 'EQ-DEMO-WALLET',
+      address: demoTonRawAddress,
       instructions: 'Send USDT on TON to the displayed wallet address with this memo.',
       expiresIn: '15 minutes',
       expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
@@ -1250,14 +1252,14 @@ function createApp() {
     const amountUsdt = Number(req.body?.amountUsdt ?? 0);
     res.json({
       memo: String(req.body?.memo ?? `memo-${req.user.id}`),
-      address: 'EQ-DEMO-WALLET',
+      address: demoTonRawAddress,
       amountUsdt: formatUsdt(amountUsdt),
       amountRaw: String(Math.round(amountUsdt * 1_000_000)),
       userJettonWalletAddress: 'EQ-DEMO-USER-JETTON',
       transaction: {
         validUntil: Math.floor(Date.now() / 1000) + 600,
         messages: [{
-          address: 'EQ-DEMO-WALLET',
+          address: demoTonRawAddress,
           amount: '1',
           payload: 'BASE64_PAYLOAD',
         }],

@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AuthRequest } from '../middleware/auth.middleware.ts';
 import { assertAuthenticated } from '../middleware/auth.middleware.ts';
 import { serializeLedgerTransaction, serializeWithdrawalStatus } from '../serializers/api.ts';
+import { DepositMemoRepository } from '../repositories/deposit-memo.repository.ts';
+import { DepositRepository } from '../repositories/deposit.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { generateDepositMemo } from '../services/deposit-service.ts';
 import { prepareTonConnectDeposit } from '../services/deposit-tonconnect.service.ts';
@@ -64,6 +66,38 @@ export const prepareTonConnectDepositHandler = async (req: AuthRequest, res: Res
   });
 
   res.json(prepared);
+};
+
+export const getDepositStatusHandler = async (req: AuthRequest, res: Response): Promise<void> => {
+  assertAuthenticated(req);
+  const memo = req.params.memo?.trim();
+  if (!memo) {
+    throw notFound('Deposit not found');
+  }
+
+  const deposit = await DepositRepository.findByUserAndMemo(req.user.id, memo);
+  if (deposit) {
+    res.json({
+      memo,
+      status: 'confirmed',
+      amountUsdt: deposit.amountDisplay,
+      txHash: deposit.txHash,
+      confirmedAt: deposit.txTime.toISOString(),
+    });
+    return;
+  }
+
+  const memoRecord = await DepositMemoRepository.findByUserAndMemo(req.user.id, memo);
+  if (!memoRecord) {
+    throw notFound('Deposit not found');
+  }
+
+  const expiresAt = memoRecord.expiresAt.toISOString();
+  res.json({
+    memo,
+    status: memoRecord.expiresAt.getTime() <= Date.now() ? 'expired' : 'pending',
+    expiresAt,
+  });
 };
 
 export const requestWithdrawalHandler = async (req: AuthRequest, res: Response): Promise<void> => {

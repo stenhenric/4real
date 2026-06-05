@@ -24,6 +24,7 @@ import {
   loadWithdrawalResumeDraft,
   saveWithdrawalResumeDraft,
 } from './withdrawalResume';
+import { formatWalletAddressForCopy, formatWalletAddressForDisplay } from './walletAddressPresentation';
 import {
   createInitialWithdrawalFlowState,
   withdrawalFlowReducer,
@@ -57,14 +58,6 @@ function shouldClearWithdrawalIdempotencyAfterError(error: unknown): boolean {
     && error.status >= 400
     && error.status < 500
     && ![408, 409, 429].includes(error.status);
-}
-
-function formatAddressPreview(address: string) {
-  if (address.length <= 18) {
-    return address;
-  }
-
-  return `${address.slice(0, 8)}...${address.slice(-6)}`;
 }
 
 function validateTonAddress(value: string) {
@@ -198,6 +191,8 @@ function WithdrawalReviewStep({
   reviewAmount: string;
 }) {
   const reviewAmountLabel = formatMoneyValue(reviewAmount, 6);
+  const destinationCopyValue = formatWalletAddressForCopy(normalizedDestination);
+  const destinationDisplay = formatWalletAddressForDisplay(normalizedDestination);
 
   return (
     <div className="space-y-6">
@@ -226,7 +221,7 @@ function WithdrawalReviewStep({
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-widest opacity-50">Destination</p>
-          <p className="font-mono text-lg font-bold">{formatAddressPreview(normalizedDestination)}</p>
+          <p className="break-all font-mono text-lg font-bold">{destinationDisplay}</p>
         </div>
       </div>
 
@@ -234,7 +229,9 @@ function WithdrawalReviewStep({
         id={WITHDRAW_DESTINATION_REVIEW_ID}
         label="Destination address"
         onCopy={onCopyDestination}
-        value={normalizedDestination}
+        displayValue={destinationDisplay}
+        multilineValue
+        value={destinationCopyValue}
       />
 
       <div className="space-y-3 bg-white p-4 shadow-sm border-2 border-black/10">
@@ -307,7 +304,7 @@ function WithdrawalStatusStep({
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-widest opacity-50">Destination</p>
-          <p className="font-mono text-lg font-bold">{formatAddressPreview(statusForDisplay.toAddress)}</p>
+          <p className="break-all font-mono text-lg font-bold">{formatWalletAddressForDisplay(statusForDisplay.toAddress)}</p>
         </div>
       </div>
 
@@ -850,7 +847,7 @@ const WithdrawPanel = ({ onBackToBank, onViewHistory }: WithdrawPanelProps) => {
         normalizedDestination={normalizedDestination}
         onBackToBank={onBackToBank}
         onConfirmWithdrawal={() => void handleConfirmWithdrawal()}
-        onCopyDestination={() => void copyToClipboard(normalizedDestination)}
+        onCopyDestination={() => void copyToClipboard(formatWalletAddressForCopy(normalizedDestination))}
         onEditDetails={() => dispatchFlow({ type: 'RESET_TO_FORM' })}
         onFieldChange={handleFieldChange}
         onRefreshStatus={() => void refreshWithdrawalStatus()}

@@ -28,6 +28,7 @@ import {
   getPendingP2pOrders,
   isSellAmountWithinAvailableBalance,
 } from './p2pPresentation';
+import { formatWalletAddressForDisplay } from './walletAddressPresentation';
 import {
   createInitialMerchantTradeState,
   merchantTradeReducer,
@@ -158,7 +159,7 @@ function MpesaInstructionContent({
       <div className="border border-warning-border bg-white/40 p-3">
         <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">P2P USDT Wallet</p>
         <p className="font-bold break-all text-xs">
-          {merchantConfig?.walletAddress ?? 'Loading…'}
+          {merchantConfig ? formatWalletAddressForDisplay(merchantConfig.walletAddress) : 'Loading…'}
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3">

@@ -8,6 +8,7 @@ import {
   AuthNotice,
   AuthShell,
 } from '../../features/auth/AuthShell';
+import { formatWalletAddressForDisplay } from '../../features/bank/walletAddressPresentation';
 import { completeMfaChallenge } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
 
@@ -27,11 +28,6 @@ function loadWithdrawalDraftDetails(): WithdrawalDraftDetails {
   }
 }
 
-function truncateAddress(addr: string) {
-  if (addr.length <= 16) return addr;
-  return `${addr.slice(0, 8)}...${addr.slice(-8)}`;
-}
-
 export default function WithdrawalMfaPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -48,6 +44,7 @@ export default function WithdrawalMfaPage() {
   const [draftDetails] = useState(loadWithdrawalDraftDetails);
   const draftAmount = draftDetails.amount;
   const draftAddress = draftDetails.address;
+  const draftAddressDisplay = formatWalletAddressForDisplay(draftAddress);
 
   const returnToBank = (status: 'verified' | 'failed' | 'cancelled', intentId?: string) => {
     // Navigate back to the return URL with the result flags
@@ -132,9 +129,9 @@ export default function WithdrawalMfaPage() {
                 <span className="text-black/60">Amount:</span>
                 <span className="font-bold text-sm">{draftAmount} USDT</span>
               </div>
-              <div className="flex justify-between pt-0.5" title={draftAddress}>
+              <div className="space-y-1 pt-0.5" title={draftAddressDisplay}>
                 <span className="text-black/60">To Wallet:</span>
-                <span className="font-bold">{truncateAddress(draftAddress)}</span>
+                <span className="block break-all font-bold">{draftAddressDisplay}</span>
               </div>
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-warning-text font-sans">

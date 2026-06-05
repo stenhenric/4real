@@ -562,6 +562,8 @@ test('play lobby does not load TonConnect assets before wallet routes need them'
 test('bank USDT flows collect intent before payment details and show withdrawal status', async ({ browser }) => {
   const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
   await stubTonConnectWallets(page);
+  const depositDisplayAddress = 'UQBvb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb3J8';
+  const withdrawalDisplayAddress = 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ';
   const health = installErrorCollectors(page, {
     ignorePageErrors: [/socket\.io\/.*due to access control checks\./i],
   });
@@ -581,11 +583,11 @@ test('bank USDT flows collect intent before payment details and show withdrawal 
     await page.getByLabel(/deposit amount/i).fill('12.34');
     await page.getByRole('button', { name: /review deposit/i }).click();
     await expect(page.getByText(/review deposit/i)).toBeVisible();
-    await expect(page.getByText(/12\.340000 usdt/i)).toBeVisible();
+    await expect(page.getByText('12.34 USDT', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: /generate payment details/i }).click();
     await expect(page.getByText('Payment details ready', { exact: true })).toBeVisible();
-    await expect(page.locator('input[value="EQ-DEMO-WALLET"]')).toBeVisible();
+    await expect(page.locator('#deposit-address')).toHaveValue(depositDisplayAddress);
     await expect(page.locator('input[value="memo-user-player-one"]')).toBeVisible();
     await expect(page.getByRole('heading', { name: /send exactly 12\.34 usdt/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /pay with tonconnect/i })).toBeDisabled();
@@ -610,6 +612,7 @@ test('bank USDT flows collect intent before payment details and show withdrawal 
     await page.getByRole('button', { name: /review withdrawal/i }).click();
     await expect(page.getByText(/ready to review/i)).toBeVisible();
     await expect(page.getByText('5 USDT', { exact: true }).first()).toBeVisible();
+    await expect(page.locator('#withdraw-destination-review')).toHaveValue(withdrawalDisplayAddress);
     await expect(page.getByText(/network fee/i)).toBeVisible();
     await expect(page.getByText(/covered by platform/i)).toBeVisible();
 
@@ -617,6 +620,7 @@ test('bank USDT flows collect intent before payment details and show withdrawal 
     await expect(page.getByRole('heading', { name: /withdrawal queued/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /refresh status/i })).toBeVisible();
     await expect(page.getByText(/balance has been reserved/i)).toBeVisible();
+    await expect(page.getByText(withdrawalDisplayAddress, { exact: true })).toBeVisible();
 
     await health.assertHealthy();
   } finally {
