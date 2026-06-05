@@ -152,6 +152,46 @@ function ConfirmationPanel({
   );
 }
 
+function SessionConfirmationPanel({
+  confirmSessionAction,
+  sessionAction,
+  onCancel,
+  onConfirm,
+}: {
+  confirmSessionAction: ConfirmSessionAction | null;
+  sessionAction: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!confirmSessionAction) {
+    return null;
+  }
+
+  if (confirmSessionAction.type === 'current') {
+    return (
+      <ConfirmationPanel
+        busy={sessionAction === 'current'}
+        confirmLabel="Sign out"
+        description={SECURITY_PAGE_COPY.sessions.revokeCurrentConfirmDescription}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        title={SECURITY_PAGE_COPY.sessions.revokeCurrentConfirmTitle}
+      />
+    );
+  }
+
+  return (
+    <ConfirmationPanel
+      busy={sessionAction === 'others' || (confirmSessionAction.type === 'other' && sessionAction === confirmSessionAction.session.id)}
+      confirmLabel={confirmSessionAction.type === 'others' ? 'Sign out other devices' : SECURITY_PAGE_COPY.sessions.otherAction}
+      description={SECURITY_PAGE_COPY.sessions.revokeOthersConfirmDescription}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+      title={SECURITY_PAGE_COPY.sessions.revokeOthersConfirmTitle}
+    />
+  );
+}
+
 function getFlowFromSearch(searchParams: URLSearchParams, setupRequested: boolean, mfaEnabled: boolean): SecurityFlow {
   const requestedFlow = searchParams.get('flow');
   if (requestedFlow === '2fa' || requestedFlow === 'devices') {
@@ -544,36 +584,6 @@ export default function SecuritySettingsPage() {
     void handleRevokeOtherSession(confirmSessionAction.session);
   };
 
-  const renderSessionConfirmation = () => {
-    if (!confirmSessionAction) {
-      return null;
-    }
-
-    if (confirmSessionAction.type === 'current') {
-      return (
-        <ConfirmationPanel
-          busy={sessionAction === 'current'}
-          confirmLabel="Sign out"
-          description={SECURITY_PAGE_COPY.sessions.revokeCurrentConfirmDescription}
-          onCancel={() => dispatchSession({ type: 'SESSION_CONFIRM_CLOSED' })}
-          onConfirm={performConfirmedSessionAction}
-          title={SECURITY_PAGE_COPY.sessions.revokeCurrentConfirmTitle}
-        />
-      );
-    }
-
-    return (
-      <ConfirmationPanel
-        busy={sessionAction === 'others' || (confirmSessionAction.type === 'other' && sessionAction === confirmSessionAction.session.id)}
-        confirmLabel={confirmSessionAction.type === 'others' ? 'Sign out other devices' : SECURITY_PAGE_COPY.sessions.otherAction}
-        description={SECURITY_PAGE_COPY.sessions.revokeOthersConfirmDescription}
-        onCancel={() => dispatchSession({ type: 'SESSION_CONFIRM_CLOSED' })}
-        onConfirm={performConfirmedSessionAction}
-        title={SECURITY_PAGE_COPY.sessions.revokeOthersConfirmTitle}
-      />
-    );
-  };
-
   if (flow === '2fa') {
     return (
       <AuthShell
@@ -848,7 +858,12 @@ export default function SecuritySettingsPage() {
         <BackButton onClick={() => navigateToOverview()} />
 
         <div className="space-y-5">
-          {renderSessionConfirmation()}
+          <SessionConfirmationPanel
+            confirmSessionAction={confirmSessionAction}
+            onCancel={() => dispatchSession({ type: 'SESSION_CONFIRM_CLOSED' })}
+            onConfirm={performConfirmedSessionAction}
+            sessionAction={sessionAction}
+          />
 
           <SectionCard title={SECURITY_PAGE_COPY.sessions.currentDeviceLabel}>
             {sessionsLoading ? (
@@ -944,7 +959,12 @@ export default function SecuritySettingsPage() {
       <div className="space-y-6">
         {setupRequested ? <AuthNotice tone="warning">{SECURITY_PAGE_COPY.forcedSetupNotice}</AuthNotice> : null}
         {recentlyVerified ? <AuthNotice tone="success">{SECURITY_PAGE_COPY.verifiedNotice}</AuthNotice> : null}
-        {renderSessionConfirmation()}
+        <SessionConfirmationPanel
+          confirmSessionAction={confirmSessionAction}
+          onCancel={() => dispatchSession({ type: 'SESSION_CONFIRM_CLOSED' })}
+          onConfirm={performConfirmedSessionAction}
+          sessionAction={sessionAction}
+        />
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,0.85fr)]">
           <div className="space-y-5">

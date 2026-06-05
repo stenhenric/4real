@@ -1,4 +1,4 @@
-import { useReducer, useRef, type FormEvent } from 'react';
+import { useReducer, useRef, type FormEvent, type RefObject } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthTurnstile, type AuthTurnstileRef } from '../../features/auth/AuthTurnstile';
 import { getTurnstileSiteKey } from '../../features/auth/turnstile-config';
@@ -35,6 +35,203 @@ function getErrorMessage(value: string | null) {
 
 function isLikelyEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function LoginMethodSelection({
+  googleLoading,
+  identifier,
+  onGoogle,
+  onIdentifierChange,
+  onMagicLinkSelected,
+  onPasswordSelected,
+}: {
+  googleLoading: boolean;
+  identifier: string;
+  onGoogle: () => void;
+  onIdentifierChange: (value: string) => void;
+  onMagicLinkSelected: () => void;
+  onPasswordSelected: () => void;
+}) {
+  return (
+    <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+      <GoogleAuthButton loading={googleLoading} onClick={onGoogle} />
+
+      <AuthDivider label="Or continue with email or username" />
+
+      <div className="space-y-4">
+        <AuthInput
+          autoComplete="username"
+          label="Email or username"
+          name="identifier"
+          onChange={(event) => onIdentifierChange(event.target.value)}
+          placeholder="name@example.com or SketchMaster"
+          required
+          type="text"
+          value={identifier}
+        />
+
+        <div className="pt-4 flex flex-col gap-3">
+          <SketchyButton
+            className="w-full py-3"
+            onClick={onPasswordSelected}
+            type="button"
+            variant="primary"
+          >
+            Continue with Password
+          </SketchyButton>
+
+          <SketchyButton
+            className="w-full py-3 text-sm font-bold text-black/60 opacity-70 hover:opacity-100 transition-opacity"
+            onClick={onMagicLinkSelected}
+            type="button"
+          >
+            Email me a magic link instead
+          </SketchyButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasswordLoginStep({
+  identifier,
+  onPasswordChange,
+  onReset,
+  onSubmit,
+  onTurnstileReset,
+  onTurnstileSuccess,
+  password,
+  passwordLoading,
+  siteKey,
+  turnstileRef,
+  turnstileToken,
+}: {
+  identifier: string;
+  onPasswordChange: (value: string) => void;
+  onReset: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onTurnstileReset: () => void;
+  onTurnstileSuccess: (token: string) => void;
+  password: string;
+  passwordLoading: boolean;
+  siteKey: string | undefined;
+  turnstileRef: RefObject<AuthTurnstileRef | null>;
+  turnstileToken: string | undefined;
+}) {
+  return (
+    <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={onSubmit}>
+      <SketchyButton
+        type="button"
+        onClick={onReset}
+        className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
+      >
+        ← Back to options
+      </SketchyButton>
+
+      <AuthInput
+        autoComplete="username"
+        label="Email or username"
+        name="identifier"
+        disabled
+        type="text"
+        value={identifier}
+      />
+
+      <div className="pt-2 relative">
+        <PasswordInput
+          autoComplete="current-password"
+          label="Password"
+          name="password"
+          onChange={(event) => onPasswordChange(event.target.value)}
+          placeholder="Enter your password"
+          required
+          value={password}
+        />
+        <div className="absolute top-1 right-1">
+          <Link
+            className="text-[10px] font-bold uppercase tracking-widest text-ink-blue/70 hover:text-ink-blue transition-colors hover:underline"
+            to="/auth/forgot-password"
+          >
+            Forgot password?
+          </Link>
+        </div>
+      </div>
+
+      <AuthTurnstile
+        ref={turnstileRef}
+        onSuccess={onTurnstileSuccess}
+        onError={onTurnstileReset}
+        onExpire={onTurnstileReset}
+      />
+
+      <div className="pt-4 flex flex-col gap-3">
+        <SketchyButton
+          className="w-full py-4 text-xl"
+          disabled={passwordLoading || (!!siteKey && !turnstileToken)}
+          type="submit"
+          variant="primary"
+        >
+          {passwordLoading ? 'Signing in...' : 'Sign in'}
+        </SketchyButton>
+      </div>
+    </form>
+  );
+}
+
+function MagicLinkStep({
+  identifier,
+  magicLoading,
+  onReset,
+  onSubmit,
+  onTurnstileReset,
+  onTurnstileSuccess,
+  siteKey,
+  turnstileRef,
+  turnstileToken,
+}: {
+  identifier: string;
+  magicLoading: boolean;
+  onReset: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onTurnstileReset: () => void;
+  onTurnstileSuccess: (token: string) => void;
+  siteKey: string | undefined;
+  turnstileRef: RefObject<AuthTurnstileRef | null>;
+  turnstileToken: string | undefined;
+}) {
+  return (
+    <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={onSubmit}>
+      <SketchyButton
+        type="button"
+        onClick={onReset}
+        className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
+      >
+        ← Back to options
+      </SketchyButton>
+
+      <AuthNotice tone="info">
+        Please complete the verification below to send a magic link to {identifier.trim()}.
+      </AuthNotice>
+
+      <AuthTurnstile
+        ref={turnstileRef}
+        onSuccess={onTurnstileSuccess}
+        onError={onTurnstileReset}
+        onExpire={onTurnstileReset}
+      />
+
+      <div className="pt-4 flex flex-col gap-3">
+        <SketchyButton
+          className="w-full py-4 text-xl"
+          disabled={magicLoading || (!!siteKey && !turnstileToken)}
+          type="submit"
+          variant="primary"
+        >
+          {magicLoading ? 'Sending link...' : 'Send Magic Link'}
+        </SketchyButton>
+      </div>
+    </form>
+  );
 }
 
 export default function LoginPage() {
@@ -215,138 +412,46 @@ export default function LoginPage() {
       <div className="space-y-6">
         {inlineError ? <AuthNotice tone="warning">{inlineError}</AuthNotice> : null}
 
-        {step === 'method_selection' && (
-          <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
-            <GoogleAuthButton loading={googleLoading} onClick={() => void handleGoogle()} />
-            
-            <AuthDivider label="Or continue with email or username" />
+        {step === 'method_selection' ? (
+          <LoginMethodSelection
+            googleLoading={googleLoading}
+            identifier={identifier}
+            onGoogle={() => void handleGoogle()}
+            onIdentifierChange={(value) => dispatchForm({ type: 'IDENTIFIER_CHANGED', value })}
+            onMagicLinkSelected={() => requireEmail() && dispatchForm({ type: 'METHOD_SELECTED', step: 'magic_link_verification' })}
+            onPasswordSelected={() => requireIdentifier() && dispatchForm({ type: 'METHOD_SELECTED', step: 'password_entry' })}
+          />
+        ) : null}
 
-            <div className="space-y-4">
-              <AuthInput
-                autoComplete="username"
-                label="Email or username"
-                name="identifier"
-                onChange={(event) => dispatchForm({ type: 'IDENTIFIER_CHANGED', value: event.target.value })}
-                placeholder="name@example.com or SketchMaster"
-                required
-                type="text"
-                value={identifier}
-              />
+        {step === 'password_entry' ? (
+          <PasswordLoginStep
+            identifier={identifier}
+            onPasswordChange={(value) => dispatchForm({ type: 'PASSWORD_CHANGED', value })}
+            onReset={resetStep}
+            onSubmit={handlePasswordLogin}
+            onTurnstileReset={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+            onTurnstileSuccess={(token) => dispatchForm({ type: 'TURNSTILE_PASSED', token })}
+            password={password}
+            passwordLoading={passwordLoading}
+            siteKey={siteKey}
+            turnstileRef={turnstileRef}
+            turnstileToken={turnstileToken}
+          />
+        ) : null}
 
-              <div className="pt-4 flex flex-col gap-3">
-                <SketchyButton 
-                  className="w-full py-3" 
-                  onClick={() => requireIdentifier() && dispatchForm({ type: 'METHOD_SELECTED', step: 'password_entry' })}
-                  type="button"
-                  variant="primary"
-                >
-                  Continue with Password
-                </SketchyButton>
-
-                <SketchyButton
-                  className="w-full py-3 text-sm font-bold text-black/60 opacity-70 hover:opacity-100 transition-opacity"
-                  onClick={() => requireEmail() && dispatchForm({ type: 'METHOD_SELECTED', step: 'magic_link_verification' })}
-                  type="button"
-                >
-                  Email me a magic link instead
-                </SketchyButton>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === 'password_entry' && (
-          <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handlePasswordLogin}>
-            <SketchyButton
-              type="button"
-              onClick={resetStep}
-              className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
-            >
-              ← Back to options
-            </SketchyButton>
-            
-            <AuthInput
-              autoComplete="username"
-              label="Email or username"
-              name="identifier"
-              disabled
-              type="text"
-              value={identifier}
-            />
-            
-            <div className="pt-2 relative">
-              <PasswordInput
-                autoComplete="current-password"
-                label="Password"
-                name="password"
-                onChange={(event) => dispatchForm({ type: 'PASSWORD_CHANGED', value: event.target.value })}
-                placeholder="Enter your password"
-                required
-                value={password}
-              />
-              <div className="absolute top-1 right-1">
-                <Link
-                  className="text-[10px] font-bold uppercase tracking-widest text-ink-blue/70 hover:text-ink-blue transition-colors hover:underline"
-                  to="/auth/forgot-password"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-            </div>
-
-            <AuthTurnstile
-              ref={turnstileRef}
-              onSuccess={(token) => dispatchForm({ type: 'TURNSTILE_PASSED', token })}
-              onError={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
-              onExpire={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
-            />
-
-            <div className="pt-4 flex flex-col gap-3">
-              <SketchyButton 
-                className="w-full py-4 text-xl" 
-                disabled={passwordLoading || (!!siteKey && !turnstileToken)} 
-                type="submit"
-                variant="primary"
-              >
-                {passwordLoading ? 'Signing in...' : 'Sign in'}
-              </SketchyButton>
-            </div>
-          </form>
-        )}
-
-        {step === 'magic_link_verification' && (
-          <form className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300" onSubmit={handleMagicLinkSubmit}>
-            <SketchyButton
-              type="button"
-              onClick={resetStep}
-              className="text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black mb-2 inline-flex items-center gap-1 transition-colors"
-            >
-              ← Back to options
-            </SketchyButton>
-
-            <AuthNotice tone="info">
-              Please complete the verification below to send a magic link to {identifier.trim()}.
-            </AuthNotice>
-
-            <AuthTurnstile
-              ref={turnstileRef}
-              onSuccess={(token) => dispatchForm({ type: 'TURNSTILE_PASSED', token })}
-              onError={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
-              onExpire={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
-            />
-
-            <div className="pt-4 flex flex-col gap-3">
-              <SketchyButton 
-                className="w-full py-4 text-xl" 
-                disabled={magicLoading || (!!siteKey && !turnstileToken)} 
-                type="submit"
-                variant="primary"
-              >
-                {magicLoading ? 'Sending link...' : 'Send Magic Link'}
-              </SketchyButton>
-            </div>
-          </form>
-        )}
+        {step === 'magic_link_verification' ? (
+          <MagicLinkStep
+            identifier={identifier}
+            magicLoading={magicLoading}
+            onReset={resetStep}
+            onSubmit={handleMagicLinkSubmit}
+            onTurnstileReset={() => dispatchForm({ type: 'TURNSTILE_RESET' })}
+            onTurnstileSuccess={(token) => dispatchForm({ type: 'TURNSTILE_PASSED', token })}
+            siteKey={siteKey}
+            turnstileRef={turnstileRef}
+            turnstileToken={turnstileToken}
+          />
+        ) : null}
       </div>
     </AuthShell>
   );

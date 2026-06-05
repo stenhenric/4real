@@ -9,7 +9,7 @@ import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { createDepositMemo, prepareTonConnectDeposit } from '../../services/transactions.service';
 import { formatMoneyValue, normalizeFixedScaleAmount } from '../../utils/exact-money.ts';
 import { getApiErrorMessage } from '../../utils/errors';
-import { createInitialDepositFlowState, depositFlowReducer } from './depositFlowReducer';
+import { createInitialDepositFlowState, depositFlowReducer, type PaymentDetails } from './depositFlowReducer';
 
 const DEPOSIT_AMOUNT_ID = 'deposit-amount';
 const DEPOSIT_ADDRESS_ID = 'deposit-address';
@@ -44,6 +44,259 @@ function getExpiryState(expiresAt?: string): { expired: boolean; label: string |
     : `Expires in ${minutes}m`;
 
   return { expired: false, label };
+}
+
+function DepositAmountStep({
+  amountError,
+  depositAmount,
+  onAmountChange,
+  onSubmit,
+}: {
+  amountError: string | null;
+  depositAmount: string;
+  onAmountChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="space-y-6" onSubmit={onSubmit}>
+      <div>
+        <label
+          className="mb-1 ml-1 block text-xs font-bold uppercase tracking-widest opacity-50"
+          htmlFor={DEPOSIT_AMOUNT_ID}
+        >
+          Deposit Amount (USDT)
+        </label>
+        <div className="relative">
+          <input
+            className="w-full border-b-2 border-black/20 bg-transparent p-2 pr-20 text-4xl font-bold transition-colors focus:border-black"
+            id={DEPOSIT_AMOUNT_ID}
+            inputMode="decimal"
+            onChange={(event) => onAmountChange(event.target.value)}
+            placeholder="0.00"
+            type="text"
+            value={depositAmount}
+          />
+          <span className="absolute bottom-3 right-2 text-xl font-bold opacity-30">USDT</span>
+        </div>
+        {amountError ? (
+          <p className="mt-2 text-sm font-bold text-danger-text" role="alert">
+            {amountError}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="rough-border bg-info-bg p-4 text-info-text">
+        <p className="text-sm font-bold">
+          Enter the amount first. We will generate the deposit address and required memo/comment after you review it.
+        </p>
+      </div>
+
+      <SketchyButton className="w-full py-4 text-xl" type="submit">
+        Review Deposit
+      </SketchyButton>
+    </form>
+  );
+}
+
+function DepositReviewStep({
+  displayAmount,
+  loadingDetails,
+  onBackToBank,
+  onGeneratePaymentDetails,
+  onResetToAmount,
+}: {
+  displayAmount: string | null;
+  loadingDetails: boolean;
+  onBackToBank: () => void;
+  onGeneratePaymentDetails: () => void;
+  onResetToAmount: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <StatusBadge tone="info">Ready to review</StatusBadge>
+          <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Review Deposit</h3>
+        </div>
+        <SketchyButton onClick={onResetToAmount} type="button" variant="secondary">
+          Change amount
+        </SketchyButton>
+      </div>
+
+      <div className="grid gap-3 bg-black/5 p-4 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
+          <p className="text-2xl font-bold text-ink-blue">{displayAmount} USDT</p>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Network</p>
+          <p className="text-xl font-bold">TON</p>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Asset</p>
+          <p className="text-xl font-bold">USDT</p>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Method</p>
+          <p className="text-xl font-bold">TonConnect or manual wallet</p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SketchyButton
+          className="w-full py-4 text-lg"
+          disabled={loadingDetails}
+          onClick={onGeneratePaymentDetails}
+          type="button"
+        >
+          {loadingDetails ? 'Preparing...' : 'Generate payment details'}
+        </SketchyButton>
+        <SketchyButton className="w-full py-4 text-lg" onClick={onBackToBank} type="button" variant="secondary">
+          Cancel
+        </SketchyButton>
+      </div>
+    </div>
+  );
+}
+
+function DepositDetailsStep({
+  copyToClipboard,
+  expiryState,
+  onBackToBank,
+  onDepositTonConnect,
+  onResetToAmount,
+  paymentDetails,
+  sendingTransaction,
+  walletConnected,
+}: {
+  copyToClipboard: (value: string) => Promise<boolean>;
+  expiryState: { expired: boolean; label: string | null };
+  onBackToBank: () => void;
+  onDepositTonConnect: () => void;
+  onResetToAmount: () => void;
+  paymentDetails: PaymentDetails;
+  sendingTransaction: boolean;
+  walletConnected: boolean;
+}) {
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <StatusBadge tone={expiryState.expired ? 'danger' : 'success'}>
+            {expiryState.expired ? 'Deposit expired' : 'Payment details ready'}
+          </StatusBadge>
+          <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">
+            Send exactly {formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT
+          </h3>
+        </div>
+        <SketchyButton onClick={onResetToAmount} type="button" variant="secondary">
+          Change amount
+        </SketchyButton>
+      </div>
+
+      <div className="rough-border bg-warning-bg p-4 text-warning-text">
+        <p className="text-sm font-bold">
+          Include this memo so we can credit your deposit automatically. Deposits sent without the memo may require manual review.
+        </p>
+      </div>
+
+      <div className="grid gap-3 bg-black/5 p-4 sm:grid-cols-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
+          <p className="text-xl font-bold text-ink-blue">{formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT</p>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Network</p>
+          <p className="text-xl font-bold">TON</p>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Asset</p>
+          <p className="text-xl font-bold">USDT</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <CopyField
+          id={DEPOSIT_ADDRESS_ID}
+          label="Deposit Address"
+          onCopy={() => void copyToClipboard(paymentDetails.data.address)}
+          value={paymentDetails.data.address}
+        />
+        <CopyField
+          id={DEPOSIT_MEMO_ID}
+          label="Required memo/comment"
+          onCopy={() => void copyToClipboard(paymentDetails.data.memo)}
+          value={paymentDetails.data.memo}
+          valueClassName="border-success-border bg-success-bg text-success-text"
+        />
+      </div>
+
+      <div className="flex items-center justify-center gap-2 text-sm font-mono font-bold opacity-60">
+        {expiryState.expired ? (
+          <Clock size={16} className="text-danger-text" />
+        ) : (
+          <CheckCircle size={16} className="text-success-text" />
+        )}
+        <span aria-live="polite">{expiryState.label ?? `Expires in ${paymentDetails.data.expiresIn}`}</span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SketchyButton
+          aria-describedby={!walletConnected ? WALLET_CONNECT_REQUIRED_ID : undefined}
+          className="w-full py-4 text-lg text-white"
+          disabled={!walletConnected || sendingTransaction || expiryState.expired}
+          fill={!walletConnected || sendingTransaction || expiryState.expired ? 'var(--color-paper-rule)' : 'var(--color-ink-blue)'}
+          onClick={onDepositTonConnect}
+          type="button"
+        >
+          {sendingTransaction ? 'Waiting for wallet...' : 'Pay with TonConnect'}
+        </SketchyButton>
+        <SketchyButton className="w-full py-4 text-lg" onClick={onBackToBank} type="button" variant="secondary">
+          Cancel
+        </SketchyButton>
+      </div>
+
+      {!walletConnected ? (
+        <p className="text-center text-sm font-bold text-danger-text" id={WALLET_CONNECT_REQUIRED_ID}>
+          Connect your wallet to pay with TonConnect, or copy the address and memo for a manual wallet deposit.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function DepositPendingStep({
+  onBackToBank,
+  onViewHistory,
+  paymentDetails,
+}: {
+  onBackToBank: () => void;
+  onViewHistory: () => void;
+  paymentDetails: PaymentDetails | null;
+}) {
+  return (
+    <div className="space-y-6 text-center">
+      <div className="mx-auto rough-border flex size-16 items-center justify-center bg-warning-bg">
+        <Clock size={32} className="text-warning-text" />
+      </div>
+      <div>
+        <StatusBadge tone="warning">Awaiting confirmation</StatusBadge>
+        <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Transaction sent</h3>
+        <p className="mt-2 text-sm font-bold opacity-70">
+          {paymentDetails ? `${formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT is on the way.` : 'Your deposit is on the way.'}
+          {' '}Your balance will update once the deposit is confirmed.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SketchyButton className="w-full py-4" onClick={onViewHistory} type="button">
+          View transaction history
+        </SketchyButton>
+        <SketchyButton className="w-full py-4" onClick={onBackToBank} type="button" variant="secondary">
+          Return to Bank
+        </SketchyButton>
+      </div>
+    </div>
+  );
 }
 
 const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
@@ -175,209 +428,6 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
     }
   };
 
-  const renderAmountStep = () => (
-    <form className="space-y-6" onSubmit={handleReviewDeposit}>
-      <div>
-        <label
-          className="mb-1 ml-1 block text-xs font-bold uppercase tracking-widest opacity-50"
-          htmlFor={DEPOSIT_AMOUNT_ID}
-        >
-          Deposit Amount (USDT)
-        </label>
-        <div className="relative">
-          <input
-            className="w-full border-b-2 border-black/20 bg-transparent p-2 pr-20 text-4xl font-bold transition-colors focus:border-black"
-            id={DEPOSIT_AMOUNT_ID}
-            inputMode="decimal"
-            onChange={(event) => handleAmountChange(event.target.value)}
-            placeholder="0.00"
-            type="text"
-            value={depositAmount}
-          />
-          <span className="absolute bottom-3 right-2 text-xl font-bold opacity-30">USDT</span>
-        </div>
-        {amountError ? (
-          <p className="mt-2 text-sm font-bold text-danger-text" role="alert">
-            {amountError}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="rough-border bg-info-bg p-4 text-info-text">
-        <p className="text-sm font-bold">
-          Enter the amount first. We will generate the deposit address and required memo/comment after you review it.
-        </p>
-      </div>
-
-      <SketchyButton className="w-full py-4 text-xl" type="submit">
-        Review Deposit
-      </SketchyButton>
-    </form>
-  );
-
-  const renderReviewStep = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <StatusBadge tone="info">Ready to review</StatusBadge>
-          <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Review Deposit</h3>
-        </div>
-        <SketchyButton onClick={() => dispatchFlow({ type: 'RESET_TO_AMOUNT' })} type="button" variant="secondary">
-          Change amount
-        </SketchyButton>
-      </div>
-
-      <div className="grid gap-3 bg-black/5 p-4 sm:grid-cols-2">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
-          <p className="text-2xl font-bold text-ink-blue">{displayAmount} USDT</p>
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Network</p>
-          <p className="text-xl font-bold">TON</p>
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Asset</p>
-          <p className="text-xl font-bold">USDT</p>
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest opacity-50">Method</p>
-          <p className="text-xl font-bold">TonConnect or manual wallet</p>
-        </div>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <SketchyButton
-          className="w-full py-4 text-lg"
-          disabled={loadingDetails}
-          onClick={handleGeneratePaymentDetails}
-          type="button"
-        >
-          {loadingDetails ? 'Preparing...' : 'Generate payment details'}
-        </SketchyButton>
-        <SketchyButton className="w-full py-4 text-lg" onClick={onBackToBank} type="button" variant="secondary">
-          Cancel
-        </SketchyButton>
-      </div>
-    </div>
-  );
-
-  const renderDetailsStep = () => {
-    if (!paymentDetails) {
-      return renderAmountStep();
-    }
-
-    return (
-      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <StatusBadge tone={expiryState.expired ? 'danger' : 'success'}>
-              {expiryState.expired ? 'Deposit expired' : 'Payment details ready'}
-            </StatusBadge>
-            <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">
-              Send exactly {formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT
-            </h3>
-          </div>
-          <SketchyButton onClick={() => dispatchFlow({ type: 'RESET_TO_AMOUNT' })} type="button" variant="secondary">
-            Change amount
-          </SketchyButton>
-        </div>
-
-        <div className="rough-border bg-warning-bg p-4 text-warning-text">
-          <p className="text-sm font-bold">
-            Include this memo so we can credit your deposit automatically. Deposits sent without the memo may require manual review.
-          </p>
-        </div>
-
-        <div className="grid gap-3 bg-black/5 p-4 sm:grid-cols-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Amount</p>
-            <p className="text-xl font-bold text-ink-blue">{formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Network</p>
-            <p className="text-xl font-bold">TON</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest opacity-50">Asset</p>
-            <p className="text-xl font-bold">USDT</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <CopyField
-            id={DEPOSIT_ADDRESS_ID}
-            label="Deposit Address"
-            onCopy={() => void copyToClipboard(paymentDetails.data.address)}
-            value={paymentDetails.data.address}
-          />
-          <CopyField
-            id={DEPOSIT_MEMO_ID}
-            label="Required memo/comment"
-            onCopy={() => void copyToClipboard(paymentDetails.data.memo)}
-            value={paymentDetails.data.memo}
-            valueClassName="border-success-border bg-success-bg text-success-text"
-          />
-        </div>
-
-        <div className="flex items-center justify-center gap-2 text-sm font-mono font-bold opacity-60">
-          {expiryState.expired ? (
-            <Clock size={16} className="text-danger-text" />
-          ) : (
-            <CheckCircle size={16} className="text-success-text" />
-          )}
-          <span aria-live="polite">{expiryState.label ?? `Expires in ${paymentDetails.data.expiresIn}`}</span>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SketchyButton
-            aria-describedby={!wallet ? WALLET_CONNECT_REQUIRED_ID : undefined}
-            className="w-full py-4 text-lg text-white"
-            disabled={!wallet || sendingTransaction || expiryState.expired}
-            fill={!wallet || sendingTransaction || expiryState.expired ? 'var(--color-paper-rule)' : 'var(--color-ink-blue)'}
-            onClick={handleDepositTonConnect}
-            type="button"
-          >
-            {sendingTransaction ? 'Waiting for wallet...' : 'Pay with TonConnect'}
-          </SketchyButton>
-          <SketchyButton className="w-full py-4 text-lg" onClick={onBackToBank} type="button" variant="secondary">
-            Cancel
-          </SketchyButton>
-        </div>
-
-        {!wallet ? (
-          <p className="text-center text-sm font-bold text-danger-text" id={WALLET_CONNECT_REQUIRED_ID}>
-            Connect your wallet to pay with TonConnect, or copy the address and memo for a manual wallet deposit.
-          </p>
-        ) : null}
-      </div>
-    );
-  };
-
-  const renderPendingStep = () => (
-    <div className="space-y-6 text-center">
-      <div className="mx-auto rough-border flex size-16 items-center justify-center bg-warning-bg">
-        <Clock size={32} className="text-warning-text" />
-      </div>
-      <div>
-        <StatusBadge tone="warning">Awaiting confirmation</StatusBadge>
-        <h3 className="mt-3 text-2xl font-semibold uppercase tracking-tight">Transaction sent</h3>
-        <p className="mt-2 text-sm font-bold opacity-70">
-          {paymentDetails ? `${formatMoneyValue(paymentDetails.amountUsdt, 6)} USDT is on the way.` : 'Your deposit is on the way.'}
-          {' '}Your balance will update once the deposit is confirmed.
-        </p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <SketchyButton className="w-full py-4" onClick={onViewHistory} type="button">
-          View transaction history
-        </SketchyButton>
-        <SketchyButton className="w-full py-4" onClick={onBackToBank} type="button" variant="secondary">
-          Return to Bank
-        </SketchyButton>
-      </div>
-    </div>
-  );
-
   return (
     <div className="mx-auto max-w-2xl scroll-mt-24" ref={panelRef}>
       <div className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
@@ -396,10 +446,51 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
           </div>
         </div>
 
-        {step === 'amount' ? renderAmountStep() : null}
-        {step === 'review' ? renderReviewStep() : null}
-        {step === 'details' ? renderDetailsStep() : null}
-        {step === 'pending' ? renderPendingStep() : null}
+        {step === 'amount' ? (
+          <DepositAmountStep
+            amountError={amountError}
+            depositAmount={depositAmount}
+            onAmountChange={handleAmountChange}
+            onSubmit={handleReviewDeposit}
+          />
+        ) : null}
+        {step === 'review' ? (
+          <DepositReviewStep
+            displayAmount={displayAmount}
+            loadingDetails={loadingDetails}
+            onBackToBank={onBackToBank}
+            onGeneratePaymentDetails={handleGeneratePaymentDetails}
+            onResetToAmount={() => dispatchFlow({ type: 'RESET_TO_AMOUNT' })}
+          />
+        ) : null}
+        {step === 'details' ? (
+          paymentDetails ? (
+            <DepositDetailsStep
+              copyToClipboard={copyToClipboard}
+              expiryState={expiryState}
+              onBackToBank={onBackToBank}
+              onDepositTonConnect={handleDepositTonConnect}
+              onResetToAmount={() => dispatchFlow({ type: 'RESET_TO_AMOUNT' })}
+              paymentDetails={paymentDetails}
+              sendingTransaction={sendingTransaction}
+              walletConnected={Boolean(wallet)}
+            />
+          ) : (
+            <DepositAmountStep
+              amountError={amountError}
+              depositAmount={depositAmount}
+              onAmountChange={handleAmountChange}
+              onSubmit={handleReviewDeposit}
+            />
+          )
+        ) : null}
+        {step === 'pending' ? (
+          <DepositPendingStep
+            onBackToBank={onBackToBank}
+            onViewHistory={onViewHistory}
+            paymentDetails={paymentDetails}
+          />
+        ) : null}
       </div>
     </div>
   );

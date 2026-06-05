@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SketchyButton } from '../../components/SketchyButton';
 import { useToast } from '../../app/ToastProvider';
@@ -10,7 +10,8 @@ import { getApiErrorMessage } from '../../utils/errors';
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [token] = useState(() => searchParams.get('token')?.trim() ?? '');
+  const tokenRef = useRef(searchParams.get('token')?.trim() ?? '');
+  const token = tokenRef.current;
   const { success, error: showError } = useToast();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

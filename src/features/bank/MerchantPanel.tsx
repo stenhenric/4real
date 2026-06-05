@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { AlertTriangle, CheckCircle, History, StickyNote, Upload } from 'lucide-react';
 import { ApiClientError } from '../../services/api/apiClient';
 import { useAuth } from '../../app/AuthProvider';
@@ -54,6 +54,136 @@ function shouldClearOrderIdempotencyAfterError(error: unknown): boolean {
     && ![408, 409, 429].includes(error.status);
 }
 
+function RequirementList({
+  requirements,
+  readyMessage,
+  id,
+}: {
+  requirements: string[];
+  readyMessage: string;
+  id: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'rough-border p-4 text-sm font-bold',
+        requirements.length > 0
+          ? 'border-warning-border bg-warning-bg text-warning-text'
+          : 'border-success-border bg-success-bg text-success-text',
+      )}
+      id={id}
+      role={requirements.length > 0 ? 'status' : undefined}
+    >
+      {requirements.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-[0.22em]">Before you continue</p>
+          <ul className="space-y-1">
+            {requirements.map((requirement) => (
+              <li className="flex items-start gap-2" key={requirement}>
+                <AlertTriangle className="mt-0.5 shrink-0" size={14} />
+                <span>{requirement}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2">
+          <CheckCircle className="mt-0.5 shrink-0" size={16} />
+          <span>{readyMessage}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProofUploadField({
+  proofImage,
+  onProofSelected,
+}: {
+  proofImage: File | null;
+  onProofSelected: (proofImage: File | null) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <label
+        className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
+        htmlFor={MERCHANT_PROOF_ID}
+      >
+        M-Pesa payment screenshot
+      </label>
+      <div className="rough-border relative min-h-[190px] overflow-hidden border-dashed border-black/30 bg-white text-center shadow-sm transition-colors hover:bg-warning-bg">
+        <input
+          accept="image/png,image/jpeg,image/webp"
+          aria-describedby="merchant-proof-help"
+          aria-label="Upload M-Pesa payment screenshot"
+          className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+          id={MERCHANT_PROOF_ID}
+          onChange={(event) => onProofSelected(event.target.files?.[0] ?? null)}
+          type="file"
+        />
+        <div className="pointer-events-none flex min-h-[190px] flex-col items-center justify-center p-6">
+          <Upload className="opacity-40 mb-3" size={44} />
+          <p className="text-sm italic opacity-80 font-bold uppercase tracking-widest">
+            Upload payment screenshot
+          </p>
+          <p className="mt-3 text-xs font-mono opacity-65 max-w-xs" id="merchant-proof-help">
+            PNG, JPG, or WEBP. Use the screenshot for the exact M-Pesa payment above.
+          </p>
+          <p className="mt-4 text-sm font-bold text-ink-blue break-all">
+            {proofImage ? `Selected: ${proofImage.name}` : 'Choose screenshot'}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MpesaInstructionContent({
+  merchantConfig,
+  fiatCurrency,
+}: {
+  merchantConfig: MerchantConfigDTO | null;
+  fiatCurrency: string;
+}) {
+  return (
+    <div className="space-y-4 font-mono text-sm leading-relaxed">
+      <div className="border border-warning-border bg-white/40 p-3">
+        <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">
+          M-Pesa Till
+        </p>
+        <p className="font-bold text-xl tracking-tight italic">
+          {merchantConfig?.mpesaNumber ?? 'Loading…'}
+        </p>
+      </div>
+      <div className="border border-warning-border bg-white/40 p-3">
+        <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">P2P USDT Wallet</p>
+        <p className="font-bold break-all text-xs">
+          {merchantConfig?.walletAddress ?? 'Loading…'}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="border border-success-border bg-white/40 p-3">
+          <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Buy Rate</p>
+          <p className="font-bold text-lg tracking-tight">
+            {merchantConfig ? `${formatMoney(merchantConfig.buyRateKesPerUsdt)} ${fiatCurrency}` : 'Loading…'}
+          </p>
+          <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
+        </div>
+        <div className="border border-danger-border bg-white/40 p-3">
+          <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Sell Rate</p>
+          <p className="font-bold text-lg tracking-tight">
+            {merchantConfig ? `${formatMoney(merchantConfig.sellRateKesPerUsdt)} ${fiatCurrency}` : 'Loading…'}
+          </p>
+          <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
+        </div>
+      </div>
+      <p className="italic text-xs opacity-70 font-bold bg-white/20 p-2 whitespace-pre-wrap">
+        {merchantConfig?.instructions ?? 'Loading P2P instructions…'}
+      </p>
+    </div>
+  );
+}
+
 const MerchantPanel = () => {
   const { isAdmin, refreshUser, userData } = useAuth();
   const { success, error: showError } = useToast();
@@ -75,20 +205,23 @@ const MerchantPanel = () => {
   const [orders, setOrders] = useState<OrderDTO[]>([]);
   const [merchantConfig, setMerchantConfig] = useState<MerchantConfigDTO | null>(null);
   const [viewError, setViewError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const merchantViewRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const orderRequestInFlightRef = useRef(false);
   const orderActionRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
 
-  useEffect(() => {
+  const loadMerchantView = useCallback(() => {
+    const requestId = (merchantViewRequestRef.current?.id ?? 0) + 1;
+    merchantViewRequestRef.current?.controller.abort();
     const controller = new AbortController();
+    merchantViewRequestRef.current = { id: requestId, controller };
 
-    const loadMerchantView = async () => {
+    const load = async () => {
       const [ordersResult, configResult] = await Promise.allSettled([
         getOrders(controller.signal),
         getMerchantConfig(controller.signal),
       ]);
 
-      if (controller.signal.aborted) {
+      if (controller.signal.aborted || merchantViewRequestRef.current?.id !== requestId) {
         return;
       }
 
@@ -114,12 +247,17 @@ const MerchantPanel = () => {
       }
     };
 
-    void loadMerchantView();
+    void load();
+  }, [showError]);
+
+  useEffect(() => {
+    loadMerchantView();
+    const activeRequest = merchantViewRequestRef.current;
 
     return () => {
-      controller.abort();
+      activeRequest?.controller.abort();
     };
-  }, [reloadKey, showError]);
+  }, [loadMerchantView]);
 
   const resetTradeForm = () => {
     dispatchTrade({ type: 'RESET' });
@@ -353,113 +491,6 @@ const MerchantPanel = () => {
     }
   };
 
-  const renderRequirementList = (requirements: string[], readyMessage: string, id: string) => (
-    <div
-      className={cn(
-        'rough-border p-4 text-sm font-bold',
-        requirements.length > 0
-          ? 'border-warning-border bg-warning-bg text-warning-text'
-          : 'border-success-border bg-success-bg text-success-text',
-      )}
-      id={id}
-      role={requirements.length > 0 ? 'status' : undefined}
-    >
-      {requirements.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.22em]">Before you continue</p>
-          <ul className="space-y-1">
-            {requirements.map((requirement) => (
-              <li className="flex items-start gap-2" key={requirement}>
-                <AlertTriangle className="mt-0.5 shrink-0" size={14} />
-                <span>{requirement}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <div className="flex items-start gap-2">
-          <CheckCircle className="mt-0.5 shrink-0" size={16} />
-          <span>{readyMessage}</span>
-        </div>
-      )}
-    </div>
-  );
-
-  const renderProofUpload = () => (
-    <div className="space-y-3">
-      <label
-        className="block text-xs font-bold uppercase opacity-50 mb-1 ml-1 tracking-widest"
-        htmlFor={MERCHANT_PROOF_ID}
-      >
-        M-Pesa payment screenshot
-      </label>
-      <div className="rough-border relative min-h-[190px] overflow-hidden border-dashed border-black/30 bg-white text-center shadow-sm transition-colors hover:bg-warning-bg">
-        <input
-          accept="image/png,image/jpeg,image/webp"
-          aria-describedby="merchant-proof-help"
-          aria-label="Upload M-Pesa payment screenshot"
-          className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
-          id={MERCHANT_PROOF_ID}
-          onChange={(event) => dispatchTrade({
-            type: 'BUY_PROOF_SELECTED',
-            proofImage: event.target.files?.[0] ?? null,
-          })}
-          type="file"
-        />
-        <div className="pointer-events-none flex min-h-[190px] flex-col items-center justify-center p-6">
-          <Upload className="opacity-40 mb-3" size={44} />
-          <p className="text-sm italic opacity-80 font-bold uppercase tracking-widest">
-            Upload payment screenshot
-          </p>
-          <p className="mt-3 text-xs font-mono opacity-65 max-w-xs" id="merchant-proof-help">
-            PNG, JPG, or WEBP. Use the screenshot for the exact M-Pesa payment above.
-          </p>
-          <p className="mt-4 text-sm font-bold text-ink-blue break-all">
-            {proofImage ? `Selected: ${proofImage.name}` : 'Choose screenshot'}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderMpesaInstructionContent = () => (
-    <div className="space-y-4 font-mono text-sm leading-relaxed">
-      <div className="border border-warning-border bg-white/40 p-3">
-        <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">
-          M-Pesa Till
-        </p>
-        <p className="font-bold text-xl tracking-tight italic">
-          {merchantConfig?.mpesaNumber ?? 'Loading…'}
-        </p>
-      </div>
-      <div className="border border-warning-border bg-white/40 p-3">
-        <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">P2P USDT Wallet</p>
-        <p className="font-bold break-all text-xs">
-          {merchantConfig?.walletAddress ?? 'Loading…'}
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="border border-success-border bg-white/40 p-3">
-          <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Buy Rate</p>
-          <p className="font-bold text-lg tracking-tight">
-            {merchantConfig ? `${formatMoney(merchantConfig.buyRateKesPerUsdt)} ${fiatCurrency}` : 'Loading…'}
-          </p>
-          <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
-        </div>
-        <div className="border border-danger-border bg-white/40 p-3">
-          <p className="opacity-60 uppercase text-[10px] mb-1 font-bold">Sell Rate</p>
-          <p className="font-bold text-lg tracking-tight">
-            {merchantConfig ? `${formatMoney(merchantConfig.sellRateKesPerUsdt)} ${fiatCurrency}` : 'Loading…'}
-          </p>
-          <p className="text-[10px] opacity-50 mt-1">per 1 USDT</p>
-        </div>
-      </div>
-      <p className="italic text-xs opacity-70 font-bold bg-white/20 p-2 whitespace-pre-wrap">
-        {merchantConfig?.instructions ?? 'Loading P2P instructions…'}
-      </p>
-    </div>
-  );
-
   return (
     <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
       <div className="text-center">
@@ -525,7 +556,7 @@ const MerchantPanel = () => {
             <p className="text-sm font-bold">{viewError}</p>
             <SketchyButton
               className="w-full sm:w-auto"
-              onClick={() => setReloadKey((currentKey) => currentKey + 1)}
+              onClick={loadMerchantView}
               type="button"
               variant="secondary"
             >
@@ -634,11 +665,11 @@ const MerchantPanel = () => {
 
                     {!paymentConfirmed ? (
                       <div className="space-y-3">
-                        {renderRequirementList(
-                          buyRequirements,
-                          'Exact payment reviewed. You can continue after sending it.',
-                          'buy-requirements',
-                        )}
+                        <RequirementList
+                          id="buy-requirements"
+                          readyMessage="Exact payment reviewed. You can continue after sending it."
+                          requirements={buyRequirements}
+                        />
                         <SketchyButton
                           aria-describedby="buy-requirements"
                           className="w-full py-3 text-lg uppercase tracking-tighter"
@@ -724,11 +755,11 @@ const MerchantPanel = () => {
                         >
                           Review & Confirm
                         </SketchyButton>
-                        {renderRequirementList(
-                          sellRequirements,
-                          'Payout details are ready to review.',
-                          'sell-submit-requirements',
-                        )}
+                        <RequirementList
+                          id="sell-submit-requirements"
+                          readyMessage="Payout details are ready to review."
+                          requirements={sellRequirements}
+                        />
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -757,11 +788,11 @@ const MerchantPanel = () => {
                             Cancel
                           </SketchyButton>
                         </div>
-                        {renderRequirementList(
-                          sellRequirements,
-                          'Review complete. Submit when the amount and payout details look right.',
-                          'sell-submit-requirements',
-                        )}
+                        <RequirementList
+                          id="sell-submit-requirements"
+                          readyMessage="Review complete. Submit when the amount and payout details look right."
+                          requirements={sellRequirements}
+                        />
                       </div>
                     )}
                   </div>
@@ -790,12 +821,18 @@ const MerchantPanel = () => {
                       value={transactionCode}
                     />
                   </div>
-                  {renderProofUpload()}
-                  {renderRequirementList(
-                    buyRequirements,
-                    'Proof and transaction code are ready. Review once more before submitting.',
-                    'buy-submit-requirements',
-                  )}
+                  <ProofUploadField
+                    onProofSelected={(selectedProofImage) => dispatchTrade({
+                      type: 'BUY_PROOF_SELECTED',
+                      proofImage: selectedProofImage,
+                    })}
+                    proofImage={proofImage}
+                  />
+                  <RequirementList
+                    id="buy-submit-requirements"
+                    readyMessage="Proof and transaction code are ready. Review once more before submitting."
+                    requirements={buyRequirements}
+                  />
                 </div>
               ) : null}
 
@@ -820,7 +857,7 @@ const MerchantPanel = () => {
               View M-Pesa details
             </summary>
             <div className="mt-4">
-              {renderMpesaInstructionContent()}
+              <MpesaInstructionContent merchantConfig={merchantConfig} fiatCurrency={fiatCurrency} />
             </div>
           </details>
 
@@ -835,7 +872,7 @@ const MerchantPanel = () => {
                   M-Pesa P2P Instructions
                 </h2>
               </div>
-              {renderMpesaInstructionContent()}
+              <MpesaInstructionContent merchantConfig={merchantConfig} fiatCurrency={fiatCurrency} />
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { drawConnectFourBoard } from '../canvas/drawConnectFourBoard';
 import { useAuth } from '../app/AuthProvider';
@@ -18,49 +18,82 @@ const DEMO_SEQUENCE: [number, number, Cell][] = [
 
 const WINNING_LINE: [number, number][] = [[2, 3], [3, 3], [4, 3], [5, 3]];
 
+const SKETCH_BARS = [
+  { id: 'mon', height: 28 },
+  { id: 'tue', height: 45 },
+  { id: 'wed', height: 38 },
+  { id: 'thu', height: 62 },
+  { id: 'fri', height: 55 },
+  { id: 'sat', height: 75 },
+  { id: 'sun', height: 68 },
+];
+
 function buildEmptyBoard(): Cell[][] {
   return Array.from({ length: 6 }, () => Array<Cell>(7).fill(null));
+}
+
+function getPreviewBoard(boardRef: { current: Cell[][] | null }) {
+  if (boardRef.current === null) {
+    boardRef.current = buildEmptyBoard();
+  }
+  return boardRef.current;
+}
+
+function drawPreviewFrame(
+  canvas: HTMLCanvasElement | null,
+  size: { width: number; height: number },
+  board: Cell[][],
+  step: number,
+) {
+  if (!canvas || size.width <= 0 || size.height <= 0) {
+    return;
+  }
+
+  // R wins exactly at step 7 (index 6: [2, 3, 'R']).
+  const winningLine = step > 6 ? WINNING_LINE : undefined;
+  drawConnectFourBoard(canvas, board, winningLine);
 }
 
 function ConnectFourPreview() {
   const { elementRef, size } = useElementSize<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [board, setBoard] = useState<Cell[][]>(buildEmptyBoard);
+  const boardRef = useRef<Cell[][] | null>(null);
+  const sizeRef = useRef(size);
   const stepRef = useRef(0);
   const frameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    sizeRef.current = size;
+    drawPreviewFrame(canvasRef.current, size, getPreviewBoard(boardRef), stepRef.current);
+  }, [size]);
+
+  useEffect(() => {
+    const drawCurrentBoard = () => {
+      drawPreviewFrame(canvasRef.current, sizeRef.current, getPreviewBoard(boardRef), stepRef.current);
+    };
+
     function tick() {
       const move = DEMO_SEQUENCE[stepRef.current];
       if (!move) {
         frameRef.current = setTimeout(() => {
-          setBoard(buildEmptyBoard());
+          boardRef.current = buildEmptyBoard();
           stepRef.current = 0;
+          drawCurrentBoard();
           frameRef.current = setTimeout(tick, 600);
         }, 2400);
         return;
       }
       const [row, col, color] = move;
-      setBoard((prev) => {
-        const next = prev.map((r) => [...r]);
-        next[row]![col] = color;
-        return next;
-      });
+      const nextBoard = getPreviewBoard(boardRef).map((r) => [...r]);
+      nextBoard[row]![col] = color;
+      boardRef.current = nextBoard;
       stepRef.current += 1;
+      drawCurrentBoard();
       frameRef.current = setTimeout(tick, 380);
     }
     frameRef.current = setTimeout(tick, 600);
     return () => { if (frameRef.current) clearTimeout(frameRef.current); };
   }, []);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || size.width <= 0 || size.height <= 0) return;
-    
-    // R wins exactly at step 7 (index 6: [2, 3, 'R']).
-    const winningLine = stepRef.current > 6 ? WINNING_LINE : undefined;
-    drawConnectFourBoard(canvas, board, winningLine);
-  }, [board, size]);
 
   return (
     <div ref={elementRef} className="relative w-full" style={{ aspectRatio: '7/6' }}>
@@ -69,7 +102,8 @@ function ConnectFourPreview() {
         width={size.width}
         height={size.height}
         className="absolute inset-0 pointer-events-none"
-        aria-hidden="true"
+        aria-label="Animated Connect Four board preview"
+        role="img"
       />
     </div>
   );
@@ -78,20 +112,11 @@ function ConnectFourPreview() {
 // Sketch bar chart
 
 function SketchBarChart() {
-  const bars = [
-    { id: 'mon', height: 28 },
-    { id: 'tue', height: 45 },
-    { id: 'wed', height: 38 },
-    { id: 'thu', height: 62 },
-    { id: 'fri', height: 55 },
-    { id: 'sat', height: 75 },
-    { id: 'sun', height: 68 },
-  ];
   return (
     <svg viewBox="0 0 140 60" className="size-full" aria-hidden="true">
       <line x1="8" y1="4" x2="8" y2="54" stroke="var(--color-ink-black)" strokeWidth="1.5" strokeLinecap="round" />
       <line x1="8" y1="54" x2="138" y2="54" stroke="var(--color-ink-black)" strokeWidth="1.5" strokeLinecap="round" />
-      {bars.map((bar, i) => {
+      {SKETCH_BARS.map((bar, i) => {
         const x = 14 + i * 18; const y = 54 - bar.height * 0.62; const bh = bar.height * 0.62;
         return (
           <g key={bar.id}>

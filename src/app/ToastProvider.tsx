@@ -100,12 +100,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div
+      <section
         aria-atomic="true"
         aria-label="Notifications"
         aria-live="polite"
         className="fixed bottom-20 md:bottom-4 left-4 right-4 z-100 flex flex-col gap-2 pointer-events-none sm:left-auto sm:w-full sm:max-w-sm"
-        role="region"
       >
         {toasts.map((toast) => (
           <div
@@ -133,7 +132,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </SketchyButton>
           </div>
         ))}
-      </div>
+      </section>
     </ToastContext.Provider>
   );
 }

@@ -12,23 +12,37 @@ import { getUserProfile } from '../services/users.service';
 import { isAbortError } from '../utils/isAbortError';
 import type { MatchDTO, UserProfileDTO } from '../types/api';
 
+interface ProfilePageState {
+  history: MatchDTO[];
+  loading: boolean;
+  profile: UserProfileDTO | null;
+}
+
 const ProfilePage = () => {
   const { userId } = useParams();
   const { user: currentUser } = useAuth();
   const { error: showError } = useToast();
-  const [profile, setProfile] = useState<UserProfileDTO | null>(null);
-  const [history, setHistory] = useState<MatchDTO[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [{ history, loading, profile }, setProfileState] = useState<ProfilePageState>({
+    history: [],
+    loading: true,
+    profile: null,
+  });
 
   useEffect(() => {
     if (!userId) {
-      setLoading(false);
+      setProfileState({
+        history: [],
+        loading: false,
+        profile: null,
+      });
       return undefined;
     }
 
-    setLoading(true);
-    setProfile(null);
-    setHistory([]);
+    setProfileState({
+      history: [],
+      loading: true,
+      profile: null,
+    });
 
     const controller = new AbortController();
 
@@ -40,8 +54,11 @@ const ProfilePage = () => {
         ]);
 
         if (!controller.signal.aborted) {
-          setProfile(profileData);
-          setHistory(historyData);
+          setProfileState({
+            history: historyData,
+            loading: false,
+            profile: profileData,
+          });
         }
       } catch (error) {
         if (isAbortError(error, controller.signal)) {
@@ -49,9 +66,12 @@ const ProfilePage = () => {
         }
 
         showError('Failed to fetch profile details.');
-      } finally {
         if (!controller.signal.aborted) {
-          setLoading(false);
+          setProfileState({
+            history: [],
+            loading: false,
+            profile: null,
+          });
         }
       }
     };
