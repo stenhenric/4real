@@ -782,7 +782,7 @@ const GamePage = () => {
         />
       </div>
 
-      {gameOver ? (
+      {gameOver && room.status === 'completed' ? (
         <VerdictModal
           gameOver={gameOver}
           onReturnToLobby={() => navigate('/play')}

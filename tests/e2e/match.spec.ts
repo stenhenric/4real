@@ -70,6 +70,64 @@ test('lets two authenticated players create, join, and finish a realtime public 
   }
 });
 
+test('verdict modal only appears after a match is completed, not during waiting or active states', async ({ browser }) => {
+  const playerOne = await createLoggedInPage(browser, 'player1@example.com');
+  const playerTwo = await createLoggedInPage(browser, 'player2@example.com');
+
+  try {
+    // --- Waiting state: create match, verify NO verdict ---
+    await playerOne.page.goto('/play');
+    await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerOne.page.getByRole('button', { name: /new draft/i }).click();
+    await playerOne.page.getByRole('radio', { name: /free public/i }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
+
+    await expect(playerOne.page).toHaveURL(/\/game\//);
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
+    // Verdict modal must NOT be visible during waiting state
+    await expect(playerOne.page.getByText(/you lost this match/i)).not.toBeVisible();
+    await expect(playerOne.page.getByText(/you are victorious/i)).not.toBeVisible();
+    await expect(playerOne.page.getByText(/this match is a draw/i)).not.toBeVisible();
+
+    // --- Active state: opponent joins, verify NO verdict ---
+    await playerTwo.page.goto('/play');
+    await expect(playerTwo.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerTwo.page.getByRole('button', { name: /join for free/i }).click();
+    await playerTwo.page.getByRole('button', { name: /join match/i }).click();
+
+    await expect(playerTwo.page).toHaveURL(/\/game\//);
+    await expect(playerTwo.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
+    await playerOne.page.reload();
+    await expect(playerOne.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
+
+    // Verdict modal must NOT be visible during active state
+    await expect(playerOne.page.getByText(/you lost this match/i)).not.toBeVisible();
+    await expect(playerOne.page.getByText(/you are victorious/i)).not.toBeVisible();
+    await expect(playerTwo.page.getByText(/you lost this match/i)).not.toBeVisible();
+    await expect(playerTwo.page.getByText(/you are victorious/i)).not.toBeVisible();
+
+    // --- Completed state: play to win, verify verdict appears for both ---
+    const boardOne = playerOne.page.locator('canvas[aria-label^="Connect board"]');
+    const boardTwo = playerTwo.page.locator('canvas[aria-label^="Connect board"]');
+
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 1 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 2 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 3 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 4 });
+    await playMoveAndWaitForSync({ actorPage: playerOne.page, observerPage: playerTwo.page, board: boardOne, key: '1', moveNumber: 5 });
+    await playMoveAndWaitForSync({ actorPage: playerTwo.page, observerPage: playerOne.page, board: boardTwo, key: '7', moveNumber: 6 });
+
+    await boardOne.focus();
+    await boardOne.press('1');
+    // NOW verdict should appear
+    await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/you lost this match/i)).toBeVisible();
+  } finally {
+    await closeContext(playerOne.context);
+    await closeContext(playerTwo.context);
+  }
+});
+
 test('keeps both players signed in when access cookies expire before a winning move', async ({ browser }) => {
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
   const playerTwo = await createLoggedInPage(browser, 'player2@example.com');
