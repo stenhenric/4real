@@ -704,6 +704,19 @@ const GamePage = () => {
   const myColorClass = myIndex === 0 ? 'bg-disc-red' : 'bg-disc-blue';
   const opponentColorClass = opponentIndex === 0 ? 'bg-disc-red' : 'bg-disc-blue';
 
+  const tryMakeMove = (col: number) => {
+    if (!room || !isMyTurn || gameOver) {
+      return;
+    }
+
+    if (room.board && room.board[0] && room.board[0][col] !== null) {
+      showError('This column is full!');
+      return;
+    }
+
+    makeMove(col);
+  };
+
   const handleBoardClick = (event: MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) {
@@ -713,7 +726,7 @@ const GamePage = () => {
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const col = Math.floor(x / (rect.width / 7));
-    makeMove(col);
+    tryMakeMove(col);
   };
 
   const handleBoardKeyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
@@ -735,13 +748,13 @@ const GamePage = () => {
 
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      makeMove(selectedColumn);
+      tryMakeMove(selectedColumn);
       return;
     }
 
     if (/^[1-7]$/.test(event.key)) {
       event.preventDefault();
-      makeMove(Number(event.key) - 1);
+      tryMakeMove(Number(event.key) - 1);
     }
   };
 
