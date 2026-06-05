@@ -37,7 +37,7 @@ test('lets two authenticated players create, join, and finish a realtime public 
     await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
 
     await expect(playerOne.page).toHaveURL(/\/game\//);
-    await expect(playerOne.page.getByText(/waiting for p2/i)).toBeVisible();
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
 
     await playerTwo.page.goto('/play');
     await expect(playerTwo.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
@@ -63,7 +63,7 @@ test('lets two authenticated players create, join, and finish a realtime public 
     await boardOne.focus();
     await boardOne.press('1');
     await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
-    await expect(playerTwo.page.getByText(/you were defeated/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/you lost this match/i)).toBeVisible();
   } finally {
     await closeContext(playerOne.context);
     await closeContext(playerTwo.context);
@@ -82,7 +82,7 @@ test('keeps both players signed in when access cookies expire before a winning m
     await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
 
     await expect(playerOne.page).toHaveURL(/\/game\//);
-    await expect(playerOne.page.getByText(/waiting for p2/i)).toBeVisible();
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
 
     await playerTwo.page.goto('/play');
     await expect(playerTwo.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
@@ -110,7 +110,7 @@ test('keeps both players signed in when access cookies expire before a winning m
     await boardOne.focus();
     await boardOne.press('1');
     await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
-    await expect(playerTwo.page.getByText(/you were defeated/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/you lost this match/i)).toBeVisible();
 
     await playerOne.page.getByRole('button', { name: /return to lobby/i }).click();
     await playerTwo.page.getByRole('button', { name: /return to lobby/i }).click();
@@ -172,9 +172,9 @@ test('settles a paid public match with merchant commission end to end', async ({
     await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
 
     await expect(playerOne.page).toHaveURL(/\/game\//);
-    await expect(playerOne.page.getByText(/waiting for p2/i)).toBeVisible();
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
     await expect(playerOne.page.getByText('$18', { exact: true })).toBeVisible();
-    await expect(playerOne.page.getByText(/10% merchant commission applied/i)).toBeVisible();
+    await expect(playerOne.page.getByText(/platform fee.*10%/i)).toBeVisible();
     await expect(playerOne.page.getByText('$32.5', { exact: true })).toBeVisible();
 
     await playerTwo.page.goto('/play');
@@ -205,7 +205,7 @@ test('settles a paid public match with merchant commission end to end', async ({
     await boardOne.focus();
     await boardOne.press('1');
     await expect(playerOne.page.getByText(/you are victorious/i)).toBeVisible();
-    await expect(playerTwo.page.getByText(/you were defeated/i)).toBeVisible();
+    await expect(playerTwo.page.getByText(/you lost this match/i)).toBeVisible();
     await expect(playerOne.page.getByText('$50.5', { exact: true })).toBeVisible();
     await expect(playerTwo.page.getByText('$8', { exact: true })).toBeVisible();
 

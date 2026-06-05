@@ -16,26 +16,38 @@ export function drawConnectFourBoard(
   board: Board | undefined,
   winningLine?: WinningLine,
 ) {
+  const dpr = window.devicePixelRatio || 1;
+
+  // Scale the canvas buffer to match the physical pixel count.
+  // CSS size (clientWidth/clientHeight) stays unchanged, so layout is unaffected.
+  const cssWidth = canvas.clientWidth;
+  const cssHeight = canvas.clientHeight;
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+
   const context = canvas.getContext('2d');
   if (!context) {
     return;
   }
 
-  context.clearRect(0, 0, canvas.width, canvas.height);
+  // Scale all drawing operations so we can keep using CSS-pixel coordinates.
+  context.scale(dpr, dpr);
+  context.clearRect(0, 0, cssWidth, cssHeight);
 
   if (!board) {
     return;
   }
 
   const generator = rough.canvas(canvas);
-  const cellWidth = canvas.width / 7;
-  const cellHeight = canvas.height / 6;
+  const cellWidth = cssWidth / 7;
+  const cellHeight = cssHeight / 6;
   const boardLine = themeColor('--color-game-board-line', 'navy');
   const redDisc = themeColor('--color-disc-red', 'red');
   const blueDisc = themeColor('--color-disc-blue', 'blue');
 
+  // Grid lines
   for (let row = 0; row <= 6; row += 1) {
-    generator.line(0, row * cellHeight, canvas.width, row * cellHeight, {
+    generator.line(0, row * cellHeight, cssWidth, row * cellHeight, {
       roughness: 1.2,
       stroke: boardLine,
       strokeWidth: 1.5,
@@ -43,13 +55,24 @@ export function drawConnectFourBoard(
   }
 
   for (let column = 0; column <= 7; column += 1) {
-    generator.line(column * cellWidth, 0, column * cellWidth, canvas.height, {
+    generator.line(column * cellWidth, 0, column * cellWidth, cssHeight, {
       roughness: 1.2,
       stroke: boardLine,
       strokeWidth: 1.5,
     });
   }
 
+  // Winning-line highlight — drawn BEFORE discs so discs render on top
+  winningLine?.forEach(([row, column]) => {
+    generator.rectangle(column * cellWidth + 5, row * cellHeight + 5, cellWidth - 10, cellHeight - 10, {
+      fill: themeColor('--color-marker-yellow', 'yellow'),
+      fillStyle: 'solid',
+      roughness: 3,
+      stroke: 'transparent',
+    });
+  });
+
+  // Discs
   board.forEach((row, rowIndex) => {
     row.forEach((cell, columnIndex) => {
       if (!cell) {
@@ -67,15 +90,6 @@ export function drawConnectFourBoard(
         roughness: 2,
         stroke: cell === 'R' ? redDisc : blueDisc,
       });
-    });
-  });
-
-  winningLine?.forEach(([row, column]) => {
-    generator.rectangle(column * cellWidth + 5, row * cellHeight + 5, cellWidth - 10, cellHeight - 10, {
-      fill: themeColor('--color-marker-yellow', 'yellow'),
-      fillStyle: 'solid',
-      roughness: 3,
-      stroke: 'transparent',
     });
   });
 }

@@ -1,13 +1,15 @@
 import { useEffect, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, LoaderCircle, Medal, Search, ShieldAlert, Trophy } from 'lucide-react';
+import { AlertTriangle, LoaderCircle, Medal, Scale, Search, ShieldAlert, Trophy } from 'lucide-react';
 import { useAuth } from '../app/AuthProvider';
 import { useToast } from '../app/ToastProvider';
 import { drawConnectFourBoard } from '../canvas/drawConnectFourBoard';
 import { runVictoryConfetti } from '../canvas/runVictoryConfetti';
 import { SketchyButton } from '../components/SketchyButton';
 import { SketchyContainer } from '../components/SketchyContainer';
+import { SketchCard } from '../components/ui/SketchCard';
 import { StatePanel } from '../components/ui/StatePanel';
+import { StatusBadge } from '../components/ui/StatusBadge';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useGameRoom } from '../features/game/useGameRoom';
 import { getMatch, joinMatch, resignMatch } from '../services/matches.service';
@@ -64,7 +66,6 @@ function PlayerSummary({
   isActive,
   label,
   name,
-  wager,
   elo,
   align = 'left',
 }: {
@@ -72,7 +73,6 @@ function PlayerSummary({
   isActive: boolean;
   label: string;
   name: string | undefined;
-  wager: number;
   elo: number | undefined;
   align?: 'left' | 'right';
 }) {
@@ -88,22 +88,12 @@ function PlayerSummary({
     >
       <span className="text-[10px] uppercase font-bold opacity-60">{label}</span>
       <span className="font-bold flex items-center gap-2 text-lg">
-        {isRightAligned ? null : <div className={cn('size-4 border-2 border-black', colorClass)} />}
+        {isRightAligned ? null : <div aria-label={`${label} plays ${colorClass.includes('red') ? 'Red' : 'Blue'}`} className={cn('size-4 border-2 border-black', colorClass)} />}
         {name}
-        {isRightAligned ? <div className={cn('size-4 border-2 border-black', colorClass)} /> : null}
+        {isRightAligned ? <div aria-label={`${label} plays ${colorClass.includes('red') ? 'Red' : 'Blue'}`} className={cn('size-4 border-2 border-black', colorClass)} /> : null}
       </span>
       <div className="flex items-center gap-2 mt-1 font-mono text-[10px] font-bold">
-        {isRightAligned && moneyToNumber(wager) > 0 ? (
-          <span className="border border-warning-border bg-warning-bg px-2 py-0.5 text-warning-text">
-            Wager: ${formatMoneyValue(wager)}
-          </span>
-        ) : null}
         <span className="bg-black/5 px-2 py-0.5">ELO {elo || 1000}</span>
-        {!isRightAligned && moneyToNumber(wager) > 0 ? (
-          <span className="border border-warning-border bg-warning-bg px-2 py-0.5 text-warning-text">
-            Wager: ${formatMoneyValue(wager)}
-          </span>
-        ) : null}
       </div>
     </div>
   );
@@ -113,12 +103,10 @@ function OpponentSummary({
   colorClass,
   isActive,
   opponent,
-  wager,
 }: {
   colorClass: string;
   isActive: boolean;
   opponent: RoomPlayer | undefined;
-  wager: number;
 }) {
   if (!opponent) {
     return (
@@ -128,7 +116,7 @@ function OpponentSummary({
           Waiting… <div className={cn('size-4 border-2 border-black', colorClass)} />
         </span>
         <span className="font-mono text-[10px] opacity-40 mt-1 uppercase tracking-widest text-ink-black">
-          Awaiting rival…
+          Waiting for opponent…
         </span>
       </div>
     );
@@ -142,7 +130,6 @@ function OpponentSummary({
       isActive={isActive}
       label="Opponent"
       name={opponent.username}
-      wager={wager}
     />
   );
 }
@@ -151,7 +138,7 @@ function MatchStatus({ status }: { status: RoomState['status'] }) {
   if (status === 'waiting') {
     return (
       <span className="animate-pulse border border-warning-border bg-warning-bg px-3 py-1 text-xs font-bold uppercase text-warning-text shadow-sm">
-        Waiting for P2…
+        Waiting for opponent…
       </span>
     );
   }
@@ -176,7 +163,6 @@ function GameBoardPanel({
   gameOver,
   handleBoardClick,
   handleBoardKeyDown,
-  invitePath,
   isMyTurn,
   myColorClass,
   myElo,
@@ -191,7 +177,6 @@ function GameBoardPanel({
   gameOver: GameOverState | null;
   handleBoardClick: (event: MouseEvent<HTMLCanvasElement>) => void;
   handleBoardKeyDown: (event: KeyboardEvent<HTMLCanvasElement>) => void;
-  invitePath: string;
   isMyTurn: boolean;
   myColorClass: string;
   myElo: number | undefined;
@@ -212,7 +197,6 @@ function GameBoardPanel({
             isActive={room.currentTurn === myUserId}
             label="You"
             name={myUsername}
-            wager={room.wager}
           />
 
           <div className="flex flex-col items-center justify-center">
@@ -223,7 +207,6 @@ function GameBoardPanel({
             colorClass={opponentColorClass}
             isActive={Boolean(opponent && room.currentTurn === opponent.userId)}
             opponent={opponent}
-            wager={room.wager}
           />
         </div>
 
@@ -252,9 +235,16 @@ function GameBoardPanel({
           Use left and right arrow keys to choose a column, then press Enter or Space to drop a disc.
           Selected column {selectedColumn + 1}.
         </p>
-        <p className="text-center mt-4 text-xs font-mono opacity-40">
-          INVITE LINK: {invitePath}
-        </p>
+
+        {room.status === 'active' && !gameOver ? (
+          <div className="mt-4 text-center" aria-live="polite">
+            {isMyTurn ? (
+              <StatusBadge tone="success">Your turn — drop a disc!</StatusBadge>
+            ) : (
+              <StatusBadge tone="warning">Waiting for opponent…</StatusBadge>
+            )}
+          </div>
+        ) : null}
       </SketchyContainer>
     </div>
   );
@@ -264,7 +254,6 @@ function GameSidebar({
   copyInviteLink,
   gameOver,
   onResign,
-  onReturnToLobby,
   opponent,
   resigning,
   room,
@@ -273,26 +262,30 @@ function GameSidebar({
   copyInviteLink: () => Promise<void>;
   gameOver: GameOverState | null;
   onResign: () => void;
-  onReturnToLobby: () => void;
   opponent: RoomPlayer | undefined;
   resigning: boolean;
   room: RoomState;
   userId: string | undefined;
 }) {
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
+
+  const isWagered = moneyToNumber(room.wager) > 0;
+  const buttonLabel = room.status === 'waiting' ? 'Cancel Match' : 'Resign Match';
+
   return (
     <div className="w-full md:w-64 space-y-6">
       {room.status === 'waiting' && !opponent ? (
         <div className="sticky-note p-6 rough-border">
           <div className="tape"></div>
           <h3 className="font-semibold text-lg mb-2 uppercase tracking-tighter">Invite Rival</h3>
-          <p className="text-xs mb-4 opacity-70 italic">Link is ready for the ink. Send it to a friend!</p>
+          <p className="text-xs mb-4 opacity-70 italic">Share this link to invite an opponent</p>
           <SketchyButton className="w-full text-xs py-2 bg-white" onClick={() => void copyInviteLink()}>
-            Copy Draft Link
+            Copy Invite Link
           </SketchyButton>
         </div>
       ) : null}
 
-      {moneyToNumber(room.wager) > 0 ? (
+      {isWagered ? (
         <div className="rough-border bg-ink-blue text-white p-6 relative shadow-xl overflow-hidden">
           <div className="absolute top-0 right-0 p-1 opacity-20">
             <Medal size={48} />
@@ -302,7 +295,7 @@ function GameSidebar({
             ${formatMoneyValue(room.projectedWinnerAmount)}
           </h3>
           <p className="text-[10px] italic mt-2 opacity-60">
-            * {Math.round(moneyToNumber(room.commissionRate) * 100)}% Merchant Commission Applied
+            * Platform fee: {Math.round(moneyToNumber(room.commissionRate) * 100)}%
           </p>
         </div>
       ) : null}
@@ -312,37 +305,156 @@ function GameSidebar({
           <Trophy size={18} /> Match Log
         </h2>
         <div className="space-y-2 h-48 overflow-y-auto font-mono text-xs">
-          {room.moves.length === 0 ? <p className="opacity-40 italic">Waiting for first strike…</p> : null}
+          {room.moves.length === 0 ? <p className="opacity-40 italic">No moves yet</p> : null}
           {room.moves.map((move, index) => (
             <div key={`${move.userId}-${move.col}-${move.row}`} className="border-b border-black/5 flex justify-between py-1">
               <span>Move {index + 1}</span>
               <span className="font-bold">
-                {move.userId === userId ? 'You' : 'Opp'} dropped @ col {move.col + 1}
+                {move.userId === userId ? 'You' : 'Opponent'} → Column {move.col + 1}
               </span>
             </div>
           ))}
         </div>
       </SketchyContainer>
 
-      <SketchyButton className="w-full" onClick={onResign} variant="danger">
-        {resigning ? 'Resigning…' : 'Resign Match'}
-      </SketchyButton>
-
-      {gameOver ? (
-        <SketchyContainer fill="var(--color-success-bg)" roughness={2}>
-          <h3 className="font-semibold text-center text-xl mb-4 uppercase">Verdict</h3>
-          <p className="text-center font-bold mb-4">
-            {gameOver.winnerId === 'draw'
-              ? 'Match is a DRAW!'
-              : gameOver.winnerId === userId
-                ? 'You are VICTORIOUS!'
-                : 'You were DEFEATED.'}
-          </p>
-          <SketchyButton className="w-full" onClick={onReturnToLobby}>
-            Return to Lobby
+      {!gameOver ? (
+        showResignConfirm ? (
+          <SketchCard tone="danger">
+            <p className="text-sm font-bold mb-1">Are you sure?</p>
+            {isWagered ? (
+              <p className="text-xs opacity-80 mb-4">
+                Resigning will forfeit your ${formatMoneyValue(room.wager)} wager.
+              </p>
+            ) : null}
+            <div className="flex gap-3">
+              <SketchyButton
+                className="flex-1"
+                disabled={resigning}
+                onClick={onResign}
+                variant="danger"
+              >
+                {resigning ? 'Resigning…' : 'Yes, Resign'}
+              </SketchyButton>
+              <SketchyButton
+                className="flex-1"
+                onClick={() => setShowResignConfirm(false)}
+                variant="ghost"
+              >
+                Cancel
+              </SketchyButton>
+            </div>
+          </SketchCard>
+        ) : (
+          <SketchyButton
+            aria-describedby={isWagered ? 'resign-warning' : undefined}
+            className="w-full"
+            onClick={() => isWagered ? setShowResignConfirm(true) : onResign()}
+            variant="danger"
+          >
+            {resigning ? 'Resigning…' : buttonLabel}
           </SketchyButton>
-        </SketchyContainer>
+        )
       ) : null}
+      {isWagered ? (
+        <p className="sr-only" id="resign-warning">
+          Warning: resigning will forfeit your wager of ${formatMoneyValue(room.wager)} USDT.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+
+function VerdictModal({
+  gameOver,
+  onReturnToLobby,
+  room,
+  userId,
+}: {
+  gameOver: GameOverState;
+  onReturnToLobby: () => void;
+  room: RoomState;
+  userId: string | undefined;
+}) {
+  const lobbyButtonRef = useRef<HTMLButtonElement>(null);
+  const isWin = gameOver.winnerId === userId;
+  const isDraw = gameOver.winnerId === 'draw';
+
+  const fill = isWin
+    ? 'var(--color-success-bg)'
+    : isDraw
+      ? 'var(--color-warning-bg)'
+      : 'var(--color-danger-bg)';
+
+  const Icon = isWin ? Trophy : isDraw ? Scale : AlertTriangle;
+
+  const headline = isWin
+    ? 'You are victorious!'
+    : isDraw
+      ? 'This match is a draw'
+      : 'You lost this match';
+
+  const hasWager = moneyToNumber(room.wager) > 0;
+
+  useEffect(() => {
+    lobbyButtonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onReturnToLobby();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onReturnToLobby]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="verdict-headline"
+    >
+      <div className="w-full max-w-sm mx-4">
+        <SketchyContainer className="bg-white" fill={fill} roughness={2}>
+          <div className="text-center" aria-live="assertive">
+            <div className="flex justify-center mb-3">
+              <Icon size={40} />
+            </div>
+            <h2 id="verdict-headline" className="text-2xl font-bold uppercase tracking-tight mb-2">
+              {headline}
+            </h2>
+
+            {hasWager ? (
+              <p className="text-lg font-bold font-mono mb-1">
+                {isWin
+                  ? `Won: $${formatMoneyValue(room.projectedWinnerAmount)} USDT`
+                  : isDraw
+                    ? 'Wager refunded'
+                    : `Lost: $${formatMoneyValue(room.wager)} USDT`}
+              </p>
+            ) : null}
+
+            {gameOver.winningLine ? (
+              <p className="text-xs opacity-60 mb-4">Won by: 4 in a row</p>
+            ) : (
+              <div className="mb-4" />
+            )}
+
+            <SketchyButton
+              className="w-full"
+              onClick={onReturnToLobby}
+              ref={lobbyButtonRef}
+              variant="primary"
+            >
+              Return to Lobby
+            </SketchyButton>
+          </div>
+        </SketchyContainer>
+      </div>
     </div>
   );
 }
@@ -369,7 +481,7 @@ function MatchLedgerLoadingPanel() {
       eyebrow="Match ledger"
       icon={LoaderCircle}
       iconClassName="animate-spin"
-      title="Inspecting the match ledger..."
+      title="Loading match details..."
       tone="info"
     />
   );
@@ -396,7 +508,7 @@ function MatchTableLoadingPanel() {
     <StatePanel
       eyebrow="Match"
       icon={AlertTriangle}
-      title="Finding the table..."
+      title="Connecting to game room..."
       tone="info"
     />
   );
@@ -637,39 +749,48 @@ const GamePage = () => {
 
   const copyInviteLink = async () => {
     const link = invitePath;
-    await copyToClipboard(link, 'Invite link scratched to clipboard!');
+    await copyToClipboard(link, 'Invite link copied!');
   };
 
   return (
-    <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-8">
-      <GameBoardPanel
-        canvasRef={canvasRef}
-        gameOver={gameOver}
-        handleBoardClick={handleBoardClick}
-        handleBoardKeyDown={handleBoardKeyDown}
-        invitePath={invitePath}
-        isMyTurn={isMyTurn}
-        myColorClass={myColorClass}
-        myElo={userData?.elo}
-        myUserId={user?.id}
-        myUsername={userData?.username}
-        opponent={opponent}
-        opponentColorClass={opponentColorClass}
-        room={room}
-        selectedColumn={selectedColumn}
-      />
+    <>
+      <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-8">
+        <GameBoardPanel
+          canvasRef={canvasRef}
+          gameOver={gameOver}
+          handleBoardClick={handleBoardClick}
+          handleBoardKeyDown={handleBoardKeyDown}
+          isMyTurn={isMyTurn}
+          myColorClass={myColorClass}
+          myElo={userData?.elo}
+          myUserId={user?.id}
+          myUsername={userData?.username}
+          opponent={opponent}
+          opponentColorClass={opponentColorClass}
+          room={room}
+          selectedColumn={selectedColumn}
+        />
 
-      <GameSidebar
-        copyInviteLink={copyInviteLink}
-        gameOver={gameOver}
-        onResign={() => void handleResignMatch()}
-        onReturnToLobby={() => navigate('/play')}
-        opponent={opponent}
-        resigning={resigning}
-        room={room}
-        userId={user?.id}
-      />
-    </div>
+        <GameSidebar
+          copyInviteLink={copyInviteLink}
+          gameOver={gameOver}
+          onResign={() => void handleResignMatch()}
+          opponent={opponent}
+          resigning={resigning}
+          room={room}
+          userId={user?.id}
+        />
+      </div>
+
+      {gameOver ? (
+        <VerdictModal
+          gameOver={gameOver}
+          onReturnToLobby={() => navigate('/play')}
+          room={room}
+          userId={user?.id}
+        />
+      ) : null}
+    </>
   );
 };
 
