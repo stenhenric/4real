@@ -189,6 +189,43 @@ test('generateDepositMemo returns the existing shape and stores memo ownership',
   assert.equal(storedDocument?.memo, result.memo);
 });
 
+test('deposit memo indexes retain expired ownership for delayed ingestion', async (t) => {
+  let capturedIndexes: Array<{
+    key: Record<string, number>;
+    unique?: boolean;
+    expireAfterSeconds?: number;
+  }> = [];
+  const droppedIndexes: string[] = [];
+  const collectionMock = {
+    async indexes() {
+      return [
+        { name: '_id_', key: { _id: 1 } },
+        { name: 'expiresAt_1', key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+      ];
+    },
+    async dropIndex(name: string) {
+      droppedIndexes.push(name);
+    },
+    async createIndexes(indexes: typeof capturedIndexes) {
+      capturedIndexes = indexes;
+    },
+  };
+  const repository = DepositMemoRepository as unknown as {
+    collection: () => typeof collectionMock;
+  };
+  const collectionMethodMock = mock.method(repository, 'collection', () => collectionMock);
+  t.after(() => collectionMethodMock.mock.restore());
+
+  await DepositMemoRepository.ensureIndexes();
+
+  assert.deepEqual(droppedIndexes, ['expiresAt_1']);
+  assert.deepEqual(capturedIndexes, [
+    { key: { memo: 1 }, unique: true },
+    { key: { userId: 1 } },
+    { key: { expiresAt: 1 }, expireAfterSeconds: 7 * 24 * 60 * 60 },
+  ]);
+});
+
 test('generateDepositMemo normalizes a raw HOT_WALLET_ADDRESS before returning it', async (t) => {
   registerBaseCleanup(t);
   process.env.HOT_WALLET_ADDRESS = HOT_WALLET_RAW;
@@ -1881,6 +1918,44 @@ test('markConfirmed can reconcile stale processing withdrawals found on-chain', 
   assert.equal(update.$set?.status, 'confirmed');
   assert.equal(update.$set?.txHash, 'chain-recovered-1');
   assert.equal(update.$set?.confirmedAt, confirmedAt);
+});
+
+test('withdrawal retry and stuck transitions cannot overwrite a confirmed withdrawal', async (t) => {
+  const repository = WithdrawalRepository as unknown as {
+    collection: () => {
+      updateOne: (...args: unknown[]) => Promise<{ modifiedCount: number }>;
+    };
+  };
+  const updateCalls: unknown[][] = [];
+  const collectionMock = mock.method(repository, 'collection', () => ({
+    async updateOne(...args: unknown[]) {
+      updateCalls.push(args);
+      return { modifiedCount: 0 };
+    },
+  }));
+
+  t.after(() => collectionMock.mock.restore());
+
+  assert.equal(await WithdrawalRepository.markStuck('doc-confirmed', 'late worker result'), false);
+  assert.equal(await WithdrawalRepository.markRetryState('doc-confirmed', 'failed', 'late worker result'), false);
+
+  const stuckFilter = updateCalls[0]?.[0] as {
+    status?: { $in?: string[] };
+    txHash?: { $exists?: boolean };
+    confirmedAt?: { $exists?: boolean };
+  };
+  assert.deepEqual(stuckFilter.status?.$in, ['processing', 'sent', 'stuck']);
+  assert.equal(stuckFilter.txHash?.$exists, false);
+  assert.equal(stuckFilter.confirmedAt?.$exists, false);
+
+  const retryFilter = updateCalls[1]?.[0] as {
+    status?: string;
+    txHash?: { $exists?: boolean };
+    confirmedAt?: { $exists?: boolean };
+  };
+  assert.equal(retryFilter.status, 'processing');
+  assert.equal(retryFilter.txHash?.$exists, false);
+  assert.equal(retryFilter.confirmedAt?.$exists, false);
 });
 
 test('confirmSentWithdrawals leaves long-pending submitted withdrawals in a stuck state instead of refunding them', async (t) => {

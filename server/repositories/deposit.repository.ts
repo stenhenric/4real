@@ -40,6 +40,10 @@ export class DepositRepository {
     return (limit ? cursor.limit(limit) : cursor).toArray();
   }
 
+  static async countByUserId(userId: string): Promise<number> {
+    return this.collection().countDocuments({ userId });
+  }
+
   static async ensureIndexes(): Promise<void> {
     await this.collection().createIndexes([
       { key: { txHash: 1 }, unique: true },

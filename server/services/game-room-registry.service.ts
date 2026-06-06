@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getEnv } from '../config/env.ts';
+import { logger } from '../utils/logger.ts';
 import { getRedisClient } from './redis.service.ts';
 import type { RoomState } from './game-room.service.ts';
 
@@ -24,6 +25,12 @@ interface GameRoomRegistryOptions {
 const ROOM_LOCK_TTL_MS = 5_000;
 const ROOM_LOCK_RETRY_DELAY_MS = 50;
 const ROOM_LOCK_MAX_ATTEMPTS = 100;
+const ROOM_LOCK_RENEW_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
+end
+return 0
+`;
 
 function cloneRoomState(state: RoomState): RoomState {
   return structuredClone(state);
@@ -266,9 +273,23 @@ export class GameRoomRegistry {
     for (let attempt = 0; attempt < ROOM_LOCK_MAX_ATTEMPTS; attempt += 1) {
       const acquired = await redis.set(lockKey, lockValue, 'PX', ROOM_LOCK_TTL_MS, 'NX');
       if (acquired === 'OK') {
+        const renewalHandle = setInterval(() => {
+          void redis.eval(
+            ROOM_LOCK_RENEW_SCRIPT,
+            1,
+            lockKey,
+            lockValue,
+            ROOM_LOCK_TTL_MS,
+          ).catch((error) => {
+            logger.error('game_room.lock_renew_failed', { roomId, error });
+          });
+        }, Math.floor(ROOM_LOCK_TTL_MS / 2));
+        unrefTimerIfSupported(renewalHandle);
+
         try {
           return await task();
         } finally {
+          clearInterval(renewalHandle);
           await redis.eval(
             'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end',
             1,

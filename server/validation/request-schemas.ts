@@ -259,7 +259,7 @@ export const merchantDepositReconcileRequestSchema = z.object({
 export const merchantDepositReplayWindowRequestSchema = z.object({
   sinceUnixTime: z.coerce.number().finite().int().nonnegative(),
   untilUnixTime: z.coerce.number().finite().int().nonnegative(),
-  dryRun: z.coerce.boolean().optional().default(true),
+  dryRun: z.boolean().optional().default(true),
 });
 
 export const withdrawalRecoveryRequestSchema = z.object({

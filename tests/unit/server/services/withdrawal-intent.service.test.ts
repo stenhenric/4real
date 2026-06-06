@@ -144,3 +144,48 @@ test('WithdrawalIntentService atomically consumes only when bound fields match',
   assert.equal([first, second].filter(Boolean).length, 1);
   assert.equal(store.has(`auth:withdrawal:intent:${withdrawalIntentId}`), false);
 });
+
+test('WithdrawalIntentService restores a consumed authorized intent for a retry after failure', async (t) => {
+  const store = new Map<string, string>();
+  const mockRedis = {
+    setex: async (key: string, _ttl: number, val: string) => {
+      store.set(key, val);
+      return 'OK';
+    },
+    set: async (key: string, val: string, _mode: string, _ttl: number, _condition: string) => {
+      if (store.has(key)) {
+        return null;
+      }
+      store.set(key, val);
+      return 'OK';
+    },
+    get: async (key: string) => store.get(key) ?? null,
+    eval: async (_script: string, _keyCount: number, key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    },
+  } as any;
+
+  setRedisClientForTests(mockRedis);
+  t.after(() => setRedisClientForTests(null));
+
+  const createChallengeMock = mock.method(AuthMfaService, 'createChallenge', async () => 'challenge-retry');
+  t.after(() => createChallengeMock.mock.restore());
+
+  const { withdrawalIntentId } = await WithdrawalIntentService.createIntent({
+    userId: 'user-retry',
+    toAddress: 'EQRetry',
+    amountUsdt: '8.000000',
+    idempotencyKey: 'idem-retry',
+  });
+  await WithdrawalIntentService.authorizeIntent(withdrawalIntentId);
+  const consumed = await WithdrawalIntentService.consumeIntent(withdrawalIntentId);
+  assert.ok(consumed);
+
+  const restored = await WithdrawalIntentService.restoreIntent(withdrawalIntentId, consumed);
+  assert.equal(restored, true);
+
+  const retried = await WithdrawalIntentService.consumeIntent(withdrawalIntentId);
+  assert.deepEqual(retried, consumed);
+});

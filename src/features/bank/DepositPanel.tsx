@@ -169,6 +169,7 @@ function DepositDetailsStep({
   expiryState,
   onBackToBank,
   onDepositTonConnect,
+  onManualTransactionSent,
   onResetToAmount,
   paymentDetails,
   sendingTransaction,
@@ -178,6 +179,7 @@ function DepositDetailsStep({
   expiryState: { expired: boolean; label: string | null };
   onBackToBank: () => void;
   onDepositTonConnect: () => void;
+  onManualTransactionSent: () => void;
   onResetToAmount: () => void;
   paymentDetails: PaymentDetails;
   sendingTransaction: boolean;
@@ -250,7 +252,7 @@ function DepositDetailsStep({
         <span aria-live="polite">{expiryState.label ?? `Expires in ${paymentDetails.data.expiresIn}`}</span>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <SketchyButton
           aria-describedby={!walletConnected ? WALLET_CONNECT_REQUIRED_ID : undefined}
           className="w-full py-4 text-lg text-white"
@@ -260,6 +262,15 @@ function DepositDetailsStep({
           type="button"
         >
           {sendingTransaction ? 'Waiting for wallet...' : 'Pay with TonConnect'}
+        </SketchyButton>
+        <SketchyButton
+          className="w-full py-4 text-lg"
+          disabled={sendingTransaction || expiryState.expired}
+          onClick={onManualTransactionSent}
+          type="button"
+          variant="secondary"
+        >
+          I've sent it
         </SketchyButton>
         <SketchyButton className="w-full py-4 text-lg" onClick={onBackToBank} type="button" variant="secondary">
           Cancel
@@ -532,6 +543,16 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
     }
   };
 
+  const handleManualTransactionSent = () => {
+    if (!paymentDetails || expiryState.expired) {
+      addToast('Generate current payment details first.', 'error');
+      return;
+    }
+
+    dispatchFlow({ type: 'TRANSACTION_SENT' });
+    addToast('We are checking for your deposit.', 'success');
+  };
+
   return (
     <div className="mx-auto max-w-2xl scroll-mt-24" ref={panelRef}>
       <div className="bg-white/90 p-8 shadow-2xl relative overflow-hidden">
@@ -574,6 +595,7 @@ const DepositPanel = ({ onBackToBank, onViewHistory }: DepositPanelProps) => {
               expiryState={expiryState}
               onBackToBank={onBackToBank}
               onDepositTonConnect={handleDepositTonConnect}
+              onManualTransactionSent={handleManualTransactionSent}
               onResetToAmount={() => dispatchFlow({ type: 'RESET_TO_AMOUNT' })}
               paymentDetails={paymentDetails}
               sendingTransaction={sendingTransaction}

@@ -296,10 +296,8 @@ export class RatingService {
   }
 
   static async applyMatchRating(input: ApplyMatchRatingInput): Promise<MatchRatingResultDTO> {
-    const [player1, player2] = await Promise.all([
-      UserService.findById(input.player1Id, input.session),
-      UserService.findById(input.player2Id, input.session),
-    ]);
+    const player1 = await UserService.findById(input.player1Id, input.session);
+    const player2 = await UserService.findById(input.player2Id, input.session);
 
     if (!player1 || !player2) {
       throw conflict('Match participant could not be rated', 'MATCH_PARTICIPANT_NOT_FOUND');
@@ -378,10 +376,18 @@ export class RatingService {
     const player1Result = getStatsResult(input.outcome, 'player1');
     const player2Result = getStatsResult(input.outcome, 'player2');
     if (player1Result && player2Result) {
-      const [updatedPlayer1, updatedPlayer2] = await Promise.all([
-        UserService.updateStatsAndElo(input.player1Id, calculation.player1.delta, player1Result, input.session),
-        UserService.updateStatsAndElo(input.player2Id, calculation.player2.delta, player2Result, input.session),
-      ]);
+      const updatedPlayer1 = await UserService.updateStatsAndElo(
+        input.player1Id,
+        calculation.player1.delta,
+        player1Result,
+        input.session,
+      );
+      const updatedPlayer2 = await UserService.updateStatsAndElo(
+        input.player2Id,
+        calculation.player2.delta,
+        player2Result,
+        input.session,
+      );
 
       if (!updatedPlayer1 || !updatedPlayer2) {
         throw internalServerError('Rated match participants could not be updated', 'RATING_USER_UPDATE_FAILED');

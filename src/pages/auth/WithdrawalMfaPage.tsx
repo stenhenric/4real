@@ -8,6 +8,7 @@ import {
   AuthNotice,
   AuthShell,
 } from '../../features/auth/AuthShell';
+import { sanitizeInternalPath } from '../../features/auth/auth-routing';
 import { formatWalletAddressForDisplay } from '../../features/bank/walletAddressPresentation';
 import { completeMfaChallenge } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/errors';
@@ -38,7 +39,7 @@ export default function WithdrawalMfaPage() {
 
   const challengeId = searchParams.get('challengeId')?.trim() ?? '';
   const withdrawalIntentId = searchParams.get('withdrawalIntentId')?.trim() ?? '';
-  const returnTo = searchParams.get('returnTo')?.trim() ?? '/bank';
+  const returnTo = sanitizeInternalPath(searchParams.get('returnTo')) ?? '/bank';
 
   // Read display context from sessionStorage only (never used as the authorization source of truth)
   const [draftDetails] = useState(loadWithdrawalDraftDetails);
@@ -47,16 +48,14 @@ export default function WithdrawalMfaPage() {
   const draftAddressDisplay = formatWalletAddressForDisplay(draftAddress);
 
   const returnToBank = (status: 'verified' | 'failed' | 'cancelled', intentId?: string) => {
-    // Navigate back to the return URL with the result flags
-    const base = returnTo.split('?')[0];
-    const params = new URLSearchParams(returnTo.split('?')[1] ?? '');
-    params.set('view', 'withdraw');
-    params.set('flow', 'withdrawal');
-    params.set('mfa', status);
+    const returnUrl = new URL(returnTo, 'http://4real.local');
+    returnUrl.searchParams.set('view', 'withdraw');
+    returnUrl.searchParams.set('flow', 'withdrawal');
+    returnUrl.searchParams.set('mfa', status);
     if (intentId) {
-      params.set('withdrawalIntentId', intentId);
+      returnUrl.searchParams.set('withdrawalIntentId', intentId);
     }
-    navigate(`${base}?${params.toString()}`, { replace: true });
+    navigate(`${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`, { replace: true });
   };
 
   const handleCancel = () => {

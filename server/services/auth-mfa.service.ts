@@ -8,6 +8,7 @@ import { getRedisClient } from './redis.service.ts';
 import { createTotpSetup, verifyTotpCode } from './totp.service.ts';
 import type { IUser } from '../models/User.ts';
 import { unauthorized } from '../utils/http-error.ts';
+import { logger } from '../utils/logger.ts';
 import { UserService } from './user.service.ts';
 
 const MFA_SETUP_PREFIX = 'auth:mfa:setup:';
@@ -192,13 +193,20 @@ export class AuthMfaService {
       enabledAt: user.mfa.enabledAt,
       recoveryCodeHashes: recoveryCodes.map((entry) => hashRecoveryCode(entry)),
     });
-    await AuditService.record({
-      eventType: 'mfa_recovery_codes_regenerated',
-      actorUserId: options.actorUserId ?? user._id.toString(),
-      targetUserId: user._id.toString(),
-      resourceType: 'user',
-      resourceId: user._id.toString(),
-    });
+    try {
+      await AuditService.record({
+        eventType: 'mfa_recovery_codes_regenerated',
+        actorUserId: options.actorUserId ?? user._id.toString(),
+        targetUserId: user._id.toString(),
+        resourceType: 'user',
+        resourceId: user._id.toString(),
+      });
+    } catch (error) {
+      logger.error('mfa_recovery_codes.audit_post_update_failed', {
+        userId: user._id.toString(),
+        error,
+      });
+    }
     await ProductEmailNotificationService.sendSecurityAlert({
       userId: user._id.toString(),
       subject: 'Your 4real recovery codes were regenerated',

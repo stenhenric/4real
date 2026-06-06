@@ -109,6 +109,7 @@ export class MatchController {
         status: result.body.status,
         isPrivate: result.body.isPrivate,
       });
+      await MatchService.emitRealtimeRoomSnapshot(result.body.roomId);
     }
 
     res.status(result.statusCode).json(result.body);
@@ -151,6 +152,7 @@ export class MatchController {
         status: result.body.status,
         isPrivate: result.body.isPrivate,
       });
+      await MatchService.emitRealtimeRoomSnapshot(result.body.roomId);
     }
 
     res.status(result.statusCode).json(result.body);
@@ -188,6 +190,7 @@ export class MatchController {
         status: result.body.status,
         isPrivate: result.body.isPrivate,
       });
+      await MatchService.emitRealtimeRoomSnapshot(result.body.roomId);
     }
 
     res.status(result.statusCode).json(result.body);

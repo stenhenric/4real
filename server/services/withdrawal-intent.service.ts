@@ -5,6 +5,7 @@ import { badRequest, forbidden } from '../utils/http-error.ts';
 
 const WITHDRAWAL_INTENT_PREFIX = 'auth:withdrawal:intent:';
 const WITHDRAWAL_INTENT_TTL_SECONDS = 300; // 5 minutes
+const WITHDRAWAL_INTENT_TTL_MS = WITHDRAWAL_INTENT_TTL_SECONDS * 1_000;
 const WITHDRAWAL_INTENT_MISMATCH = '__WITHDRAWAL_INTENT_MISMATCH__';
 const ATOMIC_COMPARE_DELETE_SCRIPT = `
 local raw = redis.call('GET', KEYS[1])
@@ -147,5 +148,23 @@ export class WithdrawalIntentService {
     } catch {
       return null;
     }
+  }
+
+  static async restoreIntent(intentId: string, intent: WithdrawalIntent): Promise<boolean> {
+    const remainingTtlSeconds = Math.ceil(
+      (intent.createdAt + WITHDRAWAL_INTENT_TTL_MS - Date.now()) / 1_000,
+    );
+    if (remainingTtlSeconds <= 0) {
+      return false;
+    }
+
+    const result = await getRedisClient().set(
+      getIntentKey(intentId),
+      JSON.stringify(intent),
+      'EX',
+      remainingTtlSeconds,
+      'NX',
+    );
+    return result === 'OK';
   }
 }

@@ -53,6 +53,31 @@ test('getUserTransactions bounds page and pageSize before fetching the unified f
   assert.deepEqual(res.payload, { items: [], page: 100, pageSize: 100, total: 0 });
 });
 
+test('getUnifiedTransactionsByUser returns the full available transaction count', async (t) => {
+  const transactionsMock = mock.method(TransactionService, 'getTransactionsByUser', async () => []);
+  const depositsMock = mock.method(DepositRepository, 'findByUserId', async () => []);
+  const withdrawalsMock = mock.method(WithdrawalRepository, 'findByUserId', async () => []);
+  const transactionCountMock = mock.method(Transaction, 'countDocuments', () => Promise.resolve(40) as any);
+  const depositCountMock = mock.method(DepositRepository, 'countByUserId', async () => 30);
+  const withdrawalCountMock = mock.method(WithdrawalRepository, 'countByUserId', async () => 20);
+
+  t.after(() => transactionsMock.mock.restore());
+  t.after(() => depositsMock.mock.restore());
+  t.after(() => withdrawalsMock.mock.restore());
+  t.after(() => transactionCountMock.mock.restore());
+  t.after(() => depositCountMock.mock.restore());
+  t.after(() => withdrawalCountMock.mock.restore());
+
+  const result = await TransactionService.getUnifiedTransactionsByUser(
+    '507f1f77bcf86cd799439011',
+    1,
+    25,
+  );
+
+  assert.equal(result.total, 90);
+  assert.deepEqual(result.items, []);
+});
+
 test('getAllTransactions bounds limit and offset before fetching admin transactions', async (t) => {
   let capturedArgs: unknown[] | undefined;
   const serviceMock = mock.method(TransactionService, 'getAllTransactions', async (...args: unknown[]) => {

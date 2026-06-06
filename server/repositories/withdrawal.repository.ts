@@ -56,6 +56,10 @@ export class WithdrawalRepository {
     return (limit ? cursor.limit(limit) : cursor).toArray();
   }
 
+  static async countByUserId(userId: string): Promise<number> {
+    return this.collection().countDocuments({ userId });
+  }
+
   static async findByWithdrawalIdForUser(withdrawalId: string, userId: string) {
     return this.collection().findOne({ withdrawalId, userId });
   }
@@ -84,9 +88,14 @@ export class WithdrawalRepository {
     return result.modifiedCount === 1;
   }
 
-  static async markStuck(id: WithdrawalDocumentId, lastError: string, seqno?: number, sentAt?: Date): Promise<void> {
-    await this.collection().updateOne(
-      { _id: id },
+  static async markStuck(id: WithdrawalDocumentId, lastError: string, seqno?: number, sentAt?: Date): Promise<boolean> {
+    const result = await this.collection().updateOne(
+      {
+        _id: id,
+        status: { $in: ['processing', 'sent', 'stuck'] },
+        txHash: { $exists: false },
+        confirmedAt: { $exists: false },
+      },
       {
         $set: {
           status: 'stuck',
@@ -97,11 +106,18 @@ export class WithdrawalRepository {
         },
       },
     );
+
+    return result.modifiedCount === 1;
   }
 
-  static async markRetryState(id: WithdrawalDocumentId, status: 'queued' | 'failed', lastError: string, session?: mongoose.ClientSession): Promise<void> {
-    await this.collection().updateOne(
-      { _id: id },
+  static async markRetryState(id: WithdrawalDocumentId, status: 'queued' | 'failed', lastError: string, session?: mongoose.ClientSession): Promise<boolean> {
+    const result = await this.collection().updateOne(
+      {
+        _id: id,
+        status: 'processing',
+        txHash: { $exists: false },
+        confirmedAt: { $exists: false },
+      },
       {
         $set: { status, lastError, updatedAt: new Date() },
         $inc: { retries: 1 },
@@ -109,6 +125,8 @@ export class WithdrawalRepository {
       },
       session ? { session } : undefined,
     );
+
+    return result.modifiedCount === 1;
   }
 
   static async markConfirmed(id: WithdrawalDocumentId, txHash: string, confirmedAt: Date, session?: mongoose.ClientSession): Promise<boolean> {

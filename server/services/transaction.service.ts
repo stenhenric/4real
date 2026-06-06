@@ -65,10 +65,20 @@ export class TransactionService {
       ? Math.min(Math.max(1, requestedPage), maxPage)
       : 1;
     const fetchLimit = normalizedPage * normalizedPageSize;
-    const [transactions, deposits, withdrawals] = await Promise.all([
+    const [
+      transactions,
+      deposits,
+      withdrawals,
+      transactionCount,
+      depositCount,
+      withdrawalCount,
+    ] = await Promise.all([
       this.getTransactionsByUser(userId, fetchLimit),
       DepositRepository.findByUserId(userId, fetchLimit),
       WithdrawalRepository.findByUserId(userId, fetchLimit),
+      Transaction.countDocuments({ userId: new mongoose.Types.ObjectId(userId) }),
+      DepositRepository.countByUserId(userId),
+      WithdrawalRepository.countByUserId(userId),
     ]);
 
     const items = [
@@ -82,7 +92,7 @@ export class TransactionService {
       items: items.slice(startIndex, startIndex + normalizedPageSize),
       page: normalizedPage,
       pageSize: normalizedPageSize,
-      total: items.length,
+      total: transactionCount + depositCount + withdrawalCount,
     };
   }
 

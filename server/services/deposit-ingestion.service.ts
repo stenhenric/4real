@@ -227,7 +227,6 @@ async function runAuditThenNotification(
         message: error instanceof Error ? error.message : String(error),
       },
     });
-    throw error;
   }
 }
 
@@ -714,6 +713,13 @@ async function ingestIncomingTransferWithContext(
     }
   } finally {
     await session.endSession();
+  }
+
+  if (!mutationApplied && (outcome.decision === 'credit' || outcome.decision === 'unmatched')) {
+    outcome = {
+      ...outcome,
+      decision: 'already_processed',
+    };
   }
 
   if (mutationApplied && outcome.decision === 'credit') {

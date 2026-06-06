@@ -236,6 +236,30 @@ test('regenerateRecoveryCodes returns one new set and emits audit plus security 
   assert.equal(notificationMock.mock.callCount(), 1);
 });
 
+test('regenerateRecoveryCodes still returns the new set when post-update audit persistence fails', async (t) => {
+  const secret = createTotpSetup({ issuer: '4real', accountName: 'alice@example.com' }).secret;
+  const user = createMockUser({
+    mfa: {
+      enabledAt: new Date('2026-05-03T00:00:00.000Z'),
+      totpSecretEncrypted: encryptSecret(secret),
+      recoveryCodeHashes: [hashOpaqueToken('OLD-CODE')],
+    },
+  });
+
+  const updateMock = t.mock.method(UserService, 'updateMfaState', async () => user);
+  const auditMock = t.mock.method(AuditService, 'record', async () => {
+    throw new Error('audit unavailable');
+  });
+  const notificationMock = t.mock.method(ProductEmailNotificationService, 'sendSecurityAlert', async () => {});
+
+  const recoveryCodes = await AuthMfaService.regenerateRecoveryCodes(user, { actorUserId: 'user-1' });
+
+  assert.equal(recoveryCodes.length, 10);
+  assert.equal(updateMock.mock.callCount(), 1);
+  assert.equal(auditMock.mock.callCount(), 1);
+  assert.equal(notificationMock.mock.callCount(), 1);
+});
+
 test('assertValidPassword rejects common and predictable passwords', () => {
   assert.throws(
     () => assertValidPassword('administrator'),

@@ -17,6 +17,7 @@ import { TransactionService } from '../services/transaction.service.ts';
 import { requestWithdrawal } from '../services/withdrawal-service.ts';
 import { badRequest, forbidden, notFound } from '../utils/http-error.ts';
 import { getRequiredIdempotencyKey } from '../utils/idempotency.ts';
+import { logger } from '../utils/logger.ts';
 import { WithdrawalIntentService } from '../services/withdrawal-intent.service.ts';
 import type {
   PrepareTonConnectDepositRequest,
@@ -136,64 +137,84 @@ export const requestWithdrawalHandler = async (req: AuthRequest, res: Response):
     });
   }
 
-  // Claim/replay the idempotent mutation before consuming the single-use MFA intent.
-  const result = await executeIdempotentMutationV2({
-    userId,
-    routeKey: 'transactions:withdraw',
-    idempotencyKey,
-    requestPayload: { toAddress, amountUsdt, withdrawalIntentId },
-    execute: async ({ session }) => {
-      const intent = await WithdrawalIntentService.consumeIntent(withdrawalIntentId, {
-        userId,
-        toAddress,
-        amountUsdt,
-        idempotencyKey,
-      });
-      if (!intent) {
-        throw forbidden('Withdrawal intent expired or invalid. Please restart withdrawal review.', 'WITHDRAWAL_INTENT_EXPIRED');
-      }
+  let consumedIntent: Awaited<ReturnType<typeof WithdrawalIntentService.consumeIntent>> = null;
+  let result: Awaited<ReturnType<typeof executeIdempotentMutationV2>>;
 
-      if (
-        intent.userId !== userId ||
-        intent.toAddress !== toAddress ||
-        intent.amountUsdt !== amountUsdt ||
-        intent.idempotencyKey !== idempotencyKey ||
-        !intent.authorized
-      ) {
-        throw forbidden('Withdrawal intent invalid or not authorized', 'WITHDRAWAL_INTENT_INVALID');
-      }
-
-      const withdrawalId = uuidv4();
-      await requestWithdrawal({ userId, toAddress, amountUsdt, withdrawalId, session });
-
-      await AuditService.record({
-        eventType: 'withdrawal_requested',
-        actorUserId: userId,
-        targetUserId: userId,
-        resourceType: 'withdrawal',
-        resourceId: withdrawalId,
-        requestId: res.locals.requestId,
-        metadata: {
+  try {
+    // Keep the consumed intent in this request scope so Mongo transaction callback retries
+    // do not consume Redis state twice.
+    result = await executeIdempotentMutationV2({
+      userId,
+      routeKey: 'transactions:withdraw',
+      idempotencyKey,
+      requestPayload: { toAddress, amountUsdt, withdrawalIntentId },
+      execute: async ({ session }) => {
+        const intent = consumedIntent ?? await WithdrawalIntentService.consumeIntent(withdrawalIntentId, {
+          userId,
           toAddress,
           amountUsdt,
-        },
-        session,
-      });
+          idempotencyKey,
+        });
+        if (!intent) {
+          throw forbidden('Withdrawal intent expired or invalid. Please restart withdrawal review.', 'WITHDRAWAL_INTENT_EXPIRED');
+        }
+        consumedIntent = intent;
 
-      const statusUrl = `/api/transactions/withdrawals/${encodeURIComponent(withdrawalId)}`;
+        if (
+          intent.userId !== userId ||
+          intent.toAddress !== toAddress ||
+          intent.amountUsdt !== amountUsdt ||
+          intent.idempotencyKey !== idempotencyKey ||
+          !intent.authorized
+        ) {
+          throw forbidden('Withdrawal intent invalid or not authorized', 'WITHDRAWAL_INTENT_INVALID');
+        }
 
-      return {
-        statusCode: 202,
-        body: {
-          success: true,
-          message: 'Withdrawal queued successfully',
-          status: 'queued',
-          withdrawalId,
-          statusUrl,
-        },
-      };
-    },
-  });
+        const withdrawalId = uuidv4();
+        await requestWithdrawal({ userId, toAddress, amountUsdt, withdrawalId, session });
+
+        await AuditService.record({
+          eventType: 'withdrawal_requested',
+          actorUserId: userId,
+          targetUserId: userId,
+          resourceType: 'withdrawal',
+          resourceId: withdrawalId,
+          requestId: res.locals.requestId,
+          metadata: {
+            toAddress,
+            amountUsdt,
+          },
+          session,
+        });
+
+        const statusUrl = `/api/transactions/withdrawals/${encodeURIComponent(withdrawalId)}`;
+
+        return {
+          statusCode: 202,
+          body: {
+            success: true,
+            message: 'Withdrawal queued successfully',
+            status: 'queued',
+            withdrawalId,
+            statusUrl,
+          },
+        };
+      },
+    });
+  } catch (error) {
+    if (consumedIntent) {
+      try {
+        await WithdrawalIntentService.restoreIntent(withdrawalIntentId, consumedIntent);
+      } catch (restoreError) {
+        logger.error('withdrawal_intent.restore_failed', {
+          withdrawalIntentId,
+          userId,
+          error: restoreError,
+        });
+      }
+    }
+    throw error;
+  }
 
   if (!result.replayed) {
     await invalidateCacheKeys([CacheKeys.merchantDashboard()]);

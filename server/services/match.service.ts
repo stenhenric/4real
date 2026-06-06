@@ -5,8 +5,9 @@ import { getEnv } from '../config/env.ts';
 import { Match } from '../models/Match.ts';
 import type { IMatch } from '../models/Match.ts';
 import type { MatchMoveDTO, MatchOutcome, MatchRatingResultDTO } from '../types/api.ts';
-import { emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
+import { emitMatchRoomUpdatedEvent, emitPublicMatchUpdatedEvent } from '../sockets/public-match-events.ts';
 import { badRequest, conflict, internalServerError, notFound } from '../utils/http-error.ts';
+import { logger } from '../utils/logger.ts';
 import { formatUsdtAmount, parseUsdtAmount } from '../utils/money.ts';
 import { calculateMatchPayout, calculateDrawPayout } from './match-payout.service.ts';
 import { UserService } from './user.service.ts';
@@ -145,7 +146,7 @@ export class MatchService {
     session?: mongoose.ClientSession | undefined;
     emitPublicEvent?: boolean | undefined;
   }): Promise<CreateMatchForUserResult> {
-    const roomId = crypto.randomBytes(3).toString('hex');
+    const roomId = crypto.randomBytes(8).toString('hex');
     const inviteToken = isPrivate ? crypto.randomBytes(16).toString('base64url') : undefined;
     const executeCreateMatch = async (activeSession: mongoose.ClientSession): Promise<IMatch> => {
       const user = await UserService.findById(userId, activeSession);
@@ -230,10 +231,8 @@ export class MatchService {
     emitPublicEvent?: boolean | undefined;
   }): Promise<IMatch> {
     const executeJoinMatch = async (activeSession: mongoose.ClientSession): Promise<IMatch> => {
-      const [user, match] = await Promise.all([
-        UserService.findById(userId, activeSession),
-        this.getMatchByRoomId(roomId, activeSession),
-      ]);
+      const user = await UserService.findById(userId, activeSession);
+      const match = await this.getMatchByRoomId(roomId, activeSession);
 
       if (!user) {
         throw notFound('User not found', 'USER_NOT_FOUND');
@@ -311,6 +310,7 @@ export class MatchService {
         status: finalJoinedMatch.status,
         isPrivate: finalJoinedMatch.isPrivate,
       });
+      await emitMatchRoomUpdatedEvent(finalJoinedMatch);
     }
 
     return finalJoinedMatch;
@@ -411,6 +411,7 @@ export class MatchService {
         status: finalSettledMatch.status,
         isPrivate: finalSettledMatch.isPrivate,
       });
+      await emitMatchRoomUpdatedEvent(finalSettledMatch);
     }
     await invalidatePublicMatchReadCaches();
 
@@ -429,8 +430,19 @@ export class MatchService {
     return session ? query.session(session) : query;
   }
 
-  static async persistMoveHistory(roomId: string, moveHistory: MatchMoveDTO[]): Promise<void> {
-    await Match.updateOne(
+  static async emitRealtimeRoomSnapshot(roomId: string): Promise<void> {
+    try {
+      const match = await this.getMatchByRoomId(roomId);
+      if (match) {
+        await emitMatchRoomUpdatedEvent(match);
+      }
+    } catch (error) {
+      logger.error('match.room_snapshot_emit_failed', { roomId, error });
+    }
+  }
+
+  static async persistMoveHistory(roomId: string, moveHistory: MatchMoveDTO[]): Promise<boolean> {
+    const result = await Match.updateOne(
       { roomId, status: 'active' },
       {
         $set: {
@@ -439,6 +451,7 @@ export class MatchService {
         },
       },
     );
+    return result.matchedCount === 1;
   }
 
   static async completeMatch(
@@ -570,6 +583,7 @@ export class MatchService {
         status: 'completed',
         isPrivate,
       });
+      await this.emitRealtimeRoomSnapshot(roomId);
       await invalidatePublicMatchReadCaches();
     }
 
@@ -612,6 +626,7 @@ export class MatchService {
         status: expiredMatch.status,
         isPrivate: expiredMatch.isPrivate,
       });
+      await emitMatchRoomUpdatedEvent(expiredMatch);
       await invalidatePublicMatchReadCaches();
     }
 

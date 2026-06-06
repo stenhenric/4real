@@ -27,6 +27,14 @@ function isSupportedRoomId(roomId: string): boolean {
   return roomId.length > 0 && roomId.length <= 128 && /^[A-Za-z0-9_-]+$/.test(roomId);
 }
 
+function carrySocketIds(room: RoomState, knownSocketIds: Map<string, string | null>): RoomState {
+  room.players = room.players.map((entry) => ({
+    ...entry,
+    socketId: knownSocketIds.get(entry.userId) ?? null,
+  }));
+  return room;
+}
+
 export class RealtimeMatchService {
   private readonly roomRegistry: GameRoomRegistry;
 
@@ -148,6 +156,25 @@ export class RealtimeMatchService {
       if (!room) {
         room = await createRoomStateFromMatch(dbMatch);
         room = await this.roomRegistry.set(normalizedRoomId, room);
+      } else {
+        const cachedRoom = room;
+        const participantIds = [
+          dbMatch.player1Id.toString(),
+          dbMatch.player2Id?.toString(),
+        ].filter((playerId): playerId is string => Boolean(playerId));
+        const roomMembershipDrift =
+          participantIds.length !== cachedRoom.players.length
+          || participantIds.some((playerId) => !cachedRoom.players.some((entry) => entry.userId === playerId));
+
+        if (
+          dbMatch.status !== room.status
+          || dbMatch.moveHistory.length !== room.moves.length
+          || roomMembershipDrift
+        ) {
+          const knownSocketIds = new Map(room.players.map((entry) => [entry.userId, entry.socketId]));
+          room = carrySocketIds(await createRoomStateFromMatch(dbMatch), knownSocketIds);
+          room = await this.roomRegistry.set(normalizedRoomId, room);
+        }
       }
 
       const isParticipant = room.players.some((player) => player.userId === userId);
@@ -189,17 +216,17 @@ export class RealtimeMatchService {
           currentTurn: null,
           winnerId: userId,
         };
-        completedRoom.players = completedRoom.players.map((entry) => ({
-          ...entry,
-          socketId: knownSocketIds.get(entry.userId) ?? null,
-        }));
-        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, completedRoom);
+        const persistedRoom = await this.roomRegistry.set(
+          normalizedRoomId,
+          carrySocketIds(completedRoom, knownSocketIds),
+        );
+        const finalWinnerId = persistedRoom.winnerId ?? userId;
 
         return {
           type: 'game-over',
           room: persistedRoom,
-          winnerId: userId,
-          winningLine: winner,
+          winnerId: finalWinnerId,
+          ...(finalWinnerId === userId ? { winningLine: winner } : {}),
         };
       }
 
@@ -212,21 +239,40 @@ export class RealtimeMatchService {
           currentTurn: null,
           winnerId: 'draw',
         };
-        completedRoom.players = completedRoom.players.map((entry) => ({
-          ...entry,
-          socketId: knownSocketIds.get(entry.userId) ?? null,
-        }));
-        const persistedRoom = await this.roomRegistry.set(normalizedRoomId, completedRoom);
+        const persistedRoom = await this.roomRegistry.set(
+          normalizedRoomId,
+          carrySocketIds(completedRoom, knownSocketIds),
+        );
 
         return {
           type: 'game-over',
           room: persistedRoom,
-          winnerId: 'draw',
+          winnerId: persistedRoom.winnerId ?? 'draw',
         };
       }
 
       room.currentTurn = room.players.find((player) => player.userId !== userId)?.userId ?? null;
-      await MatchService.persistMoveHistory(normalizedRoomId, room.moves);
+      const persisted = await MatchService.persistMoveHistory(normalizedRoomId, room.moves);
+      if (!persisted) {
+        const latestMatch = await MatchService.getMatchByRoomId(normalizedRoomId);
+        if (latestMatch) {
+          const knownSocketIds = new Map(room.players.map((entry) => [entry.userId, entry.socketId]));
+          const latestRoom = await this.roomRegistry.set(
+            normalizedRoomId,
+            carrySocketIds(await createRoomStateFromMatch(latestMatch), knownSocketIds),
+          );
+
+          if (latestRoom.status === 'completed' && latestRoom.winnerId) {
+            return {
+              type: 'game-over',
+              room: latestRoom,
+              winnerId: latestRoom.winnerId,
+            };
+          }
+        }
+
+        return null;
+      }
       const persistedRoom = await this.roomRegistry.set(normalizedRoomId, room);
 
       return {

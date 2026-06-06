@@ -135,6 +135,19 @@ export function depositFlowReducer(
           statusError: null,
         };
       }
+      if (action.depositStatus.status === 'expired') {
+        return {
+          ...state,
+          step: 'amount',
+          amountError: 'These payment details expired. Review the amount and generate new payment details.',
+          reviewAmount: null,
+          paymentDetails: null,
+          confirmedDeposit: null,
+          statusError: null,
+          loadingDetails: false,
+          sendingTransaction: false,
+        };
+      }
       return {
         ...state,
         statusError: null,

@@ -597,7 +597,11 @@ test('bank USDT flows collect intent before payment details and show withdrawal 
     await expect(page.getByText('Payment details ready', { exact: true })).toHaveCount(0);
     await expect(page.locator('#deposit-address')).toHaveCount(0);
 
-    await page.getByRole('button', { name: /back to bank/i }).click();
+    await page.getByRole('button', { name: /review deposit/i }).click();
+    await page.getByRole('button', { name: /generate payment details/i }).click();
+    await page.getByRole('button', { name: /i've sent it/i }).click();
+    await expect(page.getByText('Awaiting confirmation', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /return to bank/i }).click();
     await page.getByRole('button', { name: /withdraw usdt/i }).click();
     await expect(page.getByLabel(/withdrawal amount/i)).toBeVisible();
 
@@ -860,6 +864,42 @@ test('manual withdrawal MFA return URL cannot queue without backend step-up', as
     await expect(page).toHaveURL(/\/auth\/withdrawal-mfa\?.*challenge-manual-return/);
     await expect(page.getByRole('heading', { name: /confirm withdrawal/i })).toBeVisible();
     expect(withdrawalCalls).toBe(1);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('game page preserves handled auth redirects instead of returning to the lobby', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+
+  await page.route('**/api/matches/auth-redirect-room', async (route) => {
+    await route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'EMAIL_VERIFICATION_REQUIRED',
+        message: 'Verify your email to continue',
+      }),
+    });
+  });
+
+  try {
+    await page.goto('/game/auth-redirect-room');
+    await expect(page).toHaveURL(/\/auth\/verify-email$/);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('withdrawal MFA sanitizes external return paths before cancellation', async ({ browser }) => {
+  const { context, page } = await createLoggedInPage(browser, 'player1@example.com');
+
+  try {
+    await page.goto(
+      '/auth/withdrawal-mfa?challengeId=challenge-external-return&withdrawalIntentId=intent-external-return&returnTo=https%3A%2F%2Fevil.example%2Fwithdraw',
+    );
+    await page.getByRole('button', { name: /cancel transaction/i }).click();
+    await expect(page).toHaveURL(/\/bank\?view=withdraw&flow=withdrawal&mfa=cancelled$/);
   } finally {
     await closeContext(context);
   }

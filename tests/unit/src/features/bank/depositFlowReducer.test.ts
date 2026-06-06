@@ -171,4 +171,38 @@ describe('depositFlowReducer', () => {
     assert.equal(failed.statusError, 'Status updates are temporarily unavailable.');
     assert.deepEqual(failed.paymentDetails, pending.paymentDetails);
   });
+
+  it('stops pending confirmation and restarts amount entry when payment details expire', () => {
+    const pending = depositFlowReducer(
+      depositFlowReducer(
+        depositFlowReducer(createInitialDepositFlowState(), { type: 'AMOUNT_CHANGED', value: '20' }),
+        {
+          type: 'DETAILS_READY',
+          data: memo,
+          amountUsdt: '20.000000',
+        },
+      ),
+      { type: 'TRANSACTION_SENT' },
+    );
+
+    const expired = depositFlowReducer(pending, {
+      type: 'STATUS_RECEIVED',
+      depositStatus: {
+        memo: 'deposit-memo',
+        status: 'expired',
+        expiresAt: '2026-01-01T00:15:00.000Z',
+      },
+    });
+
+    assert.equal(expired.step, 'amount');
+    assert.equal(expired.depositAmount, '20');
+    assert.equal(
+      expired.amountError,
+      'These payment details expired. Review the amount and generate new payment details.',
+    );
+    assert.equal(expired.reviewAmount, null);
+    assert.equal(expired.paymentDetails, null);
+    assert.equal(expired.confirmedDeposit, null);
+    assert.equal(expired.statusError, null);
+  });
 });

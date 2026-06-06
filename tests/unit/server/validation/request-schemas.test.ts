@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   avatarSettingsRequestSchema,
+  merchantDepositReplayWindowRequestSchema,
   withdrawRequestSchema,
 } from '../../../../server/validation/request-schemas.ts';
 
@@ -38,6 +39,23 @@ test('avatarSettingsRequestSchema accepts only known metadata values', () => {
   const invalid = avatarSettingsRequestSchema.safeParse({
     preset: 'https://example.com/avatar.png',
     color: 'teal',
+  });
+  assert.equal(invalid.success, false);
+});
+
+test('merchantDepositReplayWindowRequestSchema rejects string booleans instead of coercing false to true', () => {
+  const valid = merchantDepositReplayWindowRequestSchema.safeParse({
+    sinceUnixTime: 1,
+    untilUnixTime: 2,
+    dryRun: false,
+  });
+  assert.equal(valid.success, true);
+  assert.equal(valid.data?.dryRun, false);
+
+  const invalid = merchantDepositReplayWindowRequestSchema.safeParse({
+    sinceUnixTime: 1,
+    untilUnixTime: 2,
+    dryRun: 'false',
   });
   assert.equal(invalid.success, false);
 });

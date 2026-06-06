@@ -2,6 +2,8 @@ import type mongoose from 'mongoose';
 
 import { getMongoCollection } from './mongo.repository.ts';
 
+const DEPOSIT_MEMO_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+
 export interface DepositMemoDocument {
   userId: string;
   memo: string;
@@ -56,10 +58,27 @@ export class DepositMemoRepository {
   }
 
   static async ensureIndexes(): Promise<void> {
-    await this.collection().createIndexes([
+    const collection = this.collection();
+    try {
+      const indexes = await collection.indexes();
+      const legacyExpiryIndex = indexes.find((index) => (
+        index.key?.expiresAt === 1
+        && index.expireAfterSeconds !== DEPOSIT_MEMO_RETENTION_SECONDS
+      ));
+      if (legacyExpiryIndex?.name) {
+        await collection.dropIndex(legacyExpiryIndex.name);
+      }
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      if (code !== 26 && code !== 27) {
+        throw error;
+      }
+    }
+
+    await collection.createIndexes([
       { key: { memo: 1 }, unique: true },
       { key: { userId: 1 } },
-      { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+      { key: { expiresAt: 1 }, expireAfterSeconds: DEPOSIT_MEMO_RETENTION_SECONDS },
     ]);
   }
 }

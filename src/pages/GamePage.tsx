@@ -12,6 +12,8 @@ import { StatePanel } from '../components/ui/StatePanel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useGameRoom } from '../features/game/useGameRoom';
+import { isHandledAuthRedirectCode } from '../features/auth/auth-routing';
+import { ApiClientError } from '../services/api/apiClient';
 import { getMatch, joinMatch, resignMatch } from '../services/matches.service';
 import { cn } from '../utils/cn';
 import { formatMoneyValue, moneyToNumber } from '../utils/exact-money.ts';
@@ -673,6 +675,10 @@ const GamePage = () => {
           return;
         }
 
+        if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+          return;
+        }
+
         dispatchPreview({ type: 'PREVIEW_FAILED' });
         showError(getApiErrorMessage(error, 'We could not load that match. Returning to lobby.'));
         navigate('/play');
@@ -732,6 +738,10 @@ const GamePage = () => {
         await refreshUser();
       }
     } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       showError(getApiErrorMessage(error, 'We could not join that match. Please try again.'));
       navigate('/play');
     } finally {
@@ -751,6 +761,10 @@ const GamePage = () => {
       await refreshUser();
       navigate('/play');
     } catch (error) {
+      if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
+        return;
+      }
+
       showError(getApiErrorMessage(error, 'We could not resign that match. Please try again.'));
     } finally {
       setResigning(false);

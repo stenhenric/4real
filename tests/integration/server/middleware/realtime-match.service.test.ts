@@ -147,6 +147,47 @@ function createRedisPresenceMock() {
   return { redis, sets, values };
 }
 
+function createActiveRoomState({
+  roomId,
+  player1Id,
+  player2Id,
+  currentTurn = player1Id,
+  moves = [],
+}: {
+  roomId: string;
+  player1Id: string;
+  player2Id: string;
+  currentTurn?: string | null;
+  moves?: RoomState['moves'];
+}): RoomState {
+  return {
+    roomId,
+    players: [
+      {
+        userId: player1Id,
+        username: 'host',
+        socketId: 'host-socket',
+        elo: 1200,
+      },
+      {
+        userId: player2Id,
+        username: 'guest',
+        socketId: 'guest-socket',
+        elo: 1180,
+      },
+    ],
+    board: createEmptyBoard(),
+    currentTurn,
+    status: 'active',
+    moves,
+    wager: '0.000000',
+    isPrivate: false,
+    dbMatchId: 'db-match-1',
+    projectedWinnerAmount: '0.000000',
+    commissionRate: '0.000000',
+  };
+}
+
 test('RealtimeMatchService.joinRoom refreshes stale cached rooms before checking participation', async (t) => {
   process.env.JWT_SECRET = 'x'.repeat(32);
   process.env.NODE_ENV = 'test';
@@ -303,6 +344,70 @@ test('RealtimeMatchService.makeMove rejects malformed room ids before touching m
   assert.equal(getMatchMock.mock.callCount(), 0);
 });
 
+test('RealtimeMatchService.makeMove refreshes stale cached move history before applying a move', async (t) => {
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  process.env.NODE_ENV = 'test';
+  const roomId = 'room-stale-move';
+  const player1Id = new mongoose.Types.ObjectId();
+  const player2Id = new mongoose.Types.ObjectId();
+  const registry = new GameRoomRegistry({
+    waitingRoomTtlMs: 1_000,
+    activeRoomTtlMs: 1_000,
+    completedRoomTtlMs: 1_000,
+    cleanupIntervalMs: 1_000,
+  });
+  const realtimeMatchService = new RealtimeMatchService(registry);
+
+  await registry.set(roomId, createActiveRoomState({
+    roomId,
+    player1Id: player1Id.toString(),
+    player2Id: player2Id.toString(),
+    currentTurn: player1Id.toString(),
+    moves: [],
+  }));
+
+  const findUserMock = mock.method(UserService, 'findById', async (id: string) => ({
+    _id: new mongoose.Types.ObjectId(id),
+    username: id === player1Id.toString() ? 'host' : 'guest',
+    elo: id === player1Id.toString() ? 1200 : 1180,
+  } as any));
+  const getMatchMock = mock.method(MatchService, 'getMatchByRoomId', async () => ({
+    _id: new mongoose.Types.ObjectId(),
+    roomId,
+    player1Id,
+    player2Id,
+    p1Username: 'host',
+    p2Username: 'guest',
+    status: 'active',
+    wager: '0.000000',
+    isPrivate: false,
+    moveHistory: [{ userId: player1Id.toString(), col: 0, row: 5 }],
+  } as any));
+  const persistMoveHistoryMock = mock.method(MatchService, 'persistMoveHistory', async () => {
+    throw new Error('stale cached turn should not be persisted');
+  });
+
+  t.after(() => findUserMock.mock.restore());
+  t.after(() => getMatchMock.mock.restore());
+  t.after(() => persistMoveHistoryMock.mock.restore());
+
+  const result = await realtimeMatchService.makeMove({
+    roomId,
+    userId: player1Id.toString(),
+    col: 1,
+  });
+
+  assert.equal(result, null);
+  assert.equal(persistMoveHistoryMock.mock.callCount(), 0);
+  const refreshedRoom = await registry.get(roomId);
+  assert.equal(refreshedRoom?.moves.length, 1);
+  assert.equal(refreshedRoom?.currentTurn, player2Id.toString());
+  assert.equal(
+    refreshedRoom?.players.find((player) => player.userId === player1Id.toString())?.socketId,
+    'host-socket',
+  );
+});
+
 test('checkWin returns exactly four cells when a move completes a longer connected line', () => {
   const board = createEmptyBoard();
   for (const column of [0, 1, 2, 3, 4]) {
@@ -401,6 +506,57 @@ test('GameRoomRegistry keeps distributed room membership when a stale socket dis
     roundTripped?.players.find((player) => player.userId === player1Id)?.socketId,
     'socket-new',
   );
+});
+
+test('GameRoomRegistry renews a distributed room lock while a room task is still running', async (t) => {
+  registerRealtimeEnvCleanup(t);
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  process.env.NODE_ENV = 'test';
+  process.env.REDIS_URL = 'redis://127.0.0.1:6379';
+  process.env.FEATURE_REDIS_SOCKET_ADAPTER = 'true';
+  resetEnvCacheForTests();
+
+  const values = new Map<string, string>();
+  let renewals = 0;
+  const redis = {
+    async set(key: string, value: string, ...args: unknown[]) {
+      if (args.includes('NX') && values.has(key)) {
+        return null;
+      }
+      values.set(key, value);
+      return 'OK';
+    },
+    async eval(script: string, _keyCount: number, key: string, expectedValue: string) {
+      if (values.get(key) !== expectedValue) {
+        return 0;
+      }
+      if (script.includes('pexpire')) {
+        renewals += 1;
+        return 1;
+      }
+      values.delete(key);
+      return 1;
+    },
+  };
+  setRedisClientForTests(redis as any);
+
+  const registry = new GameRoomRegistry({
+    waitingRoomTtlMs: 10_000,
+    activeRoomTtlMs: 10_000,
+    completedRoomTtlMs: 10_000,
+    cleanupIntervalMs: 10_000,
+  });
+  let finishTask: (() => void) | undefined;
+  const taskDone = registry.runExclusive('room-renew-lock', async () => {
+    await new Promise<void>((resolve) => {
+      finishTask = resolve;
+    });
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 2_650));
+  assert.ok(renewals >= 1);
+  finishTask?.();
+  await taskDone;
 });
 
 test('Socket.IO transport policy is websocket-only for distributed safety', () => {

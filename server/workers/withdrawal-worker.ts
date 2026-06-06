@@ -83,7 +83,10 @@ async function refundFailedWithdrawal({
 
   try {
     await session.withTransaction(async () => {
-      await WithdrawalRepository.markRetryState(id, 'failed', errorMessage, session);
+      const transitioned = await WithdrawalRepository.markRetryState(id, 'failed', errorMessage, session);
+      if (transitioned === false) {
+        throw new Error('Withdrawal state changed before the failed withdrawal refund could be applied');
+      }
       await UserBalanceRepository.refundWithdrawal(userId, amountRaw, session);
       await TransactionService.createTransaction({
         userId,

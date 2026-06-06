@@ -90,6 +90,33 @@ test('fresh users default to 300 Elo at the model layer', () => {
   assert.equal(user.elo, 300);
 });
 
+test('createMatchForUser generates collision-resistant room ids', async (t) => {
+  const userId = new mongoose.Types.ObjectId();
+  const session = {} as mongoose.ClientSession;
+  let capturedRoomId = '';
+  const userMock = mock.method(UserService, 'findById', async () => ({
+    _id: userId,
+    username: 'host',
+  } as any));
+  const createMatchMock = mock.method(MatchService, 'createMatch', async (input) => {
+    capturedRoomId = input.roomId;
+    return createMatchDocument({ roomId: input.roomId, player1Id: userId }) as any;
+  });
+
+  t.after(() => userMock.mock.restore());
+  t.after(() => createMatchMock.mock.restore());
+
+  await MatchService.createMatchForUser({
+    userId: userId.toString(),
+    wager: '0.000000',
+    isPrivate: false,
+    session,
+    emitPublicEvent: false,
+  });
+
+  assert.match(capturedRoomId, /^[0-9a-f]{16}$/);
+});
+
 test('joinMatch rejects the host joining their own waiting match without locking a wager', async (t) => {
   registerSessionCleanup(t);
 
