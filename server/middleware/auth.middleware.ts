@@ -130,3 +130,35 @@ export const requireMfaStepUpIfEnabled = (req: AuthRequest, _res: Response, next
 
   requireFreshMfaStepUp(req as AuthenticatedRequest, next);
 };
+
+export const requireFreshAuth = (req: AuthRequest, _res: Response, next: NextFunction): void => {
+  if (!req.user) {
+    next(unauthorized('Access token required', 'UNAUTHENTICATED'));
+    return;
+  }
+
+  if (req.user.mfaEnabled) {
+    requireFreshMfaStepUp(req as AuthenticatedRequest, next);
+    return;
+  }
+
+  void AuthSessionService.getFreshAuthExpiry(req.user.id, req.user.sessionId)
+    .then((expiresAt) => {
+      if (expiresAt && expiresAt.getTime() > Date.now()) {
+        next();
+        return;
+      }
+
+      next(forbidden('Recent authentication required', 'FRESH_AUTH_REQUIRED', {
+        nextStep: 'confirm_password',
+      }));
+    })
+    .catch((error: unknown) => {
+      if (error instanceof Error) {
+        next(error);
+        return;
+      }
+
+      next(forbidden('Recent authentication required', 'FRESH_AUTH_REQUIRED'));
+    });
+};

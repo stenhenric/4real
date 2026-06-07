@@ -2,7 +2,7 @@ import { Router } from 'express';
 
 import { AuthController } from '../controllers/auth.controller.ts';
 import { asyncHandler } from '../utils/async-handler.ts';
-import { authenticateToken, requireMfaStepUp, requireMfaStepUpIfEnabled } from '../middleware/auth.middleware.ts';
+import { authenticateToken, requireMfaStepUp, requireFreshAuth, requireMfaStepUpIfEnabled } from '../middleware/auth.middleware.ts';
 import {
   createAuthEmailRecipientRateLimiter,
   createAuthEmailRateLimiter,
@@ -24,6 +24,7 @@ import {
   mfaTotpVerifyRequestSchema,
   passwordResetRequestSchema,
   registerRequestSchema,
+  confirmPasswordRequestSchema,
 } from '../validation/request-schemas.ts';
 
 const router = Router();
@@ -83,8 +84,9 @@ router.post('/logout', asyncHandler(AuthController.logout));
 router.get('/sessions', authenticateToken, asyncHandler(AuthController.listSessions));
 router.delete('/sessions/:sessionId', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.revokeSession));
 router.post('/sessions/revoke-others', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.revokeOtherSessions));
-router.post('/mfa/totp/setup', authenticateToken, requireMfaStepUpIfEnabled, asyncHandler(AuthController.startTotpSetup));
-router.post('/mfa/totp/verify', authenticateToken, validateBody(mfaTotpVerifyRequestSchema), asyncHandler(AuthController.verifyTotpSetup));
+router.post('/confirm-password', authenticateToken, validateBody(confirmPasswordRequestSchema), asyncHandler(AuthController.confirmPassword));
+router.post('/mfa/totp/setup', authenticateToken, requireFreshAuth, asyncHandler(AuthController.startTotpSetup));
+router.post('/mfa/totp/verify', authenticateToken, requireFreshAuth, validateBody(mfaTotpVerifyRequestSchema), asyncHandler(AuthController.verifyTotpSetup));
 router.post('/mfa/disable', authenticateToken, requireMfaStepUp, validateBody(mfaDisableRequestSchema), asyncHandler(AuthController.disableMfa));
 router.post('/mfa/recovery-codes/regenerate', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.regenerateRecoveryCodes));
 router.post('/profile/complete', authenticateToken, validateBody(completeProfileRequestSchema), asyncHandler(AuthController.completeProfile));

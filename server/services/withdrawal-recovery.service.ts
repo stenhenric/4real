@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import type { WithdrawalDocument, WithdrawalStatus } from '../repositories/withdrawal.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
+import { WithdrawalDailyLimitRepository } from '../repositories/withdrawal-daily-limit.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
 import { findWithdrawalTransferOnChain } from './withdrawal-engine.ts';
 import { getHotWalletRuntime } from './hot-wallet-runtime.service.ts';
@@ -163,6 +164,19 @@ export async function recoverStuckWithdrawal(params: {
         }
 
         await UserBalanceRepository.refundWithdrawal(withdrawal.userId, withdrawal.amountRaw, session);
+        
+        const refundDayBucket = [
+          withdrawal.createdAt.getUTCFullYear().toString(),
+          (withdrawal.createdAt.getUTCMonth() + 1).toString().padStart(2, '0'),
+          withdrawal.createdAt.getUTCDate().toString().padStart(2, '0'),
+        ].join('-');
+        await WithdrawalDailyLimitRepository.releaseReservation(
+          withdrawal.userId,
+          refundDayBucket,
+          withdrawal.amountRaw,
+          session,
+        );
+        
         await TransactionService.createTransaction({
           userId: withdrawal.userId,
           type: 'WITHDRAW_REFUND',

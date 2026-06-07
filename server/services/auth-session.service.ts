@@ -15,6 +15,7 @@ import { UserService } from './user.service.ts';
 const ACCESS_KEY_PREFIX = 'auth:access:';
 const USED_REFRESH_KEY_PREFIX = 'auth:refresh:used:';
 const MFA_STEPUP_KEY_PREFIX = 'auth:stepup:';
+const FRESH_AUTH_KEY_PREFIX = 'auth:freshauth:';
 const MAX_TRACKED_DEVICES_PER_USER = 5;
 
 export interface AuthenticatedPrincipal {
@@ -70,6 +71,10 @@ function getUsedRefreshRedisKey(hash: string): string {
 
 function getMfaStepUpRedisKey(sessionId: string): string {
   return `${MFA_STEPUP_KEY_PREFIX}${sessionId}`;
+}
+
+function getFreshAuthRedisKey(sessionId: string): string {
+  return `${FRESH_AUTH_KEY_PREFIX}${sessionId}`;
 }
 
 function getAbsoluteExpiryDate(from = new Date()): Date {
@@ -362,6 +367,7 @@ async function markRefreshTokenUsed(params: {
     JSON.stringify({
       userId: params.userId,
       sessionId: params.sessionId,
+      rotatedAt: Date.now(),
     }),
   );
 }
@@ -415,18 +421,19 @@ async function markRefreshTokensUsed(markers: RefreshReuseMarker[]): Promise<voi
   )));
 }
 
-async function getRefreshReuseMarker(refreshTokenHash: string): Promise<{ userId: string; sessionId: string } | null> {
+async function getRefreshReuseMarker(refreshTokenHash: string): Promise<{ userId: string; sessionId: string; rotatedAt?: number } | null> {
   const rawValue = await getRedis().get(getUsedRefreshRedisKey(refreshTokenHash));
   if (!rawValue) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(rawValue) as { userId?: unknown; sessionId?: unknown };
+    const parsed = JSON.parse(rawValue) as { userId?: unknown; sessionId?: unknown; rotatedAt?: unknown };
     if (typeof parsed.userId === 'string' && typeof parsed.sessionId === 'string') {
       return {
         userId: parsed.userId,
         sessionId: parsed.sessionId,
+        ...(typeof parsed.rotatedAt === 'number' ? { rotatedAt: parsed.rotatedAt } : {}),
       };
     }
   } catch {
@@ -655,6 +662,12 @@ export class AuthSessionService {
       const refreshTokenHash = hashOpaqueToken(params.refreshToken);
       const reuseMarker = await getRefreshReuseMarker(refreshTokenHash);
       if (reuseMarker) {
+        const graceWindowMs = 30 * 1000;
+        const isWithinGraceWindow = reuseMarker.rotatedAt && (Date.now() - reuseMarker.rotatedAt < graceWindowMs);
+        if (isWithinGraceWindow) {
+          throw unauthorized('Session recently rotated. Please use the new refresh token.', 'SESSION_ROTATED');
+        }
+
         await this.revokeAllSessionsForUser(reuseMarker.userId, 'refresh_reuse_detected');
         throw unauthorized('Session replay detected', 'SESSION_REPLAY_DETECTED');
       }
@@ -794,13 +807,51 @@ export class AuthSessionService {
   }
 
   static async revokeAllSessionsForUser(userId: string, reason = 'all_sessions_revoked'): Promise<void> {
-    await withSessionStoreBoundary('revokeAllSessionsForUser', async () => {
+    return withSessionStoreBoundary('revokeAllSessionsForUser', async () => {
       const sessions = await authSessionFind<IAuthSession>('AuthSession.find.revokeAllSessionsForUser.sessions', {
         userId,
         ...buildActiveSessionQuery(),
       });
-
       await revokeSessionDocuments(sessions, reason);
+    });
+  }
+
+  static async establishFreshAuth(userId: string, sessionId: string): Promise<Date> {
+    return withSessionStoreBoundary('establishFreshAuth', async () => {
+      const expiresAt = new Date(Date.now() + (getEnv().AUTH_MFA_STEPUP_TTL_SECONDS * 1000));
+      await getRedis().setex(
+        getFreshAuthRedisKey(sessionId),
+        getEnv().AUTH_MFA_STEPUP_TTL_SECONDS,
+        JSON.stringify({ userId, sessionId, establishedAt: Date.now() }),
+      );
+      return expiresAt;
+    });
+  }
+
+  static async getFreshAuthExpiry(userId: string, sessionId: string): Promise<Date | null> {
+    return withSessionStoreBoundary('getFreshAuthExpiry', async () => {
+      const value = await getRedis().get(getFreshAuthRedisKey(sessionId));
+      if (!value) {
+        return null;
+      }
+
+      try {
+        const parsed = JSON.parse(value) as { userId?: string; sessionId?: string; establishedAt?: number };
+        if (parsed.userId !== userId || parsed.sessionId !== sessionId) {
+          return null;
+        }
+        const ttlMs = getEnv().AUTH_MFA_STEPUP_TTL_SECONDS * 1000;
+        const expiresAt = new Date((parsed.establishedAt ?? 0) + ttlMs);
+        return expiresAt.getTime() > Date.now() ? expiresAt : null;
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  static async clearFreshAuth(sessionId: string): Promise<void> {
+    await withSessionStoreBoundary('clearFreshAuth', async () => {
+      await getRedis().del(getFreshAuthRedisKey(sessionId));
     });
   }
 

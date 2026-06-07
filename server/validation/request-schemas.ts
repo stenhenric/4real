@@ -206,6 +206,10 @@ export const completeProfileRequestSchema = z.object({
   username: usernameSchema,
 });
 
+export const confirmPasswordRequestSchema = z.object({
+  password: z.string().min(1),
+});
+
 export const avatarSettingsRequestSchema = z.object({
   preset: z.enum(AVATAR_PRESETS),
   color: z.enum(AVATAR_COLORS),
@@ -304,6 +308,7 @@ export type MfaChallengeRequest = z.infer<typeof mfaChallengeRequestSchema>;
 export type MfaTotpVerifyRequest = z.infer<typeof mfaTotpVerifyRequestSchema>;
 export type MfaDisableRequest = z.infer<typeof mfaDisableRequestSchema>;
 export type CompleteProfileRequest = z.infer<typeof completeProfileRequestSchema>;
+export type ConfirmPasswordRequest = z.infer<typeof confirmPasswordRequestSchema>;
 export type AvatarSettingsRequest = z.infer<typeof avatarSettingsRequestSchema>;
 export type CreateMatchRequest = z.infer<typeof createMatchRequestSchema>;
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;

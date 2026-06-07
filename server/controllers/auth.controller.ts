@@ -31,7 +31,7 @@ import { hashPassword, needsPasswordRehash, verifyPassword } from '../services/p
 import { verifyTurnstileToken } from '../services/auth-turnstile.service.ts';
 import { UserService } from '../services/user.service.ts';
 import { WithdrawalIntentService } from '../services/withdrawal-intent.service.ts';
-import { HttpError, badRequest, conflict, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
+import { HttpError, badRequest, conflict, forbidden, serviceUnavailable, unauthorized } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 import type {
   CompleteProfileRequest,
@@ -1036,6 +1036,54 @@ export class AuthController {
       res,
       user,
       redirectTo: buildPostAuthRedirect(user.username),
+    });
+  }
+
+  static async confirmPassword(req: AuthRequest, res: Response): Promise<void> {
+    assertAuthenticated(req);
+    const user = await UserService.findAuthUserById(req.user.id);
+    if (!user) {
+      throw unauthorized('Session expired', 'SESSION_EXPIRED');
+    }
+
+    if (!hasLocalPasswordCredential(user)) {
+      // For accounts without a password (e.g., Google-only):
+      // Check if the session was created very recently (within fresh-auth TTL).
+      const session = await AuthSessionService.validateAccessToken(
+        req.cookies?.[getAuthCookieName()],
+      );
+      const sessionAge = Date.now() - session.session.createdAt.getTime();
+      const freshAuthTtlMs = getEnv().AUTH_MFA_STEPUP_TTL_SECONDS * 1000;
+      if (sessionAge <= freshAuthTtlMs) {
+        await AuthSessionService.establishFreshAuth(req.user.id, req.user.sessionId);
+        res.json({
+          status: 'success',
+          message: 'Authentication confirmed.',
+        });
+        return;
+      }
+
+      throw forbidden(
+        'This account uses Google sign-in. Please sign in again to confirm your identity.',
+        'FRESH_AUTH_REQUIRED',
+        { nextStep: 'reauthenticate' },
+      );
+    }
+
+    const body = req.body as { password?: string };
+    if (!body.password || typeof body.password !== 'string') {
+      throw badRequest('Password is required', 'PASSWORD_REQUIRED');
+    }
+
+    const passwordMatches = await verifyPassword(body.password, user.passwordHash!);
+    if (!passwordMatches) {
+      throw unauthorized('Invalid password', 'INVALID_CREDENTIALS');
+    }
+
+    await AuthSessionService.establishFreshAuth(req.user.id, req.user.sessionId);
+    res.json({
+      status: 'success',
+      message: 'Authentication confirmed.',
     });
   }
 }
