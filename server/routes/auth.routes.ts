@@ -7,6 +7,7 @@ import {
   createAuthEmailRecipientRateLimiter,
   createAuthEmailRateLimiter,
   createAuthRateLimiter,
+  createConfirmPasswordRateLimiter,
   createPasswordLoginIdentifierRateLimiter,
 } from '../middleware/rate-limit.middleware.ts';
 import { validateBody } from '../middleware/validate.middleware.ts';
@@ -84,7 +85,7 @@ router.post('/logout', asyncHandler(AuthController.logout));
 router.get('/sessions', authenticateToken, asyncHandler(AuthController.listSessions));
 router.delete('/sessions/:sessionId', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.revokeSession));
 router.post('/sessions/revoke-others', authenticateToken, requireMfaStepUp, asyncHandler(AuthController.revokeOtherSessions));
-router.post('/confirm-password', authenticateToken, validateBody(confirmPasswordRequestSchema), asyncHandler(AuthController.confirmPassword));
+router.post('/confirm-password', authenticateToken, createConfirmPasswordRateLimiter(), validateBody(confirmPasswordRequestSchema), asyncHandler(AuthController.confirmPassword));
 router.post('/mfa/totp/setup', authenticateToken, requireFreshAuth, asyncHandler(AuthController.startTotpSetup));
 router.post('/mfa/totp/verify', authenticateToken, requireFreshAuth, validateBody(mfaTotpVerifyRequestSchema), asyncHandler(AuthController.verifyTotpSetup));
 router.post('/mfa/disable', authenticateToken, requireMfaStepUp, validateBody(mfaDisableRequestSchema), asyncHandler(AuthController.disableMfa));

@@ -13,6 +13,7 @@ import { validateBody } from '../../../../server/middleware/validate.middleware.
 import { WithdrawalRecoveryController } from '../../../../server/controllers/withdrawal-recovery.controller.ts';
 import { withdrawalRecoveryRequestSchema } from '../../../../server/validation/request-schemas.ts';
 import { WithdrawalRepository } from '../../../../server/repositories/withdrawal.repository.ts';
+import { WithdrawalDailyLimitRepository } from '../../../../server/repositories/withdrawal-daily-limit.repository.ts';
 import { ProcessedTransactionRepository } from '../../../../server/repositories/processed-transaction.repository.ts';
 import { UserBalanceRepository } from '../../../../server/repositories/user-balance.repository.ts';
 import { AuthMfaService } from '../../../../server/services/auth-mfa.service.ts';
@@ -179,6 +180,7 @@ test('admin recovery refunds a stuck withdrawal only after no on-chain match is 
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
   const markRefundedMock = mock.method(WithdrawalRepository, 'markStuckRefunded', async () => true);
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
+  const releaseReservationMock = mock.method(WithdrawalDailyLimitRepository, 'releaseReservation', async () => true);
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'refund-tx-1' } as any));
   const auditMock = mock.method(AuditService, 'record', async () => {});
   const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
@@ -195,6 +197,7 @@ test('admin recovery refunds a stuck withdrawal only after no on-chain match is 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => markRefundedMock.mock.restore());
   t.after(() => refundMock.mock.restore());
+  t.after(() => releaseReservationMock.mock.restore());
   t.after(() => createTransactionMock.mock.restore());
   t.after(() => auditMock.mock.restore());
   t.after(() => transitionMock.mock.restore());
@@ -211,6 +214,12 @@ test('admin recovery refunds a stuck withdrawal only after no on-chain match is 
   assert.equal(chainChecks, 1);
   assert.equal(markRefundedMock.mock.callCount(), 1);
   assert.equal(refundMock.mock.callCount(), 1);
+  assert.equal(releaseReservationMock.mock.callCount(), 1);
+  assert.deepEqual(releaseReservationMock.mock.calls[0].arguments.slice(0, 3), [
+    'user-1',
+    '2026-01-01',
+    '1000000',
+  ]);
   assert.equal(createTransactionMock.mock.calls[0].arguments[0]?.type, 'WITHDRAW_REFUND');
   assert.equal(auditMock.mock.calls[0].arguments[0]?.eventType, 'withdrawal_refunded');
   assert.equal(auditMock.mock.calls[0].arguments[0]?.actorUserId, 'admin-1');

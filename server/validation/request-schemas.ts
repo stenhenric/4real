@@ -207,7 +207,7 @@ export const completeProfileRequestSchema = z.object({
 });
 
 export const confirmPasswordRequestSchema = z.object({
-  password: z.string().min(1),
+  password: z.string().min(1).optional(),
 });
 
 export const avatarSettingsRequestSchema = z.object({

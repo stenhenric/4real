@@ -118,6 +118,34 @@ function settleMatchWinner(match, winnerId) {
   });
 }
 
+function refundMatchWager(match, userId) {
+  if (match.wager <= 0) {
+    return;
+  }
+
+  const user = findUserById(userId);
+  if (!user) {
+    return;
+  }
+
+  const refund = toUsdtNumber(match.wager);
+  user.balance = toUsdtNumber(user.balance + refund);
+  createTransaction(user.id, {
+    type: 'MATCH_REFUND',
+    amount: refund,
+    status: 'COMPLETED',
+    referenceId: match.roomId,
+  });
+}
+
+function getMatchOutcome(match, winnerId) {
+  if (winnerId === 'draw') {
+    return 'no_contest';
+  }
+
+  return winnerId === match.player1Id ? 'player1_win' : 'player2_win';
+}
+
 function createBaseUsers() {
   return [
     {
@@ -590,6 +618,8 @@ function serializeMatch(match) {
     ...(match.player2Id ? { player2Id: match.player2Id } : {}),
     status: match.status,
     ...(match.winnerId ? { winnerId: match.winnerId } : {}),
+    ...(match.settlementReason ? { settlementReason: match.settlementReason } : {}),
+    ...(match.outcome ? { outcome: match.outcome } : {}),
     wager: formatUsdt(match.wager),
     isPrivate: match.isPrivate,
     moveHistory: match.moveHistory,
@@ -623,6 +653,8 @@ function buildRoomState(match) {
     moves: match.moveHistory,
     wager: formatUsdt(match.wager),
     ...(match.winnerId ? { winnerId: match.winnerId } : {}),
+    ...(match.settlementReason ? { settlementReason: match.settlementReason } : {}),
+    ...(match.outcome ? { outcome: match.outcome } : {}),
     projectedWinnerAmount: calculateProjectedWinnerAmount(match.wager),
     commissionRate: formatRate(commissionRate),
   };
@@ -653,6 +685,8 @@ function createMatchForUser(user, payload) {
     board: createBoard(),
     currentTurn: null,
     winnerId: null,
+    settlementReason: null,
+    outcome: null,
     createdAt: isoNow(),
     lastActivityAt: isoNow(),
   };
@@ -1216,15 +1250,54 @@ function createApp() {
       return;
     }
 
-    const winnerId = match.player1Id === req.user.id ? match.player2Id : match.player1Id;
-    match.status = 'completed';
-    match.winnerId = winnerId ?? 'draw';
-    match.currentTurn = null;
-    match.lastActivityAt = isoNow();
-    if (winnerId) {
-      settleMatchWinner(match, winnerId);
+    const isParticipant = match.player1Id === req.user.id || match.player2Id === req.user.id;
+    if (!isParticipant) {
+      sendApiError(res, 409, 'MATCH_PARTICIPANT_REQUIRED', 'Only match participants can resign');
+      return;
     }
+
+    if (match.status === 'completed') {
+      res.json(serializeMatch(match));
+      return;
+    }
+
+    if (match.status === 'waiting') {
+      refundMatchWager(match, match.player1Id);
+      match.status = 'completed';
+      match.winnerId = 'draw';
+      match.currentTurn = null;
+      match.settlementReason = 'resigned';
+      match.outcome = 'no_contest';
+      match.lastActivityAt = isoNow();
+      emitPublicMatchesUpdated();
+      io?.to(match.roomId).emit('game-over', {
+        room: buildRoomState(match),
+        winnerId: match.winnerId,
+        outcome: match.outcome,
+      });
+      res.json(serializeMatch(match));
+      return;
+    }
+
+    const winnerId = match.player1Id === req.user.id ? match.player2Id : match.player1Id;
+    if (!winnerId) {
+      sendApiError(res, 409, 'MATCH_OPPONENT_REQUIRED', 'Match cannot be resigned without an opponent');
+      return;
+    }
+
+    match.status = 'completed';
+    match.winnerId = winnerId;
+    match.currentTurn = null;
+    match.settlementReason = 'resigned';
+    match.outcome = getMatchOutcome(match, winnerId);
+    match.lastActivityAt = isoNow();
+    settleMatchWinner(match, winnerId);
     emitPublicMatchesUpdated();
+    io?.to(match.roomId).emit('game-over', {
+      room: buildRoomState(match),
+      winnerId: match.winnerId,
+      outcome: match.outcome,
+    });
     res.json(serializeMatch(match));
   });
 
@@ -1599,11 +1672,14 @@ io.on('connection', (socket) => {
       match.status = 'completed';
       match.winnerId = socket.data.userId;
       match.currentTurn = null;
+      match.settlementReason = 'winner';
+      match.outcome = getMatchOutcome(match, socket.data.userId);
       settleMatchWinner(match, socket.data.userId);
       emitPublicMatchesUpdated();
       io.to(match.roomId).emit('game-over', {
         room: buildRoomState(match),
         winnerId: socket.data.userId,
+        outcome: match.outcome,
         winningLine,
       });
       return;

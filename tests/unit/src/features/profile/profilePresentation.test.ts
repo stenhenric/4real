@@ -70,6 +70,7 @@ describe('profile presentation helpers', () => {
       match({ _id: 'win', winnerId: 'user-1', wager: '0.000000' }),
       match({ _id: 'loss', winnerId: 'user-2', wager: '0.000000' }),
       match({ _id: 'draw', winnerId: 'draw', settlementReason: 'draw', wager: '0.000000' }),
+      match({ _id: 'cancelled', winnerId: 'draw', settlementReason: 'resigned', outcome: 'no_contest', wager: '0.000000' }),
       match({ _id: 'wagered', winnerId: 'user-1', wager: '1.000000' }),
     ];
 
@@ -77,5 +78,24 @@ describe('profile presentation helpers', () => {
     assert.deepEqual(getVisibleProfileMatches(history, 'user-1', 'losses').map((item) => item._id), ['loss']);
     assert.deepEqual(getVisibleProfileMatches(history, 'user-1', 'draws').map((item) => item._id), ['draw']);
     assert.deepEqual(getVisibleProfileMatches(history, 'user-1', 'wagered').map((item) => item._id), ['wagered']);
+  });
+
+  it('keeps no-contest out of draw filters and requires moves for clean-sheet wins', () => {
+    const achievements = getProfileAchievements({
+      profile: {
+        ...profile,
+        stats: { wins: 0, losses: 0, draws: 0 },
+      },
+      history: [
+        match({ _id: 'cancelled', winnerId: 'draw', settlementReason: 'resigned', outcome: 'no_contest' }),
+        match({ _id: 'empty-win', winnerId: 'user-1', moveHistory: [] }),
+      ],
+      userId: 'user-1',
+    });
+
+    const unlocked = new Set(achievements.filter((achievement) => achievement.unlocked).map((achievement) => achievement.id));
+    assert.equal(unlocked.has('draw-artist'), false);
+    assert.equal(unlocked.has('finisher'), true);
+    assert.equal(unlocked.has('clean-sheet'), false);
   });
 });

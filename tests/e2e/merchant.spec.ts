@@ -16,7 +16,7 @@ test('keeps merchant admin routes protected and lets ops review a submitted buy 
     await customer.page.getByRole('button', { name: /buy \/ sell via fiat/i }).click();
     await expect(customer.page.getByRole('tab', { name: /buy usdt/i })).toBeVisible();
     await customer.page.getByLabel(/amount to buy/i).fill('10');
-    await customer.page.getByRole('button', { name: 'Confirm Payment', exact: true }).click();
+    await customer.page.getByRole('button', { name: /i sent this payment/i }).click();
     await customer.page.getByLabel(/m-pesa transaction code/i).fill('QWE123ABC');
     await customer.page.locator('#merchant-proof').setInputFiles({
       name: 'proof.png',
@@ -72,7 +72,7 @@ test('merchant buy submit ignores rapid duplicate clicks and sends one idempoten
     await customer.page.getByRole('button', { name: /buy \/ sell via fiat/i }).click();
     await expect(customer.page.getByRole('tab', { name: /buy usdt/i })).toBeVisible();
     await customer.page.getByLabel(/amount to buy/i).fill('10');
-    await customer.page.getByRole('button', { name: 'Confirm Payment', exact: true }).click();
+    await customer.page.getByRole('button', { name: /i sent this payment/i }).click();
     await customer.page.getByLabel(/m-pesa transaction code/i).fill('QWE123ABC');
     await customer.page.locator('#merchant-proof').setInputFiles({
       name: 'proof.png',

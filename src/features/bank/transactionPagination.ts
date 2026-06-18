@@ -22,6 +22,10 @@ export function mergeTransactionPages(
 }
 
 export function getHasMoreTransactions(feed: TransactionFeedDTO): boolean {
+  if (Number.isFinite(feed.total) && feed.total >= 0 && feed.pageSize > 0) {
+    return feed.page * feed.pageSize < feed.total;
+  }
+
   return feed.items.length >= feed.pageSize;
 }
 

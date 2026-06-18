@@ -1,12 +1,11 @@
-import { expect, test } from '@playwright/test';
-import { DEFAULT_PASSWORD, expectToast, resetApp } from './helpers';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { APP_URL, DEFAULT_PASSWORD, expectToast, resetApp } from './helpers';
 
 test.beforeEach(async ({ request }) => {
   await resetApp(request);
 });
 
-test('boots the app, enforces auth, supports register verify login logout, and preserves the session', async ({ page }) => {
-  const passwordInput = () => page.getByLabel('Password', { exact: true });
+async function installTurnstileStub(page: Page) {
   await page.addInitScript(() => {
     let latestOptions: { callback?: (token: string) => void } | undefined;
     const issueToken = () => window.setTimeout(() => latestOptions?.callback?.('e2e-turnstile-token'), 0);
@@ -27,6 +26,38 @@ test('boots the app, enforces auth, supports register verify login logout, and p
       remove: () => {},
     };
   });
+}
+
+async function registerVerifiedUser(
+  request: APIRequestContext,
+  user: { email: string; username: string; password?: string },
+) {
+  const registerResponse = await request.post(`${APP_URL}/api/auth/register`, {
+    data: {
+      email: user.email,
+      username: user.username,
+      password: user.password ?? DEFAULT_PASSWORD,
+    },
+  });
+  expect(registerResponse.status()).toBe(202);
+  const registerBody = await registerResponse.json() as { previewUrl?: string };
+  expect(registerBody.previewUrl).toBeTruthy();
+
+  const verificationUrl = new URL(registerBody.previewUrl ?? '/', APP_URL);
+  const token = verificationUrl.searchParams.get('token');
+  expect(token).toBeTruthy();
+
+  const verificationResponse = await request.post(`${APP_URL}/api/auth/email/verify/consume`, {
+    data: { token },
+  });
+  expect(verificationResponse.ok()).toBeTruthy();
+}
+
+test('enforces auth, registers, verifies, logs out, and preserves the session', async ({ page }) => {
+  test.setTimeout(75_000);
+
+  const passwordInput = () => page.getByLabel('Password', { exact: true });
+  await installTurnstileStub(page);
 
   const healthResponse = await page.request.get('/api/health');
   expect(healthResponse.ok()).toBeTruthy();
@@ -69,8 +100,18 @@ test('boots the app, enforces auth, supports register verify login logout, and p
     page.getByRole('button', { name: /^sign out$/i }).click(),
   ]);
   await expect(page).toHaveURL(/\/auth\/login$/);
+});
 
-  await page.getByLabel('Email or username').fill('audit-user');
+test('shows invalid password feedback and signs in with a verified account', async ({ page, request }) => {
+  const passwordInput = () => page.getByLabel('Password', { exact: true });
+  await installTurnstileStub(page);
+  await registerVerifiedUser(request, {
+    email: 'login-user@example.com',
+    username: 'login-user',
+  });
+
+  await page.goto('/auth/login');
+  await page.getByLabel('Email or username').fill('login-user');
   await page.getByRole('button', { name: /continue with password/i }).click();
   const signInButton = page.getByRole('button', { name: /^sign in$/i });
   await expect(signInButton).toBeEnabled();

@@ -39,20 +39,19 @@ describe('transaction pagination helpers', () => {
     );
   });
 
-  it('uses page size to decide whether load-more should remain available', () => {
-    const fullPage: TransactionFeedDTO = {
+  it('uses total count to decide whether load-more should remain available', () => {
+    const fullLastPage: TransactionFeedDTO = {
       items: Array.from({ length: BANK_TRANSACTION_PAGE_SIZE }, (_, index) => transaction(`tx-${index}`)),
       page: 1,
       pageSize: BANK_TRANSACTION_PAGE_SIZE,
       total: BANK_TRANSACTION_PAGE_SIZE,
     };
-    const partialPage: TransactionFeedDTO = {
-      ...fullPage,
-      items: [transaction('tx-last')],
-      page: 2,
+    const fullPageWithMore: TransactionFeedDTO = {
+      ...fullLastPage,
+      total: BANK_TRANSACTION_PAGE_SIZE + 1,
     };
 
-    assert.equal(getHasMoreTransactions(fullPage), true);
-    assert.equal(getHasMoreTransactions(partialPage), false);
+    assert.equal(getHasMoreTransactions(fullLastPage), false);
+    assert.equal(getHasMoreTransactions(fullPageWithMore), true);
   });
 });

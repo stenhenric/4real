@@ -330,24 +330,31 @@ export class UserService {
     result: 'win' | 'loss' | 'draw',
     session?: mongoose.ClientSession,
   ): Promise<IUser | null> {
-    const existingUser = await this.findById(id, session);
-    if (!existingUser) {
-      return null;
-    }
-
     const incQuery: Record<string, number> = {};
     if (result === 'win') incQuery['stats.wins'] = 1;
     else if (result === 'loss') incQuery['stats.losses'] = 1;
     else if (result === 'draw') incQuery['stats.draws'] = 1;
 
+    const statSetters = Object.fromEntries(
+      Object.entries(incQuery).map(([field, increment]) => [
+        field,
+        { $add: [{ $ifNull: [`$${field}`, 0] }, increment] },
+      ]),
+    );
+
     return User.findByIdAndUpdate(
       id,
-      {
+      [{
         $set: {
-          elo: Math.max(RATING_SYSTEM.minimumRating, existingUser.elo + eloChange),
+          elo: {
+            $max: [
+              RATING_SYSTEM.minimumRating,
+              { $add: [{ $ifNull: ['$elo', RATING_SYSTEM.startingRating] }, eloChange] },
+            ],
+          },
+          ...statSetters,
         },
-        ...(Object.keys(incQuery).length > 0 ? { $inc: incQuery } : {}),
-      },
+      }],
       { returnDocument: 'after', ...(session ? { session } : {}) },
     );
   }

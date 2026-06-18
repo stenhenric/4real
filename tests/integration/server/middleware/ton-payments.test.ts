@@ -3,7 +3,7 @@ import test, { mock, type TestContext } from 'node:test';
 import mongoose from 'mongoose';
 import { Address } from '@ton/ton';
 
-import { resetEnvCacheForTests } from '../../../../server/config/env.ts';
+import { getEnv, resetEnvCacheForTests } from '../../../../server/config/env.ts';
 import { USDT_MASTER } from '../../../../server/lib/jetton.ts';
 import { DepositMemoRepository } from '../../../../server/repositories/deposit-memo.repository.ts';
 import { DepositRepository } from '../../../../server/repositories/deposit.repository.ts';
@@ -16,6 +16,7 @@ import { IdempotencyKeyRepository } from '../../../../server/repositories/idempo
 import { ProcessedTransactionRepository } from '../../../../server/repositories/processed-transaction.repository.ts';
 import { UnmatchedDepositRepository } from '../../../../server/repositories/unmatched-deposit.repository.ts';
 import { UserBalanceRepository } from '../../../../server/repositories/user-balance.repository.ts';
+import { WithdrawalDailyLimitRepository } from '../../../../server/repositories/withdrawal-daily-limit.repository.ts';
 import { WithdrawalRepository } from '../../../../server/repositories/withdrawal.repository.ts';
 import { requestWithdrawalHandler } from '../../../../server/controllers/transaction.controller.ts';
 import { AuditService } from '../../../../server/services/audit.service.ts';
@@ -49,6 +50,7 @@ import {
   setFailedDepositReplayWorkerDependenciesForTests,
 } from '../../../../server/workers/failed-deposit-replay-worker.ts';
 import { logger } from '../../../../server/utils/logger.ts';
+import { parseUsdtAmount } from '../../../../server/utils/money.ts';
 
 const HOT_WALLET_ADDRESS = Address.parse(USDT_MASTER).toString({ bounceable: true });
 const HOT_WALLET_RAW = Address.parse(USDT_MASTER).toRawString();
@@ -1127,7 +1129,7 @@ test('requestWithdrawal rejects insufficient balance', async (t) => {
   const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => null);
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+  const dailyLimitMock = mock.method(WithdrawalDailyLimitRepository, 'reserveIfWithinLimit', async () => true);
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => deductMock.mock.restore());
@@ -1140,6 +1142,7 @@ test('requestWithdrawal rejects insufficient balance', async (t) => {
   );
 
   assert.equal(deductMock.mock.callCount(), 1);
+  assert.equal(dailyLimitMock.mock.callCount(), 0);
   assert.equal(createQueuedMock.mock.callCount(), 0);
 });
 
@@ -1150,7 +1153,7 @@ test('requestWithdrawal rejects withdrawals below the minimum before deducting b
   const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-minimum' } as any));
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+  const dailyLimitMock = mock.method(WithdrawalDailyLimitRepository, 'reserveIfWithinLimit', async () => true);
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => deductMock.mock.restore());
@@ -1174,7 +1177,7 @@ test('requestWithdrawal queues a withdrawal atomically with balance deduction', 
   const startSessionMock = mock.method(mongoose, 'startSession', async () => session as any);
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-5' } as any));
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+  const dailyLimitMock = mock.method(WithdrawalDailyLimitRepository, 'reserveIfWithinLimit', async () => true);
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => deductMock.mock.restore());
@@ -1183,7 +1186,16 @@ test('requestWithdrawal queues a withdrawal atomically with balance deduction', 
 
   await requestWithdrawal({ userId: 'user-5', toAddress: ZERO_ADDRESS, amountUsdt: '1.500000', withdrawalId: 'wd-2' });
 
+  const expectedDayBucket = new Date().toISOString().slice(0, 10);
+  const expectedDailyLimitRaw = parseUsdtAmount(getEnv().DAILY_WITHDRAWAL_LIMIT_USDT).toString();
   assert.equal(deductMock.mock.callCount(), 1);
+  assert.equal(dailyLimitMock.mock.callCount(), 1);
+  assert.deepEqual(dailyLimitMock.mock.calls[0].arguments.slice(0, 4), [
+    'user-5',
+    expectedDayBucket,
+    '1500000',
+    expectedDailyLimitRaw,
+  ]);
   assert.equal(createQueuedMock.mock.callCount(), 1);
   assert.equal((createQueuedMock.mock.calls[0].arguments[0] as { withdrawalId: string }).withdrawalId, 'wd-2');
 });
@@ -1210,7 +1222,7 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   const completeMock = mock.method(IdempotencyKeyRepository, 'markCompletedIfProcessing', async () => true);
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-handler' } as any));
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+  const dailyLimitMock = mock.method(WithdrawalDailyLimitRepository, 'reserveIfWithinLimit', async () => true);
   const queuedEmailMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalQueued', async () => {});
   let consumeCalls = 0;
   const consumeIntentMock = mock.method(WithdrawalIntentService, 'consumeIntent', async () => {
@@ -1285,6 +1297,7 @@ test('requestWithdrawalHandler invalidates dashboard cache but does not email qu
   assert.deepEqual(replayResponse.body, replayBody);
   assert.equal(queuedEmailMock.mock.callCount(), 0);
   assert.equal(createQueuedMock.mock.callCount(), 1);
+  assert.equal(dailyLimitMock.mock.callCount(), 1);
   assert.equal(consumeIntentMock.mock.callCount(), 1);
 });
 
@@ -1297,7 +1310,7 @@ test('requestWithdrawalHandler rejects resume when intent idempotency key does n
   const completeMock = mock.method(IdempotencyKeyRepository, 'markCompletedIfProcessing', async () => true);
   const deductMock = mock.method(userServiceModule.UserService, 'deductBalanceSafely', async () => ({ _id: 'user-handler' } as any));
   const createQueuedMock = mock.method(WithdrawalRepository, 'createQueued', async () => {});
-  const dailyLimitMock = mock.method(WithdrawalRepository, 'sumAccountedRawBetween', async () => 0n);
+  const dailyLimitMock = mock.method(WithdrawalDailyLimitRepository, 'reserveIfWithinLimit', async () => true);
   const consumeIntentMock = mock.method(WithdrawalIntentService, 'consumeIntent', async () => ({
     userId: 'user-handler',
     toAddress: ZERO_ADDRESS,
@@ -1307,6 +1320,7 @@ test('requestWithdrawalHandler rejects resume when intent idempotency key does n
     authorized: true,
     createdAt: Date.now(),
   }));
+  const restoreIntentMock = mock.method(WithdrawalIntentService, 'restoreIntent', async () => {});
 
   t.after(() => startSessionMock.mock.restore());
   t.after(() => claimMock.mock.restore());
@@ -1315,6 +1329,7 @@ test('requestWithdrawalHandler rejects resume when intent idempotency key does n
   t.after(() => createQueuedMock.mock.restore());
   t.after(() => dailyLimitMock.mock.restore());
   t.after(() => consumeIntentMock.mock.restore());
+  t.after(() => restoreIntentMock.mock.restore());
 
   await assert.rejects(
     requestWithdrawalHandler({
@@ -1330,7 +1345,9 @@ test('requestWithdrawalHandler rejects resume when intent idempotency key does n
   );
 
   assert.equal(createQueuedMock.mock.callCount(), 0);
+  assert.equal(dailyLimitMock.mock.callCount(), 0);
   assert.equal(deductMock.mock.callCount(), 0);
+  assert.equal(restoreIntentMock.mock.callCount(), 1);
 });
 
 test('runWithdrawalWorker claims only one queued withdrawal at a time', async (t) => {
@@ -1442,6 +1459,8 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   });
   await initWorker();
 
+  const retryCreatedAt = new Date('2026-01-03T00:00:00.000Z');
+  const terminalCreatedAt = new Date('2026-01-04T00:00:00.000Z');
   const queuedDocs = [
     {
       _id: 'doc-2',
@@ -1451,7 +1470,7 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
       amountRaw: '1000000',
       amountDisplay: '1.000000',
       status: 'queued',
-      createdAt: new Date(),
+      createdAt: retryCreatedAt,
       retries: 1,
     },
     {
@@ -1462,7 +1481,7 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
       amountRaw: '2000000',
       amountDisplay: '2.000000',
       status: 'queued',
-      createdAt: new Date(),
+      createdAt: terminalCreatedAt,
       retries: 2,
     },
   ];
@@ -1470,6 +1489,7 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   const startSessionMock = mock.method(mongoose, 'startSession', async () => createSessionMock() as any);
   const retryStateMock = mock.method(WithdrawalRepository, 'markRetryState', async () => {});
   const refundMock = mock.method(UserBalanceRepository, 'refundWithdrawal', async () => {});
+  const releaseReservationMock = mock.method(WithdrawalDailyLimitRepository, 'releaseReservation', async () => true);
   const createTransactionMock = mock.method(TransactionService, 'createTransaction', async () => ({ _id: 'tx-refund' } as any));
   const transitionMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalTransition', async () => {});
   const merchantAlertMock = mock.method(ProductEmailNotificationService, 'sendWithdrawalMerchantAlert', async () => {});
@@ -1478,6 +1498,7 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   t.after(() => startSessionMock.mock.restore());
   t.after(() => retryStateMock.mock.restore());
   t.after(() => refundMock.mock.restore());
+  t.after(() => releaseReservationMock.mock.restore());
   t.after(() => createTransactionMock.mock.restore());
   t.after(() => transitionMock.mock.restore());
   t.after(() => merchantAlertMock.mock.restore());
@@ -1495,6 +1516,12 @@ test('runWithdrawalWorker retries without refund before terminal failure and ref
   assert.equal(retryStateMock.mock.calls[1].arguments[1], 'failed');
   assert.equal(refundMock.mock.callCount(), 1);
   assert.equal(refundMock.mock.calls[0].arguments[0], 'user-8');
+  assert.equal(releaseReservationMock.mock.callCount(), 1);
+  assert.deepEqual(releaseReservationMock.mock.calls[0].arguments.slice(0, 3), [
+    'user-8',
+    terminalCreatedAt.toISOString().slice(0, 10),
+    '2000000',
+  ]);
   assert.equal(createTransactionMock.mock.callCount(), 1);
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { type: string }).type, 'WITHDRAW_REFUND');
   assert.equal((createTransactionMock.mock.calls[0].arguments[0] as { amount: string }).amount, '2.000000');

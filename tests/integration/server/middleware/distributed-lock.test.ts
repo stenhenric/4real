@@ -135,7 +135,15 @@ test('withLock acquires after an existing lock expires', async (t) => {
 });
 
 test('withLock heartbeat renews lock during long operation', async (t) => {
-  const lockDriver = createInMemoryLockDriver(() => Date.now());
+  const clock = { now: 0 };
+  const lockDriver = createInMemoryLockDriver(() => clock.now);
+  const timerState: {
+    heartbeat?: () => void;
+    heartbeatCleared: boolean;
+  } = {
+    heartbeatCleared: false,
+  };
+
   resetDistributedLockDependenciesForTests();
   setDistributedLockDependenciesForTests({
     acquire: lockDriver.acquire,
@@ -143,17 +151,44 @@ test('withLock heartbeat renews lock during long operation', async (t) => {
     release: lockDriver.release,
     sleep: async () => {},
     random: () => 0,
-    setIntervalFn: globalThis.setInterval,
-    clearIntervalFn: globalThis.clearInterval,
+    setIntervalFn: ((callback: () => void, intervalMs?: number) => {
+      assert.equal(intervalMs, 100);
+      timerState.heartbeat = callback;
+      return 1 as unknown as ReturnType<typeof globalThis.setInterval>;
+    }) as typeof globalThis.setInterval,
+    clearIntervalFn: (() => {
+      timerState.heartbeatCleared = true;
+    }) as typeof globalThis.clearInterval,
   });
   t.after(() => resetDistributedLockDependenciesForTests());
 
+  let releaseLongRunning: () => void = () => {
+    throw new Error('long-running lock release callback was not initialized');
+  };
+  const longRunningHeld = new Promise<void>((resolve) => {
+    releaseLongRunning = resolve;
+  });
+  let longRunningEntered = false;
   const longRunning = withLock('resource-heartbeat', 200, async () => {
-    await wait(600);
+    longRunningEntered = true;
+    await longRunningHeld;
   });
 
   try {
-    await wait(350);
+    while (!longRunningEntered || !timerState.heartbeat) {
+      await Promise.resolve();
+    }
+    const runHeartbeat = timerState.heartbeat;
+    if (!runHeartbeat) {
+      throw new Error('heartbeat callback was not registered');
+    }
+
+    clock.now = 150;
+    runHeartbeat();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    clock.now = 250;
 
     let secondEntered = false;
     await assert.rejects(
@@ -165,8 +200,10 @@ test('withLock heartbeat renews lock during long operation', async (t) => {
 
     assert.equal(secondEntered, false);
   } finally {
+    releaseLongRunning();
     await longRunning;
   }
+  assert.equal(timerState.heartbeatCleared, true);
 });
 
 test('withLock releases lock when callback throws', async (t) => {

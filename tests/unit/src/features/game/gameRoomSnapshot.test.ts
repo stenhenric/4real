@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   buildGameRoomSnapshot,
+  buildSettledMatchRoomSnapshot,
   getGameRoomSessionKey,
   getVisibleGameRoomSnapshot,
 } from '../../../../../src/features/game/gameRoomSnapshot.ts';
@@ -16,9 +17,9 @@ function makeRoom(overrides: Partial<RoomState> = {}): RoomState {
     currentTurn: 'user-1',
     status: 'active',
     moves: [],
-    wager: 1,
-    projectedWinnerAmount: 1.8,
-    commissionRate: 0.1,
+    wager: '1.000000',
+    projectedWinnerAmount: '1.800000',
+    commissionRate: '0.100000',
     ...overrides,
   };
 }
@@ -98,6 +99,52 @@ describe('game room snapshot helpers', () => {
     assert.deepEqual(getVisibleGameRoomSnapshot(snapshot, key), {
       room: snapshot.room,
       gameOver,
+    });
+  });
+
+  it('merges a settled resign response into the active room snapshot', () => {
+    const key = getGameRoomSessionKey({ roomId: 'room-1', userId: 'user-1', enabled: true });
+    assert.ok(key);
+
+    const activeRoom = makeRoom({
+      players: [
+        { userId: 'user-1', username: 'Host', socketId: 'socket-1', elo: 300 },
+        { userId: 'user-2', username: 'Guest', socketId: 'socket-2', elo: 300 },
+      ],
+      board: [[null, null, null, null, null, null, null]],
+      moves: [{ userId: 'user-1', col: 2, row: 5 }],
+      currentTurn: 'user-2',
+      status: 'active',
+    });
+
+    const snapshot = buildSettledMatchRoomSnapshot(key, activeRoom, {
+      roomId: 'room-1',
+      p1Username: 'Host',
+      player1Id: 'user-1',
+      p2Username: 'Guest',
+      player2Id: 'user-2',
+      status: 'completed',
+      winnerId: 'user-2',
+      wager: '1.000000',
+      isPrivate: false,
+      moveHistory: [{ userId: 'user-1', col: 2, row: 5 }],
+      projectedWinnerAmount: '1.800000',
+      commissionRate: '0.100000',
+      settlementReason: 'resigned',
+      outcome: 'player2_win',
+    });
+
+    assert.ok(snapshot);
+    assert.equal(snapshot.room.status, 'completed');
+    assert.equal(snapshot.room.currentTurn, null);
+    assert.equal(snapshot.room.winnerId, 'user-2');
+    assert.equal(snapshot.room.settlementReason, 'resigned');
+    assert.equal(snapshot.room.outcome, 'player2_win');
+    assert.deepEqual(snapshot.room.players, activeRoom.players);
+    assert.deepEqual(snapshot.room.board, activeRoom.board);
+    assert.deepEqual(snapshot.gameOver, {
+      winnerId: 'user-2',
+      outcome: 'player2_win',
     });
   });
 });

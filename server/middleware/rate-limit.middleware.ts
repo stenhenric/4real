@@ -104,6 +104,7 @@ function createAuthenticatedOperationRateLimiter(params: {
   windowMs: number;
   max: number;
   requestPropertyName?: string;
+  skipSuccessfulRequests?: boolean;
   message?: {
     code: string;
     message: string;
@@ -118,6 +119,7 @@ function createAuthenticatedOperationRateLimiter(params: {
     standardHeaders: true,
     requestPropertyName: params.requestPropertyName ?? 'operationRateLimit',
     legacyHeaders: false,
+    skipSuccessfulRequests: params.skipSuccessfulRequests ?? false,
     keyGenerator: getAuthenticatedActorRateLimitKey,
     message: params.message ?? {
       code: 'OPERATION_RATE_LIMITED',
@@ -179,6 +181,21 @@ export function createAuthEmailRecipientRateLimiter() {
     message: {
       code: 'AUTH_EMAIL_RATE_LIMITED',
       message: 'Too many requests, please try again later.',
+    },
+  });
+}
+
+export function createConfirmPasswordRateLimiter() {
+  const env = getEnv();
+  return createAuthenticatedOperationRateLimiter({
+    prefix: 'rl:confirm-password:',
+    windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+    max: env.AUTH_RATE_LIMIT_MAX,
+    requestPropertyName: 'confirmPasswordRateLimit',
+    skipSuccessfulRequests: true,
+    message: {
+      code: 'AUTH_RATE_LIMITED',
+      message: 'Too many authentication attempts, please try again later.',
     },
   });
 }

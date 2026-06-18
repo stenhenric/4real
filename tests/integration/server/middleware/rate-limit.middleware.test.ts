@@ -5,8 +5,12 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import express from 'express';
 
+import { getAuthCookieName } from '../../../../server/config/cookies.ts';
 import { resetEnvCacheForTests } from '../../../../server/config/env.ts';
+import { AuthSessionService } from '../../../../server/services/auth-session.service.ts';
+import { hashPassword } from '../../../../server/services/password-hash.service.ts';
 import { setRedisClientForTests } from '../../../../server/services/redis.service.ts';
+import { UserService } from '../../../../server/services/user.service.ts';
 import {
   createAdminMutationRateLimiter,
   createAuthEmailRecipientRateLimiter,
@@ -176,6 +180,53 @@ async function startAuthEmailRateLimitApp(t: TestContext, handler: express.Reque
   return `http://127.0.0.1:${address.port}`;
 }
 
+async function startConfirmPasswordRouteApp(t: TestContext) {
+  const app = express();
+  app.set('trust proxy', 1);
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    const cookies: Record<string, string> = {};
+    const header = req.headers.cookie;
+    if (typeof header === 'string') {
+      for (const entry of header.split(';')) {
+        const separatorIndex = entry.indexOf('=');
+        if (separatorIndex <= 0) {
+          continue;
+        }
+        cookies[entry.slice(0, separatorIndex).trim()] = decodeURIComponent(
+          entry.slice(separatorIndex + 1).trim(),
+        );
+      }
+    }
+    (req as typeof req & { cookies: Record<string, string> }).cookies = cookies;
+    next();
+  });
+
+  const { default: authRoutes } = await import('../../../../server/routes/auth.routes.ts');
+  app.use('/api/auth', authRoutes);
+  app.use((
+    error: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    const httpError = error as { statusCode?: number; code?: string; message?: string };
+    res.status(httpError.statusCode ?? 500).json({
+      code: httpError.code ?? 'INTERNAL_SERVER_ERROR',
+      message: httpError.message ?? 'Internal Server Error',
+    });
+  });
+
+  const server = app.listen(0);
+  t.after(() => {
+    server.close();
+  });
+  await once(server, 'listening');
+  const address = server.address();
+  assert(address && typeof address === 'object');
+  return `http://127.0.0.1:${address.port}`;
+}
+
 async function startLoginRateLimitApp(t: TestContext, handler: express.RequestHandler) {
   const app = express();
   app.set('trust proxy', 1);
@@ -195,6 +246,23 @@ async function startLoginRateLimitApp(t: TestContext, handler: express.RequestHa
   const address = server.address();
   assert(address && typeof address === 'object');
   return `http://127.0.0.1:${address.port}`;
+}
+
+function confirmPasswordRequest(baseUrl: string, params: {
+  accessToken: string;
+  ip?: string;
+}) {
+  return fetch(`${baseUrl}/api/auth/confirm-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: `${getAuthCookieName()}=${encodeURIComponent(params.accessToken)}`,
+      ...(params.ip ? { 'X-Forwarded-For': params.ip } : {}),
+    },
+    body: JSON.stringify({
+      password: 'wrong-password',
+    }),
+  });
 }
 
 function loginRequest(baseUrl: string, params: {
@@ -391,6 +459,66 @@ test('password login limited responses are generic for existing and absent ident
   assert.equal(existingLimited.status, 429);
   assert.equal(absentLimited.status, 429);
   assert.deepEqual(await existingLimited.json(), await absentLimited.json());
+});
+
+test('confirm password route rate-limits failed password checks by authenticated user', async (t) => {
+  withAuthRateLimitEnv(t, '1');
+  const passwordHash = await hashPassword('correct-password');
+  const userMock = t.mock.method(UserService, 'findAuthUserById', async (userId: string) => ({
+    _id: { toString: () => userId },
+    username: userId,
+    email: `${userId}@example.com`,
+    emailVerifiedAt: new Date('2026-05-03T00:00:00.000Z'),
+    isAdmin: false,
+    mfa: {},
+    passwordHash,
+  }) as any);
+  const sessionMock = t.mock.method(AuthSessionService, 'validateAccessToken', async (token: string) => {
+    const userId = token === 'access-token-user-2' ? 'user-2' : 'user-1';
+    const createdAt = new Date('2026-05-03T00:00:00.000Z');
+    return {
+      principal: {
+        id: userId,
+        isAdmin: false,
+        sessionId: `session-${userId}`,
+        deviceId: `device-${userId}`,
+        emailVerified: true,
+        usernameComplete: true,
+        mfaEnabled: false,
+      },
+      session: {
+        sessionId: `session-${userId}`,
+        userId: { toString: () => userId },
+        deviceId: `device-${userId}`,
+        createdAt,
+        lastSeenAt: createdAt,
+        idleExpiresAt: new Date('2026-05-03T01:00:00.000Z'),
+        absoluteExpiresAt: new Date('2026-05-03T02:00:00.000Z'),
+      },
+      user: {},
+    } as any;
+  });
+  const baseUrl = await startConfirmPasswordRouteApp(t);
+
+  assert.equal((await confirmPasswordRequest(baseUrl, {
+    accessToken: 'access-token-user-1',
+    ip: '10.0.8.1',
+  })).status, 401);
+  const limited = await confirmPasswordRequest(baseUrl, {
+    accessToken: 'access-token-user-1',
+    ip: '10.0.8.2',
+  });
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), {
+    code: 'AUTH_RATE_LIMITED',
+    message: 'Too many authentication attempts, please try again later.',
+  });
+  assert.equal((await confirmPasswordRequest(baseUrl, {
+    accessToken: 'access-token-user-2',
+    ip: '10.0.8.3',
+  })).status, 401);
+  assert.equal(sessionMock.mock.callCount(), 3);
+  assert.equal(userMock.mock.callCount(), 2);
 });
 
 test('auth email recipient limiter blocks repeated requests for one normalized email across IPs', async (t) => {

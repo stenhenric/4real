@@ -11,6 +11,11 @@ import { SketchCard } from '../components/ui/SketchCard';
 import { StatePanel } from '../components/ui/StatePanel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
+import {
+  getResignActionPresentation,
+  getVerdictHeadline,
+  getVerdictMessage,
+} from '../features/game/gameOutcomePresentation';
 import { useGameRoom } from '../features/game/useGameRoom';
 import { isHandledAuthRedirectCode } from '../features/auth/auth-routing';
 import { ApiClientError } from '../services/api/apiClient';
@@ -273,7 +278,7 @@ function GameSidebar({
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
   const isWagered = moneyToNumber(room.wager) > 0;
-  const buttonLabel = room.status === 'waiting' ? 'Cancel Match' : 'Resign Match';
+  const resignAction = getResignActionPresentation(room);
 
   return (
     <div className="w-full md:w-64 space-y-6">
@@ -326,7 +331,7 @@ function GameSidebar({
             <p className="text-sm font-bold mb-1">Are you sure?</p>
             {isWagered ? (
               <p className="text-xs opacity-80 mb-4">
-                Resigning will forfeit your ${formatMoneyValue(room.wager)} wager.
+                {resignAction.confirmMessage}
               </p>
             ) : null}
             <div className="flex gap-3">
@@ -336,7 +341,7 @@ function GameSidebar({
                 onClick={onResign}
                 variant="danger"
               >
-                {resigning ? 'Resigning…' : 'Yes, Resign'}
+                {resigning ? resignAction.pendingLabel : resignAction.confirmButtonLabel}
               </SketchyButton>
               <SketchyButton
                 className="flex-1"
@@ -354,13 +359,13 @@ function GameSidebar({
             onClick={() => isWagered ? setShowResignConfirm(true) : onResign()}
             variant="danger"
           >
-            {resigning ? 'Resigning…' : buttonLabel}
+            {resigning ? resignAction.pendingLabel : resignAction.buttonLabel}
           </SketchyButton>
         )
       ) : null}
       {isWagered ? (
         <p className="sr-only" id="resign-warning">
-          Warning: resigning will forfeit your wager of ${formatMoneyValue(room.wager)} USDT.
+          {resignAction.accessibleWarning}
         </p>
       ) : null}
     </div>
@@ -425,33 +430,6 @@ function getRatingSummary(gameOver: GameOverState, userId: string | undefined): 
   return 'Rating update reversed';
 }
 
-function getVerdictHeadline({
-  gameOver,
-  isDraw,
-  isWin,
-  room,
-}: {
-  gameOver: GameOverState;
-  isDraw: boolean;
-  isWin: boolean;
-  room: RoomState;
-}): string {
-  if (isDraw || gameOver.outcome === 'draw') {
-    return 'This match is a draw';
-  }
-
-  if (room.settlementReason === 'active_expired') {
-    return isWin ? 'Opponent timed out' : 'You timed out';
-  }
-
-  if (room.settlementReason === 'resigned') {
-    return isWin ? 'Opponent resigned' : 'You resigned';
-  }
-
-  return isWin ? 'You are victorious!' : 'You lost this match';
-}
-
-
 function VerdictModal({
   gameOver,
   onReturnToLobby,
@@ -477,6 +455,7 @@ function VerdictModal({
   const Icon = isWin ? Trophy : isDraw ? Scale : AlertTriangle;
 
   const headline = getVerdictHeadline({ gameOver, isDraw, isWin, room });
+  const message = getVerdictMessage({ gameOver, isDraw, isWin, room });
 
   const hasWager = moneyToNumber(room.wager) > 0;
 
@@ -511,6 +490,9 @@ function VerdictModal({
             <h2 id="verdict-headline" className="text-2xl font-bold uppercase tracking-tight mb-2">
               {headline}
             </h2>
+            <p className="mb-4 text-sm font-bold opacity-75">
+              {message}
+            </p>
 
             {hasWager ? (
               <p className="text-lg font-bold font-mono mb-1">
@@ -624,7 +606,7 @@ const GamePage = () => {
   const [resigning, setResigning] = useState(false);
   const inviteToken = searchParams.get('invite')?.trim() || undefined;
 
-  const { gameOver, makeMove, room } = useGameRoom({
+  const { applySettledMatch, gameOver, makeMove, room } = useGameRoom({
     ...(roomId ? { roomId } : {}),
     ...(user?.id ? { userId: user.id } : {}),
     enabled: roomAccessReady && Boolean(roomId && user?.id),
@@ -758,8 +740,8 @@ const GamePage = () => {
     try {
       const settledMatch = await resignMatch(roomId);
       dispatchPreview({ type: 'JOIN_SUCCEEDED', matchPreview: settledMatch });
+      applySettledMatch(settledMatch);
       await refreshUser();
-      navigate('/play');
     } catch (error) {
       if (error instanceof ApiClientError && isHandledAuthRedirectCode(error.code)) {
         return;

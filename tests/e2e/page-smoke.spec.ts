@@ -283,6 +283,25 @@ async function expectRouteToRender(page: Page, route: RouteExpectation) {
   await responsePromise;
 }
 
+async function expectLocatorWithinViewport(page: Page, selectorName: string, locator: ReturnType<Page['locator']>) {
+  const box = await getRequiredLocatorBox(locator, selectorName);
+  const viewport = page.viewportSize();
+
+  if (!viewport) {
+    throw new Error('page should have a viewport');
+  }
+  expect(box.y, `${selectorName} should start in the viewport`).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height, `${selectorName} should fit in the first viewport`).toBeLessThanOrEqual(viewport.height);
+}
+
+async function getRequiredLocatorBox(locator: ReturnType<Page['locator']>, selectorName: string) {
+  const box = await locator.boundingBox();
+  if (!box) {
+    throw new Error(`${selectorName} should have a rendered box`);
+  }
+  return box;
+}
+
 test.beforeEach(async ({ request }) => {
   await resetApp(request);
 });
@@ -308,6 +327,37 @@ test('public routes when opened anonymously render their primary surfaces withou
   for (const route of routes) {
     await expectRouteToRender(page, route);
   }
+
+  await health.assertHealthy();
+});
+
+test('landing hero keeps the primary message and action in the first mobile viewport', async ({ page }) => {
+  const health = installErrorCollectors(page, {
+    ignoreConsole: [/Failed to load resource: the server responded with a status of 401 \(Unauthorized\)/i],
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.goto('/');
+
+  const hero = page.locator('section[aria-labelledby="hero-heading"]');
+  const heading = hero.getByRole('heading', { name: /get real\.\s*connect\s*4/i });
+  const primaryAction = hero.getByRole('link', { name: /join the grid/i });
+  const boardPreview = hero.getByRole('img', { name: /animated connect four board preview/i });
+
+  await expect(heading).toBeVisible();
+  await expect(primaryAction).toBeVisible();
+  await expect(boardPreview).toBeVisible();
+
+  const boardPreviewBox = await getRequiredLocatorBox(boardPreview, 'landing board preview');
+  const headingBox = await getRequiredLocatorBox(heading, 'landing hero heading');
+  expect(boardPreviewBox.y, 'landing board should lead the mobile hero').toBeLessThan(headingBox.y);
+
+  await expectLocatorWithinViewport(page, 'landing hero heading', heading);
+  await expectLocatorWithinViewport(page, 'landing hero primary action', primaryAction);
+  await expect.poll(
+    () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    { message: 'landing page should not horizontally overflow on mobile' },
+  ).toBe(true);
 
   await health.assertHealthy();
 });
@@ -458,7 +508,7 @@ test('community page renders safe Telegram destinations and desktop nav has no l
       await expect(communityLink).toHaveAttribute('target', '_blank');
       await expect(communityLink).toHaveAttribute('rel', /noopener noreferrer/);
     } else {
-      await expect(page.getByText(/telegram community not configured/i)).toBeVisible();
+      await expect(page.getByText(/telegram community (?:not configured|unavailable)/i)).toBeVisible();
     }
 
     const supportLink = page.getByRole('link', { name: /telegram support/i });
@@ -470,7 +520,7 @@ test('community page renders safe Telegram destinations and desktop nav has no l
       await expect(supportLink).toHaveAttribute('target', '_blank');
       await expect(supportLink).toHaveAttribute('rel', /noopener noreferrer/);
     } else {
-      await expect(page.getByText(/telegram support not configured/i)).toBeVisible();
+      await expect(page.getByText(/telegram support (?:not configured|unavailable)/i)).toBeVisible();
     }
 
     await page.goto('/auth/security');
@@ -765,6 +815,7 @@ test('withdrawal MFA cancellation and failure return with inputs preserved', asy
   await stubTonConnectWallets(page);
   let challengeShouldFail = false;
   let withdrawalCalls = 0;
+  const withdrawalDisplayAddress = 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ';
 
   await page.route('**/api/transactions/withdraw', async (route) => {
     withdrawalCalls += 1;
@@ -802,7 +853,7 @@ test('withdrawal MFA cancellation and failure return with inputs preserved', asy
     await expect(page.getByRole('main').getByText(/verification was cancelled/i)).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
     await expect(page.getByText(/ready to review/i)).toBeVisible();
-    await expect(page.locator('#withdraw-destination-review')).toHaveValue('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
+    await expect(page.locator('#withdraw-destination-review')).toHaveValue(withdrawalDisplayAddress);
     expect(withdrawalCalls).toBe(1);
 
     challengeShouldFail = true;
@@ -813,7 +864,7 @@ test('withdrawal MFA cancellation and failure return with inputs preserved', asy
     await expect(page.getByRole('main').getByText(/verification failed/i)).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.get('mfa')).toBeNull();
     await expect(page.getByText(/ready to review/i)).toBeVisible();
-    await expect(page.locator('#withdraw-destination-review')).toHaveValue('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
+    await expect(page.locator('#withdraw-destination-review')).toHaveValue(withdrawalDisplayAddress);
     expect(withdrawalCalls).toBe(2);
   } finally {
     await closeContext(context);

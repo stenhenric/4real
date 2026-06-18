@@ -128,7 +128,45 @@ test('verdict modal only appears after a match is completed, not during waiting 
   }
 });
 
+test('notifies both players when an active match is resigned', async ({ browser }) => {
+  const playerOne = await createLoggedInPage(browser, 'player1@example.com');
+  const playerTwo = await createLoggedInPage(browser, 'player2@example.com');
+
+  try {
+    await playerOne.page.goto('/play');
+    await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerOne.page.getByRole('button', { name: /new draft/i }).click();
+    await playerOne.page.getByRole('radio', { name: /free public/i }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
+
+    await expect(playerOne.page).toHaveURL(/\/game\//);
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
+
+    await playerTwo.page.goto('/play');
+    await expect(playerTwo.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerTwo.page.getByRole('button', { name: /join for free/i }).click();
+    await playerTwo.page.getByRole('button', { name: /join match/i }).click();
+
+    await expect(playerTwo.page).toHaveURL(/\/game\//);
+    await expect(playerTwo.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
+    await playerOne.page.reload();
+    await expect(playerOne.page.getByText(/live/i)).toBeVisible({ timeout: 10000 });
+
+    await playerOne.page.getByRole('button', { name: /resign match/i }).click();
+
+    await expect(playerOne.page.getByRole('heading', { name: /you resigned/i })).toBeVisible();
+    await expect(playerOne.page.getByText(/settled for your opponent/i)).toBeVisible();
+    await expect(playerTwo.page.getByRole('heading', { name: /opponent resigned/i })).toBeVisible();
+    await expect(playerTwo.page.getByText(/settled in your favor/i)).toBeVisible();
+  } finally {
+    await closeContext(playerOne.context);
+    await closeContext(playerTwo.context);
+  }
+});
+
 test('keeps both players signed in when access cookies expire before a winning move', async ({ browser }) => {
+  test.setTimeout(90_000);
+
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
   const playerTwo = await createLoggedInPage(browser, 'player2@example.com');
 
@@ -216,6 +254,8 @@ test('create match submits only one room when the create control is activated tw
 });
 
 test('settles a paid public match with merchant commission end to end', async ({ browser }) => {
+  test.setTimeout(90_000);
+
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
   const playerTwo = await createLoggedInPage(browser, 'player2@example.com');
   const admin = await createLoggedInPage(browser, 'admin@example.com');

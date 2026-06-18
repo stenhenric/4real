@@ -45,11 +45,11 @@ function transaction(id: string): TransactionDTO {
   };
 }
 
-function feed(page: number, items: TransactionDTO[]): TransactionFeedDTO {
+function feed(page: number, items: TransactionDTO[], total = items.length): TransactionFeedDTO {
   return {
     page,
     pageSize: BANK_TRANSACTION_PAGE_SIZE,
-    total: items.length,
+    total,
     items,
   };
 }
@@ -72,7 +72,11 @@ describe('transactionFeedReducer', () => {
 
     state = transactionFeedReducer(state, {
       type: 'PAGE_LOADED',
-      feed: feed(1, Array.from({ length: BANK_TRANSACTION_PAGE_SIZE }, (_, index) => transaction(`tx-${index}`))),
+      feed: feed(
+        1,
+        Array.from({ length: BANK_TRANSACTION_PAGE_SIZE }, (_, index) => transaction(`tx-${index}`)),
+        BANK_TRANSACTION_PAGE_SIZE + 1,
+      ),
       replace: true,
     });
     assert.equal(state.transactionsLoading, false);

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   avatarSettingsRequestSchema,
+  confirmPasswordRequestSchema,
   merchantDepositReplayWindowRequestSchema,
   withdrawRequestSchema,
 } from '../../../../server/validation/request-schemas.ts';
@@ -41,6 +42,15 @@ test('avatarSettingsRequestSchema accepts only known metadata values', () => {
     color: 'teal',
   });
   assert.equal(invalid.success, false);
+});
+
+test('confirmPasswordRequestSchema allows passwordless fresh-auth confirmation requests', () => {
+  const passwordless = confirmPasswordRequestSchema.safeParse({});
+  assert.equal(passwordless.success, true);
+
+  const localPassword = confirmPasswordRequestSchema.safeParse({ password: 'current-password' });
+  assert.equal(localPassword.success, true);
+  assert.equal(localPassword.data?.password, 'current-password');
 });
 
 test('merchantDepositReplayWindowRequestSchema rejects string booleans instead of coercing false to true', () => {

@@ -527,12 +527,24 @@ test('createOrder completes immediately and does not await/block on ProductEmail
 
   let sendOrderCreatedCalled = false;
   let sendOrderCreatedResolved = false;
+  let resolveSendOrderCreated: () => void = () => {
+    throw new Error('sendOrderCreated resolver was not initialized');
+  };
+  const sendOrderCreatedBlocked = new Promise<void>((resolve) => {
+    resolveSendOrderCreated = resolve;
+  });
+  let resolveSendOrderCreatedDone: () => void = () => {
+    throw new Error('sendOrderCreated completion resolver was not initialized');
+  };
+  const sendOrderCreatedDone = new Promise<void>((resolve) => {
+    resolveSendOrderCreatedDone = resolve;
+  });
 
   t.mock.method(ProductEmailNotificationService, 'sendOrderCreated', async () => {
     sendOrderCreatedCalled = true;
-    // Simulate slow SMTP delivery of 100ms
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await sendOrderCreatedBlocked;
     sendOrderCreatedResolved = true;
+    resolveSendOrderCreatedDone();
   });
 
   const req = {
@@ -544,18 +556,15 @@ test('createOrder completes immediately and does not await/block on ProductEmail
   } as any;
   const res = createResponseMock();
 
-  const start = performance.now();
   await OrderController.createOrder(req, res as any);
-  const duration = performance.now() - start;
 
   assert.equal(res.jsonBody !== undefined, true);
   assert.equal((res.jsonBody as any)._id, orderId.toString());
   assert.equal(sendOrderCreatedCalled, true);
   assert.equal(sendOrderCreatedResolved, false);
-  assert.ok(duration < 50, `Order creation response was not immediate: ${duration}ms`);
 
-  // Wait for background notification dispatch to complete
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  resolveSendOrderCreated();
+  await sendOrderCreatedDone;
   assert.equal(sendOrderCreatedResolved, true);
 });
 

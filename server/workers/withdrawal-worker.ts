@@ -4,6 +4,7 @@ import { getEnv } from '../config/env.ts';
 import { SYSTEM_COMMISSION_ACCOUNT_ID } from '../models/User.ts';
 import { ProcessedTransactionRepository } from '../repositories/processed-transaction.repository.ts';
 import { UserBalanceRepository } from '../repositories/user-balance.repository.ts';
+import { WithdrawalDailyLimitRepository } from '../repositories/withdrawal-daily-limit.repository.ts';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository.ts';
 import { AuditService } from '../services/audit.service.ts';
 import { getHotWalletRuntime } from '../services/hot-wallet-runtime.service.ts';
@@ -64,12 +65,21 @@ function withdrawalStatusUrl(withdrawalId: string): string {
   return `/api/transactions/withdrawals/${encodeURIComponent(withdrawalId)}`;
 }
 
+function withdrawalDayBucket(createdAt: Date): string {
+  return [
+    createdAt.getUTCFullYear().toString(),
+    (createdAt.getUTCMonth() + 1).toString().padStart(2, '0'),
+    createdAt.getUTCDate().toString().padStart(2, '0'),
+  ].join('-');
+}
+
 async function refundFailedWithdrawal({
   id,
   withdrawalId,
   userId,
   amountRaw,
   amountDisplay,
+  createdAt,
   errorMessage,
 }: {
   id: mongoose.Types.ObjectId | string;
@@ -77,6 +87,7 @@ async function refundFailedWithdrawal({
   userId: string;
   amountRaw: string;
   amountDisplay: string;
+  createdAt: Date;
   errorMessage: string;
 }): Promise<void> {
   const session = await mongoose.startSession();
@@ -88,6 +99,12 @@ async function refundFailedWithdrawal({
         throw new Error('Withdrawal state changed before the failed withdrawal refund could be applied');
       }
       await UserBalanceRepository.refundWithdrawal(userId, amountRaw, session);
+      await WithdrawalDailyLimitRepository.releaseReservation(
+        userId,
+        withdrawalDayBucket(createdAt),
+        amountRaw,
+        session,
+      );
       await TransactionService.createTransaction({
         userId,
         type: 'WITHDRAW_REFUND',
@@ -238,6 +255,7 @@ export async function runWithdrawalWorker() {
             userId: doc.userId,
             amountRaw: doc.amountRaw,
             amountDisplay: doc.amountDisplay,
+            createdAt: doc.createdAt,
             errorMessage,
           });
         } else {

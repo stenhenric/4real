@@ -570,9 +570,9 @@ function processWithdrawalMfaResume({
   const result = loadWithdrawalResumeDraft(storage);
 
   if (result.status === 'expired' || result.status === 'invalid') {
-    clearResumeStatus();
     dispatchFlow({ type: 'RESET_TO_FORM', statusError: result.message });
     addToast(result.message, 'error');
+    clearResumeStatus();
     return;
   }
 
@@ -582,8 +582,11 @@ function processWithdrawalMfaResume({
 
   const { draft } = result;
 
+  if (!resumeStatus || !WITHDRAWAL_MFA_RESULTS.has(resumeStatus)) {
+    return;
+  }
+
   if (resumeStatus === 'failed') {
-    clearResumeStatus();
     dispatchFlow({
       type: 'MFA_FAILED',
       message: 'Verification failed. Your withdrawal details are still here.',
@@ -592,11 +595,11 @@ function processWithdrawalMfaResume({
       step: draft.step,
     });
     addToast('Verification failed.', 'error');
+    clearResumeStatus();
     return;
   }
 
   if (resumeStatus === 'cancelled') {
-    clearResumeStatus();
     dispatchFlow({
       type: 'MFA_CANCELLED',
       message: 'Verification was cancelled. Your withdrawal details are still here.',
@@ -605,6 +608,7 @@ function processWithdrawalMfaResume({
       step: draft.step,
     });
     addToast('Verification cancelled.', 'info');
+    clearResumeStatus();
     return;
   }
 

@@ -28,15 +28,31 @@ function getTotalMatches(profile: UserProfileDTO): number {
 }
 
 function isDraw(match: MatchDTO): boolean {
+  if (match.outcome === 'no_contest') {
+    return false;
+  }
+
+  if (match.outcome === 'draw') {
+    return true;
+  }
+
   return match.winnerId === 'draw' || match.settlementReason === 'draw';
 }
 
+function isNoContest(match: MatchDTO): boolean {
+  return match.outcome === 'no_contest';
+}
+
 function isWin(match: MatchDTO, userId: string): boolean {
-  return match.winnerId === userId;
+  return !isNoContest(match) && match.winnerId === userId;
 }
 
 function isLoss(match: MatchDTO, userId: string): boolean {
-  return match.status === 'completed' && Boolean(match.winnerId) && !isDraw(match) && match.winnerId !== userId;
+  return match.status === 'completed'
+    && Boolean(match.winnerId)
+    && !isDraw(match)
+    && !isNoContest(match)
+    && match.winnerId !== userId;
 }
 
 function isWagered(match: MatchDTO): boolean {
@@ -81,6 +97,7 @@ function hasCleanSheet(history: MatchDTO[], userId: string): boolean {
   return history.some((match) => (
     isWin(match, userId)
     && match.status === 'completed'
+    && match.moveHistory.length > 0
     && match.moveHistory.every((move) => move.userId === userId)
   ));
 }
@@ -134,7 +151,12 @@ export function getProfileAchievements(params: {
       id: 'finisher',
       label: 'Finisher',
       requirement: 'Finish a decided match',
-      unlocked: history.some((match) => match.status === 'completed' && Boolean(match.winnerId) && !isDraw(match)),
+      unlocked: history.some((match) => (
+        match.status === 'completed'
+        && Boolean(match.winnerId)
+        && !isDraw(match)
+        && !isNoContest(match)
+      )),
     },
     {
       id: 'clean-sheet',

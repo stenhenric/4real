@@ -17,13 +17,13 @@ export interface RoomState {
   currentTurn: string | null;
   status: 'waiting' | 'active' | 'completed';
   moves: MatchMoveDTO[];
-  wager: number;
+  wager: MatchDTO['wager'];
   winnerId?: string;
   settlementReason?: MatchDTO['settlementReason'];
   outcome?: MatchOutcome;
   ratingResult?: MatchRatingResultDTO;
-  projectedWinnerAmount: number;
-  commissionRate: number;
+  projectedWinnerAmount: NonNullable<MatchDTO['projectedWinnerAmount']>;
+  commissionRate: NonNullable<MatchDTO['commissionRate']>;
 }
 
 export interface GameOverState {

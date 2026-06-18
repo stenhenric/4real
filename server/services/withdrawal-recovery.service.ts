@@ -164,7 +164,7 @@ export async function recoverStuckWithdrawal(params: {
         }
 
         await UserBalanceRepository.refundWithdrawal(withdrawal.userId, withdrawal.amountRaw, session);
-        
+
         const refundDayBucket = [
           withdrawal.createdAt.getUTCFullYear().toString(),
           (withdrawal.createdAt.getUTCMonth() + 1).toString().padStart(2, '0'),
@@ -176,7 +176,7 @@ export async function recoverStuckWithdrawal(params: {
           withdrawal.amountRaw,
           session,
         );
-        
+
         await TransactionService.createTransaction({
           userId: withdrawal.userId,
           type: 'WITHDRAW_REFUND',

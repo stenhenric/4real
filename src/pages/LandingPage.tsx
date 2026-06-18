@@ -165,17 +165,17 @@ export default function LandingPage() {
   const primaryLabel = user ? (isProfileComplete ? 'Enter the lobby' : 'Complete profile') : 'Join the Grid';
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-0 overflow-x-hidden">
 
       {/* ══ HERO ══════════════════════════════════════════════════════ */}
       <section
         aria-labelledby="hero-heading"
         className="animate-in fade-in duration-400"
       >
-        <div className="grid gap-8 md:grid-cols-[1fr_1.1fr] md:items-start">
+        <div className="grid gap-5 md:grid-cols-[1fr_1.1fr] md:items-start md:gap-8">
 
           {/* Left: Board preview */}
-          <div className="rough-border bg-white p-5 relative shadow-xl">
+          <div className="rough-border bg-white p-4 relative shadow-xl sm:p-5">
             <div className="tape w-20 h-6 -top-2 left-8 rotate-1" />
             <div className="tape w-16 h-5 -top-2 right-12 -rotate-2 opacity-70" />
 
@@ -197,10 +197,10 @@ export default function LandingPage() {
           </div>
 
           {/* Right: Headline + cards */}
-          <div className="space-y-6">
+          <div className="flex flex-col gap-5 md:gap-6">
 
             {/* Live badge */}
-            <div className="inline-flex items-center gap-2">
+            <div className="order-1 inline-flex items-center gap-2">
               <span className="size-2 rounded-full bg-success-border animate-pulse" aria-hidden="true" />
               <span className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-50">
                 Real-money Connect 4
@@ -208,7 +208,7 @@ export default function LandingPage() {
             </div>
 
             {/* Headline */}
-            <div className="relative inline-block">
+            <div className="order-2 relative inline-block">
               <h1
                 id="hero-heading"
                 className="font-display text-5xl lg:text-6xl font-semibold italic tracking-tighter text-ink-black leading-none"
@@ -218,13 +218,31 @@ export default function LandingPage() {
               <div className="highlighter w-full bottom-2 left-0 h-5 scale-x-105" />
             </div>
 
-            <p className="text-sm font-bold opacity-60 leading-7 max-w-sm">
+            <p className="order-3 text-sm font-bold opacity-60 leading-7 max-w-sm">
               Head-to-head wagering on the classic grid game. Fund your balance,
               challenge a player, and let transparent settlement handle the rest.
             </p>
 
+            {/* CTA buttons */}
+            <div className="order-4 flex flex-col items-start gap-3 sm:flex-row md:order-5">
+              <Link
+                to={primaryHref}
+                className="sketchy-border relative inline-flex min-w-0 items-center justify-center bg-note-yellow px-8 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
+              >
+                {primaryLabel}
+              </Link>
+              {!user && (
+                <Link
+                  to="/auth/login"
+                  className="text-sm font-bold text-black/70 hover:text-black transition-colors py-3 underline"
+                >
+                  Already have an account?
+                </Link>
+              )}
+            </div>
+
             {/* Info cards row */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="order-5 grid grid-cols-2 gap-4 md:order-4">
 
               {/* Real-time Stats: blue sticky */}
               <div className="rough-border bg-note-blue p-4 relative shadow-md">
@@ -256,26 +274,8 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* CTA buttons */}
-            <div className="flex flex-col sm:flex-row items-start gap-3">
-              <Link
-                to={primaryHref}
-                className="sketchy-border relative inline-flex min-w-0 items-center justify-center bg-note-yellow px-8 py-3 text-base font-bold shadow-sm transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-blue"
-              >
-                {primaryLabel}
-              </Link>
-              {!user && (
-                <Link
-                  to="/auth/login"
-                  className="text-sm font-bold text-black/70 hover:text-black transition-colors py-3 underline"
-                >
-                  Already have an account?
-                </Link>
-              )}
-            </div>
-
             {/* Trust badges */}
-            <ul className="flex flex-wrap gap-2" aria-label="Trust indicators">
+            <ul className="order-6 flex flex-wrap gap-2" aria-label="Trust indicators">
               {['Verified accounts', 'Secure logins', 'Wallet protection', '2FA enabled'].map((item) => (
                 <li
                   key={item}

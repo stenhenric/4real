@@ -3,11 +3,13 @@ import type { Socket } from 'socket.io-client';
 import { createGameSocket } from '../../sockets/gameSocket';
 import {
   buildGameRoomSnapshot,
+  buildSettledMatchRoomSnapshot,
   getGameRoomSessionKey,
   getVisibleGameRoomSnapshot,
   type GameRoomSnapshot,
 } from './gameRoomSnapshot';
 import type { GameOverState, RoomState, WinningLine } from './types';
+import type { MatchDTO } from '../../types/api';
 
 interface GameOverPayload {
   room: RoomState;
@@ -141,5 +143,22 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
     [room, roomId, userId],
   );
 
-  return { gameOver, makeMove, room };
+  const applySettledMatch = useCallback(
+    (settledMatch: MatchDTO) => {
+      if (!activeKey || settledMatch.roomId !== roomId) {
+        return;
+      }
+
+      setSnapshot((currentSnapshot) => {
+        if (!currentSnapshot || currentSnapshot.key !== activeKey) {
+          return currentSnapshot;
+        }
+
+        return buildSettledMatchRoomSnapshot(activeKey, currentSnapshot.room, settledMatch) ?? currentSnapshot;
+      });
+    },
+    [activeKey, roomId],
+  );
+
+  return { applySettledMatch, gameOver, makeMove, room };
 }
