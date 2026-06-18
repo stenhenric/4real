@@ -39,15 +39,19 @@ export function drawConnectFourBoard(
   }
 
   const generator = rough.canvas(canvas);
-  const cellWidth = cssWidth / 7;
-  const cellHeight = cssHeight / 6;
+  const inset = Math.max(6, Math.min(cssWidth, cssHeight) * 0.035);
+  const boardWidth = Math.max(0, cssWidth - inset * 2);
+  const boardHeight = Math.max(0, cssHeight - inset * 2);
+  const cellWidth = boardWidth / 7;
+  const cellHeight = boardHeight / 6;
   const boardLine = themeColor('--color-game-board-line', 'navy');
   const redDisc = themeColor('--color-disc-red', 'red');
   const blueDisc = themeColor('--color-disc-blue', 'blue');
 
   // Grid lines
   for (let row = 0; row <= 6; row += 1) {
-    generator.line(0, row * cellHeight, cssWidth, row * cellHeight, {
+    const y = inset + row * cellHeight;
+    generator.line(inset, y, inset + boardWidth, y, {
       roughness: 1.2,
       stroke: boardLine,
       strokeWidth: 1.5,
@@ -55,7 +59,8 @@ export function drawConnectFourBoard(
   }
 
   for (let column = 0; column <= 7; column += 1) {
-    generator.line(column * cellWidth, 0, column * cellWidth, cssHeight, {
+    const x = inset + column * cellWidth;
+    generator.line(x, inset, x, inset + boardHeight, {
       roughness: 1.2,
       stroke: boardLine,
       strokeWidth: 1.5,
@@ -64,7 +69,7 @@ export function drawConnectFourBoard(
 
   // Winning-line highlight — drawn BEFORE discs so discs render on top
   winningLine?.forEach(([row, column]) => {
-    generator.rectangle(column * cellWidth + 5, row * cellHeight + 5, cellWidth - 10, cellHeight - 10, {
+    generator.rectangle(inset + column * cellWidth + 5, inset + row * cellHeight + 5, cellWidth - 10, cellHeight - 10, {
       fill: themeColor('--color-marker-yellow', 'yellow'),
       fillStyle: 'solid',
       roughness: 3,
@@ -79,8 +84,8 @@ export function drawConnectFourBoard(
         return;
       }
 
-      const centerX = columnIndex * cellWidth + cellWidth / 2;
-      const centerY = rowIndex * cellHeight + cellHeight / 2;
+      const centerX = inset + columnIndex * cellWidth + cellWidth / 2;
+      const centerY = inset + rowIndex * cellHeight + cellHeight / 2;
       const radius = Math.min(cellWidth, cellHeight) * 0.35;
 
       generator.circle(centerX, centerY, radius * 2, {

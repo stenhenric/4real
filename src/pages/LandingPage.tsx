@@ -101,7 +101,7 @@ function ConnectFourPreview() {
         ref={canvasRef}
         width={size.width}
         height={size.height}
-        className="absolute inset-0 pointer-events-none"
+        className="absolute inset-0 size-full pointer-events-none"
         aria-label="Animated Connect Four board preview"
         role="img"
       />
