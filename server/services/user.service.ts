@@ -355,7 +355,7 @@ export class UserService {
           ...statSetters,
         },
       }],
-      { returnDocument: 'after', ...(session ? { session } : {}) },
+      { returnDocument: 'after', updatePipeline: true, ...(session ? { session } : {}) },
     );
   }
 

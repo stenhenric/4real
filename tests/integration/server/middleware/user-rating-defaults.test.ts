@@ -114,6 +114,7 @@ test('UserService.updateStatsAndElo applies Elo deltas atomically with a rating 
   }]);
   assert.deepEqual(capturedOptions, {
     returnDocument: 'after',
+    updatePipeline: true,
     session,
   });
 });
