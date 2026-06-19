@@ -83,6 +83,29 @@ test('lets two authenticated players create, join, and finish a realtime public 
   }
 });
 
+test('lets the waiting host cancel a match before an opponent joins', async ({ browser }) => {
+  const playerOne = await createLoggedInPage(browser, 'player1@example.com');
+
+  try {
+    await playerOne.page.goto('/play');
+    await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerOne.page.getByRole('button', { name: /new draft/i }).click();
+    await playerOne.page.getByRole('radio', { name: /free public/i }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
+
+    await expect(playerOne.page).toHaveURL(/\/game\//);
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
+    await expect(playerOne.page.getByRole('button', { name: /cancel match/i })).toBeVisible();
+
+    await playerOne.page.getByRole('button', { name: /cancel match/i }).click();
+
+    await expect(playerOne.page.getByRole('heading', { name: /match canceled/i })).toBeVisible();
+    await expect(playerOne.page.getByText(/canceled before an opponent joined/i)).toBeVisible();
+  } finally {
+    await closeContext(playerOne.context);
+  }
+});
+
 test('does not offer a tokenless private invite link after the host reopens the room URL', async ({ browser }) => {
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
   await installClipboardStub(playerOne.page);

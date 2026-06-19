@@ -287,11 +287,51 @@ function GameSidebar({
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
   const isWagered = moneyToNumber(room.wager) > 0;
+  const isWaitingForOpponent = room.status === 'waiting' && !opponent;
   const resignAction = getResignActionPresentation(room);
+  const matchExitAction = !gameOver ? (
+    showResignConfirm ? (
+      <SketchCard tone="danger">
+        <p className="text-sm font-bold mb-1">Are you sure?</p>
+        {isWagered ? (
+          <p className="text-xs opacity-80 mb-4">
+            {resignAction.confirmMessage}
+          </p>
+        ) : null}
+        <div className="flex gap-3">
+          <SketchyButton
+            className="flex-1"
+            disabled={resigning}
+            onClick={onResign}
+            variant="danger"
+          >
+            {resigning ? resignAction.pendingLabel : resignAction.confirmButtonLabel}
+          </SketchyButton>
+          <SketchyButton
+            className="flex-1"
+            onClick={() => setShowResignConfirm(false)}
+            variant="ghost"
+          >
+            Cancel
+          </SketchyButton>
+        </div>
+      </SketchCard>
+    ) : (
+      <SketchyButton
+        aria-describedby={isWagered ? 'resign-warning' : undefined}
+        className="w-full"
+        disabled={resigning}
+        onClick={() => isWagered ? setShowResignConfirm(true) : onResign()}
+        variant="danger"
+      >
+        {resigning ? resignAction.pendingLabel : resignAction.buttonLabel}
+      </SketchyButton>
+    )
+  ) : null;
 
   return (
     <div className="w-full md:w-64 space-y-6">
-      {room.status === 'waiting' && !opponent ? (
+      {isWaitingForOpponent ? (
         <div className="sticky-note p-6 rough-border">
           <div className="tape"></div>
           <h3 className="font-semibold text-lg mb-2 uppercase tracking-tighter">Invite Rival</h3>
@@ -307,6 +347,11 @@ function GameSidebar({
             <p className="mt-3 text-xs font-bold text-warning-text">
               {inviteLinkUnavailableMessage}
             </p>
+          ) : null}
+          {matchExitAction ? (
+            <div className="mt-4 border-t border-black/10 pt-4">
+              {matchExitAction}
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -343,44 +388,7 @@ function GameSidebar({
         </div>
       </SketchyContainer>
 
-      {!gameOver ? (
-        showResignConfirm ? (
-          <SketchCard tone="danger">
-            <p className="text-sm font-bold mb-1">Are you sure?</p>
-            {isWagered ? (
-              <p className="text-xs opacity-80 mb-4">
-                {resignAction.confirmMessage}
-              </p>
-            ) : null}
-            <div className="flex gap-3">
-              <SketchyButton
-                className="flex-1"
-                disabled={resigning}
-                onClick={onResign}
-                variant="danger"
-              >
-                {resigning ? resignAction.pendingLabel : resignAction.confirmButtonLabel}
-              </SketchyButton>
-              <SketchyButton
-                className="flex-1"
-                onClick={() => setShowResignConfirm(false)}
-                variant="ghost"
-              >
-                Cancel
-              </SketchyButton>
-            </div>
-          </SketchCard>
-        ) : (
-          <SketchyButton
-            aria-describedby={isWagered ? 'resign-warning' : undefined}
-            className="w-full"
-            onClick={() => isWagered ? setShowResignConfirm(true) : onResign()}
-            variant="danger"
-          >
-            {resigning ? resignAction.pendingLabel : resignAction.buttonLabel}
-          </SketchyButton>
-        )
-      ) : null}
+      {!isWaitingForOpponent ? matchExitAction : null}
       {isWagered ? (
         <p className="sr-only" id="resign-warning">
           {resignAction.accessibleWarning}
