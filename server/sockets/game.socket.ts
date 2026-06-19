@@ -7,6 +7,7 @@ import { AuthSessionService } from '../services/auth-session.service.ts';
 import { RealtimeMatchService } from '../services/realtime-match.service.ts';
 import { isSocketRateLimited } from '../services/socket-rate-limit.service.ts';
 import { runWithTraceContext } from '../services/trace-context.service.ts';
+import { HttpError } from '../utils/http-error.ts';
 import { logger } from '../utils/logger.ts';
 
 interface JoinRoomPayload {
@@ -27,10 +28,26 @@ function createSocketError(code: string, message: string): SocketErrorPayload {
   return { code, message };
 }
 
-function getSocketErrorPayload(error: unknown): SocketErrorPayload {
+export function getSocketErrorPayload(error: unknown): SocketErrorPayload {
+  if (error instanceof HttpError) {
+    return createSocketError(
+      error.code,
+      error.expose ? error.message : 'Unexpected socket error',
+    );
+  }
+
+  if (
+    error
+    && typeof error === 'object'
+    && 'code' in error
+    && typeof error.code === 'string'
+  ) {
+    return createSocketError(error.code, 'Unexpected socket error');
+  }
+
   return createSocketError(
     'SOCKET_ERROR',
-    error instanceof Error ? error.message : 'Unexpected socket error',
+    'Unexpected socket error',
   );
 }
 

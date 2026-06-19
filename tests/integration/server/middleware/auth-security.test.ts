@@ -325,6 +325,7 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
   const previousRedisUrl = process.env.REDIS_URL;
   const previousPublicAppOrigin = process.env.PUBLIC_APP_ORIGIN;
   const previousAllowedOrigins = process.env.ALLOWED_ORIGINS;
+  const previousTrustProxy = process.env.TRUST_PROXY;
 
   try {
     process.env.NODE_ENV = 'development';
@@ -341,6 +342,7 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
     process.env.REDIS_URL = 'rediss://redis.example.invalid:6379';
     process.env.PUBLIC_APP_ORIGIN = 'https://app.example.com';
     process.env.ALLOWED_ORIGINS = 'https://app.example.com';
+    process.env.TRUST_PROXY = '1';
     resetEnvCacheForTests();
 
     assert.equal(getAuthCookieName(), '__Host-4real-at');
@@ -374,6 +376,12 @@ test('auth cookie names drop the __Host- prefix outside production and restore i
       process.env.ALLOWED_ORIGINS = previousAllowedOrigins;
     }
 
+    if (previousTrustProxy === undefined) {
+      delete process.env.TRUST_PROXY;
+    } else {
+      process.env.TRUST_PROXY = previousTrustProxy;
+    }
+
     resetEnvCacheForTests();
   }
 });
@@ -384,6 +392,7 @@ test('verifyTurnstileToken fails closed in production when the secret is missing
   const previousRedisUrl = process.env.REDIS_URL;
   const previousPublicAppOrigin = process.env.PUBLIC_APP_ORIGIN;
   const previousAllowedOrigins = process.env.ALLOWED_ORIGINS;
+  const previousTrustProxy = process.env.TRUST_PROXY;
 
   try {
     process.env.NODE_ENV = 'production';
@@ -391,6 +400,7 @@ test('verifyTurnstileToken fails closed in production when the secret is missing
     process.env.REDIS_URL = 'rediss://redis.example.invalid:6379';
     process.env.PUBLIC_APP_ORIGIN = 'https://app.example.com';
     process.env.ALLOWED_ORIGINS = 'https://app.example.com';
+    process.env.TRUST_PROXY = '1';
     resetEnvCacheForTests();
 
     await assert.rejects(
@@ -430,6 +440,12 @@ test('verifyTurnstileToken fails closed in production when the secret is missing
       delete process.env.ALLOWED_ORIGINS;
     } else {
       process.env.ALLOWED_ORIGINS = previousAllowedOrigins;
+    }
+
+    if (previousTrustProxy === undefined) {
+      delete process.env.TRUST_PROXY;
+    } else {
+      process.env.TRUST_PROXY = previousTrustProxy;
     }
 
     resetEnvCacheForTests();

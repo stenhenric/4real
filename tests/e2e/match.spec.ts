@@ -25,6 +25,19 @@ async function playMoveAndWaitForSync({
   await expect(observerPage.getByText(moveLabel)).toBeVisible();
 }
 
+async function installClipboardStub(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          (window as unknown as { __copiedText?: string }).__copiedText = text;
+        },
+      },
+    });
+  });
+}
+
 test('lets two authenticated players create, join, and finish a realtime public match', async ({ browser }) => {
   const playerOne = await createLoggedInPage(browser, 'player1@example.com');
   const playerTwo = await createLoggedInPage(browser, 'player2@example.com');
@@ -67,6 +80,35 @@ test('lets two authenticated players create, join, and finish a realtime public 
   } finally {
     await closeContext(playerOne.context);
     await closeContext(playerTwo.context);
+  }
+});
+
+test('does not offer a tokenless private invite link after the host reopens the room URL', async ({ browser }) => {
+  const playerOne = await createLoggedInPage(browser, 'player1@example.com');
+  await installClipboardStub(playerOne.page);
+
+  try {
+    await playerOne.page.goto('/play');
+    await expect(playerOne.page.getByRole('heading', { name: /central lobby/i })).toBeVisible();
+    await playerOne.page.getByRole('button', { name: /new draft/i }).click();
+    await playerOne.page.getByRole('radio', { name: /private match/i }).click();
+    await playerOne.page.getByRole('button', { name: /next step/i }).click();
+    await playerOne.page.getByRole('button', { name: /^create match$/i }).click();
+
+    await expect(playerOne.page).toHaveURL(/\/game\/[^?]+\?invite=/);
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
+    await playerOne.page.getByRole('button', { name: /copy invite link/i }).click();
+    await expect.poll(() => playerOne.page.evaluate(() => (
+      window as unknown as { __copiedText?: string }
+    ).__copiedText ?? '')).toMatch(/\?invite=/);
+
+    const tokenlessRoomPath = new URL(playerOne.page.url()).pathname;
+    await playerOne.page.goto(tokenlessRoomPath);
+    await expect(playerOne.page.getByText(/waiting for opponent/i).first()).toBeVisible();
+    await expect(playerOne.page.getByRole('button', { name: /copy invite link/i })).toBeDisabled();
+    await expect(playerOne.page.getByText(/private invite link unavailable from this url/i)).toBeVisible();
+  } finally {
+    await closeContext(playerOne.context);
   }
 });
 

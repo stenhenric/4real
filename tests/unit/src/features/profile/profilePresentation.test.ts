@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   calculateProfileStats,
+  getProfileMatchOutcomePresentation,
   getProfileAchievements,
   getVisibleProfileMatches,
 } from '../../../../../src/features/profile/profilePresentation.ts';
@@ -97,5 +98,29 @@ describe('profile presentation helpers', () => {
     assert.equal(unlocked.has('draw-artist'), false);
     assert.equal(unlocked.has('finisher'), true);
     assert.equal(unlocked.has('clean-sheet'), false);
+  });
+
+  it('labels no-contest profile history separately from real draws', () => {
+    assert.deepEqual(
+      getProfileMatchOutcomePresentation(
+        match({ winnerId: 'draw', settlementReason: 'draw', outcome: 'draw' }),
+        'user-1',
+      ),
+      { label: 'DRAW', tone: 'warning' },
+    );
+    assert.deepEqual(
+      getProfileMatchOutcomePresentation(
+        match({ winnerId: 'draw', settlementReason: 'resigned', outcome: 'no_contest' }),
+        'user-1',
+      ),
+      { label: 'CANCELED', tone: 'warning' },
+    );
+    assert.deepEqual(
+      getProfileMatchOutcomePresentation(
+        match({ winnerId: 'draw', settlementReason: 'waiting_expired', outcome: 'no_contest' }),
+        'user-1',
+      ),
+      { label: 'EXPIRED', tone: 'warning' },
+    );
   });
 });

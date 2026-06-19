@@ -16,6 +16,11 @@ import {
   getVerdictHeadline,
   getVerdictMessage,
 } from '../features/game/gameOutcomePresentation';
+import {
+  getGameSocketErrorMessage,
+  shouldLeaveGameRoomAfterJoinError,
+  shouldLeaveGameRoomAfterSocketError,
+} from '../features/game/socketErrorHandling';
 import { useGameRoom } from '../features/game/useGameRoom';
 import { isHandledAuthRedirectCode } from '../features/auth/auth-routing';
 import { ApiClientError } from '../services/api/apiClient';
@@ -261,6 +266,8 @@ function GameBoardPanel({
 function GameSidebar({
   copyInviteLink,
   gameOver,
+  inviteLinkAvailable,
+  inviteLinkUnavailableMessage,
   onResign,
   opponent,
   resigning,
@@ -269,6 +276,8 @@ function GameSidebar({
 }: {
   copyInviteLink: () => Promise<void>;
   gameOver: GameOverState | null;
+  inviteLinkAvailable: boolean;
+  inviteLinkUnavailableMessage?: string;
   onResign: () => void;
   opponent: RoomPlayer | undefined;
   resigning: boolean;
@@ -287,9 +296,18 @@ function GameSidebar({
           <div className="tape"></div>
           <h3 className="font-semibold text-lg mb-2 uppercase tracking-tighter">Invite Rival</h3>
           <p className="text-xs mb-4 opacity-70 italic">Share this link to invite an opponent</p>
-          <SketchyButton className="w-full text-xs py-2 bg-white" onClick={() => void copyInviteLink()}>
+          <SketchyButton
+            className="w-full text-xs py-2 bg-white"
+            disabled={!inviteLinkAvailable}
+            onClick={() => void copyInviteLink()}
+          >
             Copy Invite Link
           </SketchyButton>
+          {!inviteLinkAvailable && inviteLinkUnavailableMessage ? (
+            <p className="mt-3 text-xs font-bold text-warning-text">
+              {inviteLinkUnavailableMessage}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -610,9 +628,11 @@ const GamePage = () => {
     ...(roomId ? { roomId } : {}),
     ...(user?.id ? { userId: user.id } : {}),
     enabled: roomAccessReady && Boolean(roomId && user?.id),
-    onRoomError: (message) => {
-      showError(message);
-      navigate('/play');
+    onRoomError: (socketError) => {
+      showError(getGameSocketErrorMessage(socketError));
+      if (shouldLeaveGameRoomAfterSocketError(socketError)) {
+        navigate('/play');
+      }
     },
     onGameOver: async (nextGameOver) => {
       if (nextGameOver.winnerId === user?.id) {
@@ -725,7 +745,9 @@ const GamePage = () => {
       }
 
       showError(getApiErrorMessage(error, 'We could not join that match. Please try again.'));
-      navigate('/play');
+      if (error instanceof ApiClientError && shouldLeaveGameRoomAfterJoinError(error.code)) {
+        navigate('/play');
+      }
     } finally {
       setJoining(false);
     }
@@ -842,11 +864,19 @@ const GamePage = () => {
     }
   };
 
-  const invitePath = `${window.location.origin}/game/${roomId}${inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : ''}`;
+  const isPrivateRoom = Boolean(room.isPrivate || matchPreview?.isPrivate);
+  const inviteLinkAvailable = !isPrivateRoom || Boolean(inviteToken || matchPreview?.inviteUrl);
+  const invitePath = matchPreview?.inviteUrl
+    ? new URL(matchPreview.inviteUrl, window.location.origin).toString()
+    : `${window.location.origin}/game/${roomId}${inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : ''}`;
 
   const copyInviteLink = async () => {
-    const link = invitePath;
-    await copyToClipboard(link, 'Invite link copied!');
+    if (!inviteLinkAvailable) {
+      showError('Private invite link unavailable from this URL.');
+      return;
+    }
+
+    await copyToClipboard(invitePath, 'Invite link copied!');
   };
 
   return (
@@ -871,6 +901,8 @@ const GamePage = () => {
         <GameSidebar
           copyInviteLink={copyInviteLink}
           gameOver={gameOver}
+          inviteLinkAvailable={inviteLinkAvailable}
+          inviteLinkUnavailableMessage="Private invite link unavailable from this URL."
           onResign={() => void handleResignMatch()}
           opponent={opponent}
           resigning={resigning}

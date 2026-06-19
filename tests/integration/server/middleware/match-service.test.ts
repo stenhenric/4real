@@ -329,6 +329,52 @@ test('completeMatch rejects non-participant winners before rating or settlement'
   assert.equal(match.savedWithSession, false);
 });
 
+test('completeMatch settles a valid winner even when rating application is pending', async (t) => {
+  registerSessionCleanup(t);
+
+  const hostId = new mongoose.Types.ObjectId();
+  const guestId = new mongoose.Types.ObjectId();
+  const match = createMatchDocument({
+    roomId: 'rating-pending-room',
+    player1Id: hostId,
+    player2Id: guestId,
+    status: 'active',
+    wager: '0.000000',
+  });
+  const moveHistory = [
+    { userId: hostId.toString(), col: 0, row: 5 },
+    { userId: guestId.toString(), col: 1, row: 5 },
+    { userId: hostId.toString(), col: 0, row: 4 },
+    { userId: guestId.toString(), col: 1, row: 4 },
+    { userId: hostId.toString(), col: 0, row: 3 },
+    { userId: guestId.toString(), col: 1, row: 3 },
+    { userId: hostId.toString(), col: 0, row: 2 },
+  ];
+  const getMatchMock = mock.method(MatchService, 'getMatchByRoomId', async () => match as any);
+  const ratingMock = mock.method(RatingService, 'applyMatchRating', async () => {
+    throw new Error('rating backend unavailable');
+  });
+  const existingRatingMock = mock.method(RatingService, 'getMatchRatingResult', async () => {
+    throw new Error('rating lookup unavailable');
+  });
+
+  t.after(() => getMatchMock.mock.restore());
+  t.after(() => ratingMock.mock.restore());
+  t.after(() => existingRatingMock.mock.restore());
+
+  const completed = await MatchService.completeMatch(match.roomId, hostId.toString(), moveHistory);
+
+  assert.ok(completed);
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.winnerId, hostId.toString());
+  assert.equal(completed.settlementReason, 'winner');
+  assert.equal(completed.outcome, 'player1_win');
+  assert.deepEqual(completed.moveHistory, moveHistory);
+  assert.equal((completed.ratingResult as { status?: string } | undefined)?.status, 'pending');
+  assert.equal(ratingMock.mock.callCount(), 1);
+  assert.equal(existingRatingMock.mock.callCount(), 1);
+});
+
 test('getActiveMatches only returns public waiting matches using the indexed listing query', async (t) => {
   let capturedFilter: Record<string, unknown> | undefined;
   const findMock = mock.method(Match, 'find', (filter: Record<string, unknown>) => {

@@ -12,11 +12,17 @@ import {
   requireVerifiedAccount,
 } from '../../../../server/middleware/auth.middleware.ts';
 import { errorHandler } from '../../../../server/middleware/error.middleware.ts';
-import { getWithdrawalStatusHandler } from '../../../../server/controllers/transaction.controller.ts';
+import {
+  getWithdrawalStatusHandler,
+  requestWithdrawalHandler,
+} from '../../../../server/controllers/transaction.controller.ts';
+import { validateBody } from '../../../../server/middleware/validate.middleware.ts';
 import { WithdrawalRepository } from '../../../../server/repositories/withdrawal.repository.ts';
 import { AuthMfaService } from '../../../../server/services/auth-mfa.service.ts';
 import { AuthSessionService } from '../../../../server/services/auth-session.service.ts';
+import { WithdrawalIntentService } from '../../../../server/services/withdrawal-intent.service.ts';
 import { unauthorized } from '../../../../server/utils/http-error.ts';
+import { withdrawRequestSchema } from '../../../../server/validation/request-schemas.ts';
 import type { AuthenticatedPrincipalDTO } from '../../../../server/types/api.ts';
 
 function principal(overrides: Partial<AuthenticatedPrincipalDTO> = {}): AuthenticatedPrincipalDTO {
@@ -82,8 +88,8 @@ async function startParityApp(t: TestContext, params: {
     '/api/transactions/withdraw',
     authenticateToken,
     requireVerifiedAccount,
-    requireMfaStepUp,
-    (_req, res) => res.status(202).json({ ok: true, route: 'withdraw' }),
+    validateBody(withdrawRequestSchema),
+    asyncRoute(requestWithdrawalHandler as RequestHandler),
   );
   app.get(
     '/api/transactions/withdrawals/:withdrawalId',
@@ -110,7 +116,12 @@ function authHeaders(token: string) {
 }
 
 async function parseJson(response: Response) {
-  return response.json() as Promise<{ code?: string; ok?: boolean; route?: string }>;
+  return response.json() as Promise<{
+    code?: string;
+    details?: Record<string, unknown>;
+    ok?: boolean;
+    route?: string;
+  }>;
 }
 
 test('production-parity sensitive routes reject unauthenticated requests', async (t) => {
@@ -204,7 +215,11 @@ test('production-parity admin and merchant-sensitive routes accept authorized ad
   assert.deepEqual(await parseJson(orderResponse), { ok: true, route: 'order-status' });
 });
 
-test('production-parity withdrawal route requires MFA step-up for normal users', async (t) => {
+test('production-parity withdrawal route starts the dedicated withdrawal MFA intent for normal users', async (t) => {
+  const createIntentMock = t.mock.method(WithdrawalIntentService, 'createIntent', async () => ({
+    withdrawalIntentId: 'withdrawal-intent-1',
+    challengeId: 'withdrawal-challenge-1',
+  }));
   const baseUrl = await startParityApp(t, {
     principals: {
       user: principal(),
@@ -216,15 +231,38 @@ test('production-parity withdrawal route requires MFA step-up for normal users',
     headers: {
       ...authHeaders('user'),
       'Content-Type': 'application/json',
+      'Idempotency-Key': 'withdraw-idem-1',
     },
-    body: JSON.stringify({}),
+    body: JSON.stringify({
+      amountUsdt: '5',
+      toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    }),
   });
 
   assert.equal(response.status, 403);
-  assert.equal((await parseJson(response)).code, 'MFA_REQUIRED');
+  const body = await parseJson(response);
+  assert.equal(body.code, 'MFA_REQUIRED');
+  assert.deepEqual(body.details, {
+    nextStep: 'withdrawal_mfa',
+    challengeId: 'withdrawal-challenge-1',
+    withdrawalIntentId: 'withdrawal-intent-1',
+    amountUsdt: '5.000000',
+    toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+  });
+  assert.equal(createIntentMock.mock.callCount(), 1);
+  assert.deepEqual(createIntentMock.mock.calls[0]?.arguments, [{
+    userId: 'user-1',
+    toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    amountUsdt: '5.000000',
+    idempotencyKey: 'withdraw-idem-1',
+  }]);
 });
 
-test('production-parity withdrawal route accepts normal users only after fresh MFA step-up', async (t) => {
+test('production-parity withdrawal route does not let generic step-up bypass withdrawal intent MFA', async (t) => {
+  const createIntentMock = t.mock.method(WithdrawalIntentService, 'createIntent', async () => ({
+    withdrawalIntentId: 'withdrawal-intent-fresh-stepup',
+    challengeId: 'withdrawal-challenge-fresh-stepup',
+  }));
   const baseUrl = await startParityApp(t, {
     principals: {
       user: principal(),
@@ -237,12 +275,77 @@ test('production-parity withdrawal route accepts normal users only after fresh M
     headers: {
       ...authHeaders('user'),
       'Content-Type': 'application/json',
+      'Idempotency-Key': 'withdraw-idem-fresh-stepup',
     },
-    body: JSON.stringify({ amountUsdt: '5.000000', toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' }),
+    body: JSON.stringify({
+      amountUsdt: '5.000000',
+      toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    }),
   });
 
-  assert.equal(response.status, 202);
-  assert.deepEqual(await parseJson(response), { ok: true, route: 'withdraw' });
+  assert.equal(response.status, 403);
+  const body = await parseJson(response);
+  assert.equal(body.code, 'MFA_REQUIRED');
+  assert.equal(body.details?.nextStep, 'withdrawal_mfa');
+  assert.equal(body.details?.withdrawalIntentId, 'withdrawal-intent-fresh-stepup');
+  assert.equal(createIntentMock.mock.callCount(), 1);
+});
+
+test('production-parity withdrawal route rejects users without MFA setup before creating an intent', async (t) => {
+  const createIntentMock = t.mock.method(WithdrawalIntentService, 'createIntent', async () => {
+    throw new Error('createIntent should not run when MFA is not configured');
+  });
+  const baseUrl = await startParityApp(t, {
+    principals: {
+      user: principal({
+        mfaEnabled: false,
+      }),
+    },
+  });
+
+  const response = await fetch(`${baseUrl}/api/transactions/withdraw`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders('user'),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'withdraw-idem-no-mfa',
+    },
+    body: JSON.stringify({
+      amountUsdt: '5.000000',
+      toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal((await parseJson(response)).code, 'MFA_SETUP_REQUIRED');
+  assert.equal(createIntentMock.mock.callCount(), 0);
+});
+
+test('production-parity withdrawal route requires an idempotency key before creating an intent', async (t) => {
+  const createIntentMock = t.mock.method(WithdrawalIntentService, 'createIntent', async () => {
+    throw new Error('createIntent should not run without an idempotency key');
+  });
+  const baseUrl = await startParityApp(t, {
+    principals: {
+      user: principal(),
+    },
+  });
+
+  const response = await fetch(`${baseUrl}/api/transactions/withdraw`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders('user'),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      amountUsdt: '5.000000',
+      toAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal((await parseJson(response)).code, 'MISSING_IDEMPOTENCY_KEY');
+  assert.equal(createIntentMock.mock.callCount(), 0);
 });
 
 test('withdrawal status lookup is scoped to the authenticated user', async (t) => {

@@ -6,6 +6,11 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     build: {
+      modulePreload: {
+        resolveDependencies(filename, deps) {
+          return deps.filter(dep => !dep.includes('tonconnect'));
+        }
+      },
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -28,7 +33,8 @@ export default defineConfig(() => {
             if (
               id.includes('react-router-dom') ||
               id.includes('react-dom') ||
-              id.includes(`${path.sep}react${path.sep}`)
+              id.includes('/react/') ||
+              id.includes('\\react\\')
             ) {
               return 'react-vendor';
             }

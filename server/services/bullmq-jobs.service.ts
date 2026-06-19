@@ -1,4 +1,4 @@
-import { Queue, Worker, type JobsOptions } from 'bullmq';
+import { Queue, Worker, type JobsOptions, type QueueOptions, type WorkerOptions } from 'bullmq';
 
 import { getEnv } from '../config/env.ts';
 import { getBullmqRedisClient } from './redis.service.ts';
@@ -11,6 +11,10 @@ interface BullmqJobDefinition {
   repeatEveryMs: number;
   processor: () => Promise<void>;
 }
+
+type BullmqJobData = Record<string, unknown>;
+type BullmqQueue = Queue<BullmqJobData, unknown, string, BullmqJobData, unknown, string>;
+type BullmqWorker = Worker<BullmqJobData, unknown, string>;
 
 export interface BullmqBackgroundJobRuntime {
   stop: () => Promise<void>;
@@ -29,6 +33,14 @@ const defaultJobOptions: JobsOptions = {
 };
 let activeBullmqRuntime: BullmqBackgroundJobRuntime | null = null;
 
+function asBullmqQueueConnection(connection: ReturnType<typeof getBullmqRedisClient>): QueueOptions['connection'] {
+  return connection as unknown as QueueOptions['connection'];
+}
+
+function asBullmqWorkerConnection(connection: ReturnType<typeof getBullmqRedisClient>): WorkerOptions['connection'] {
+  return connection as unknown as WorkerOptions['connection'];
+}
+
 registerMetricsCollector('bullmq_queue_depth', async () => {
   const queueDepths = await activeBullmqRuntime?.getQueueDepths();
   if (!queueDepths) {
@@ -41,7 +53,7 @@ registerMetricsCollector('bullmq_queue_depth', async () => {
 });
 
 async function enqueueDlqEntry(
-  dlqQueue: Queue<Record<string, unknown>>,
+  dlqQueue: BullmqQueue,
   definition: BullmqJobDefinition,
   failureMessage: string,
   attemptsMade: number,
@@ -71,31 +83,31 @@ export async function startBullmqBackgroundJobs(
   definitions: BullmqJobDefinition[],
 ): Promise<BullmqBackgroundJobRuntime> {
   const redis = getBullmqRedisClient();
-  const queues: Queue<Record<string, unknown>>[] = [];
-  const dlqQueues: Queue<Record<string, unknown>>[] = [];
-  const workers: Worker<Record<string, unknown>>[] = [];
+  const queues: BullmqQueue[] = [];
+  const dlqQueues: BullmqQueue[] = [];
+  const workers: BullmqWorker[] = [];
   const workerConnections: Array<ReturnType<typeof getBullmqRedisClient>> = [];
 
   for (const definition of definitions) {
-    const queue = new Queue<Record<string, unknown>>(definition.queueName, {
-      connection: redis,
+    const queue = new Queue<BullmqJobData, unknown, string, BullmqJobData, unknown, string>(definition.queueName, {
+      connection: asBullmqQueueConnection(redis),
       defaultJobOptions,
     });
-    const dlqQueue = new Queue<Record<string, unknown>>(`${definition.queueName}-dlq`, {
-      connection: redis,
+    const dlqQueue = new Queue<BullmqJobData, unknown, string, BullmqJobData, unknown, string>(`${definition.queueName}-dlq`, {
+      connection: asBullmqQueueConnection(redis),
       defaultJobOptions: {
         removeOnComplete: 100,
         removeOnFail: 500,
       },
     });
     const workerConnection = redis.duplicate();
-    const worker = new Worker<Record<string, unknown>>(
+    const worker = new Worker<BullmqJobData, unknown, string>(
       definition.queueName,
       async () => {
         await definition.processor();
       },
       {
-        connection: workerConnection,
+        connection: asBullmqWorkerConnection(workerConnection),
         concurrency: 1,
       },
     );

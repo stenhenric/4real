@@ -51,7 +51,7 @@ function drawPreviewFrame(
 
   // R wins exactly at step 7 (index 6: [2, 3, 'R']).
   const winningLine = step > 6 ? WINNING_LINE : undefined;
-  drawConnectFourBoard(canvas, board, winningLine);
+  drawConnectFourBoard(canvas, board, winningLine, { inset: 'auto' });
 }
 
 function ConnectFourPreview() {

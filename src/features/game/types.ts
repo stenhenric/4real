@@ -18,6 +18,7 @@ export interface RoomState {
   status: 'waiting' | 'active' | 'completed';
   moves: MatchMoveDTO[];
   wager: MatchDTO['wager'];
+  isPrivate?: boolean;
   winnerId?: string;
   settlementReason?: MatchDTO['settlementReason'];
   outcome?: MatchOutcome;

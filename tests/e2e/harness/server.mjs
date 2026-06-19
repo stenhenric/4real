@@ -608,7 +608,7 @@ function createMerchantDashboard() {
   };
 }
 
-function serializeMatch(match) {
+function serializeMatch(match, options = {}) {
   return {
     _id: match.id,
     roomId: match.roomId,
@@ -627,7 +627,7 @@ function serializeMatch(match) {
     commissionRate: formatRate(commissionRate),
     createdAt: match.createdAt,
     lastActivityAt: match.lastActivityAt,
-    ...(match.inviteToken ? { inviteUrl: `/game/${match.roomId}?invite=${encodeURIComponent(match.inviteToken)}` } : {}),
+    ...(options.includeInviteUrl && match.inviteToken ? { inviteUrl: `/game/${match.roomId}?invite=${encodeURIComponent(match.inviteToken)}` } : {}),
   };
 }
 
@@ -652,6 +652,7 @@ function buildRoomState(match) {
     status: match.status,
     moves: match.moveHistory,
     wager: formatUsdt(match.wager),
+    isPrivate: match.isPrivate,
     ...(match.winnerId ? { winnerId: match.winnerId } : {}),
     ...(match.settlementReason ? { settlementReason: match.settlementReason } : {}),
     ...(match.outcome ? { outcome: match.outcome } : {}),
@@ -1186,7 +1187,7 @@ function createApp() {
       return;
     }
 
-    res.status(201).json(serializeMatch(match));
+    res.status(201).json(serializeMatch(match, { includeInviteUrl: true }));
   });
 
   app.get('/api/matches/user/:userId', requireAuth, (req, res) => {

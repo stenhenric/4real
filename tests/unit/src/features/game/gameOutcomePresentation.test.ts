@@ -6,6 +6,11 @@ import {
   getVerdictHeadline,
   getVerdictMessage,
 } from '../../../../../src/features/game/gameOutcomePresentation.ts';
+import {
+  getGameSocketErrorMessage,
+  shouldLeaveGameRoomAfterJoinError,
+  shouldLeaveGameRoomAfterSocketError,
+} from '../../../../../src/features/game/socketErrorHandling.ts';
 import type { GameOverState, RoomState } from '../../../../../src/features/game/types.ts';
 
 function makeRoom(overrides: Partial<RoomState> = {}): RoomState {
@@ -75,5 +80,43 @@ describe('game outcome presentation', () => {
     assert.match(getVerdictMessage({ gameOver, isDraw: false, isWin: true, room }), /settled in your favor/i);
     assert.equal(getVerdictHeadline({ gameOver, isDraw: false, isWin: false, room }), 'You resigned');
     assert.match(getVerdictMessage({ gameOver, isDraw: false, isWin: false, room }), /settled for your opponent/i);
+  });
+
+  it('keeps players in the room for nonfatal socket move errors', () => {
+    assert.equal(shouldLeaveGameRoomAfterSocketError({
+      code: 'SOCKET_ERROR',
+      message: 'Unexpected socket error',
+    }), false);
+    assert.equal(shouldLeaveGameRoomAfterSocketError({
+      code: 'MAKE_MOVE_RATE_LIMITED',
+      message: 'Too many move requests',
+    }), false);
+    assert.equal(shouldLeaveGameRoomAfterSocketError({
+      code: 'MATCH_NOT_FOUND',
+      message: 'Match not found',
+    }), true);
+  });
+
+  it('uses user-safe socket error messages instead of raw internals', () => {
+    assert.equal(getGameSocketErrorMessage({
+      code: 'SOCKET_ERROR',
+      message: 'MongoServerError: duplicate key raw detail',
+    }), 'The move could not be processed. Please try again.');
+    assert.equal(getGameSocketErrorMessage({
+      code: 'MAKE_MOVE_RATE_LIMITED',
+      message: 'Too many move requests',
+    }), 'Too many move attempts. Please slow down.');
+    assert.equal(getGameSocketErrorMessage({
+      code: 'UNKNOWN_MATCH_WARNING',
+      message: 'The room changed state.',
+    }), 'The room changed state.');
+  });
+
+  it('leaves the join preview only for unavailable match errors', () => {
+    assert.equal(shouldLeaveGameRoomAfterJoinError('MATCH_NOT_FOUND'), true);
+    assert.equal(shouldLeaveGameRoomAfterJoinError('MATCH_ALREADY_FULL'), true);
+    assert.equal(shouldLeaveGameRoomAfterJoinError('MATCH_ALREADY_SETTLED'), true);
+    assert.equal(shouldLeaveGameRoomAfterJoinError('INSUFFICIENT_BALANCE'), false);
+    assert.equal(shouldLeaveGameRoomAfterJoinError('SOCKET_ERROR'), false);
   });
 });

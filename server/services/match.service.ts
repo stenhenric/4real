@@ -15,7 +15,7 @@ import { AuditService } from './audit.service.ts';
 import { TransactionService } from './transaction.service.ts';
 import { CacheKeys, invalidateCacheKeys } from './cache.service.ts';
 import { trustFilter } from '../utils/trusted-filter.ts';
-import { RatingService } from './rating.service.ts';
+import { RatingService, RATING_SYSTEM } from './rating.service.ts';
 
 type MatchSettlementReason = NonNullable<IMatch['settlementReason']>;
 
@@ -90,6 +90,34 @@ function negateUsdtAmount(value: string): string {
 
 function subtractUsdtAmounts(left: string, right: string): string {
   return formatUsdtAmount(parseUsdtAmount(left) - parseUsdtAmount(right));
+}
+
+function createPendingRatingResult({
+  outcome,
+  p1IdStr,
+  p2IdStr,
+}: {
+  outcome: MatchOutcome;
+  p1IdStr: string;
+  p2IdStr: string;
+}): MatchRatingResultDTO {
+  return {
+    status: 'pending',
+    outcome,
+    formulaVersion: RATING_SYSTEM.formulaVersion,
+    player1: {
+      userId: p1IdStr,
+      before: 0,
+      delta: 0,
+      after: 0,
+    },
+    player2: {
+      userId: p2IdStr,
+      before: 0,
+      delta: 0,
+      after: 0,
+    },
+  };
 }
 
 async function invalidatePublicMatchReadCaches(): Promise<void> {
@@ -657,15 +685,38 @@ export class MatchService {
 
     let ratingResult: MatchRatingResultDTO | undefined;
     if (p2IdStr) {
-      ratingResult = await RatingService.applyMatchRating({
-        matchId: match._id,
-        roomId: match.roomId,
-        player1Id: p1IdStr,
-        player2Id: p2IdStr,
-        outcome,
-        settlementReason,
-        session,
-      });
+      try {
+        ratingResult = await RatingService.applyMatchRating({
+          matchId: match._id,
+          roomId: match.roomId,
+          player1Id: p1IdStr,
+          player2Id: p2IdStr,
+          outcome,
+          settlementReason,
+          session,
+        });
+      } catch (error) {
+        try {
+          ratingResult = await RatingService.getMatchRatingResult(match._id, session)
+            ?? createPendingRatingResult({ outcome, p1IdStr, p2IdStr });
+        } catch (ratingLookupError) {
+          ratingResult = createPendingRatingResult({ outcome, p1IdStr, p2IdStr });
+          logger.error('match.rating_lookup_failed', {
+            roomId: match.roomId,
+            matchId: match._id.toString(),
+            outcome,
+            settlementReason,
+            error: ratingLookupError,
+          });
+        }
+        logger.error('match.rating_apply_failed', {
+          roomId: match.roomId,
+          matchId: match._id.toString(),
+          outcome,
+          settlementReason,
+          error,
+        });
+      }
     }
 
     if (isPositiveUsdtAmount(match.wager)) {

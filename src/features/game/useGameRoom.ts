@@ -8,6 +8,7 @@ import {
   getVisibleGameRoomSnapshot,
   type GameRoomSnapshot,
 } from './gameRoomSnapshot';
+import type { GameSocketError } from './socketErrorHandling';
 import type { GameOverState, RoomState, WinningLine } from './types';
 import type { MatchDTO } from '../../types/api';
 
@@ -19,17 +20,12 @@ interface GameOverPayload {
   winningLine?: WinningLine;
 }
 
-interface SocketErrorPayload {
-  code?: string;
-  message: string;
-}
-
 interface UseGameRoomOptions {
   roomId?: string;
   userId?: string;
   enabled?: boolean;
   onGameOver?: (gameOver: GameOverState, room: RoomState) => Promise<void> | void;
-  onRoomError?: (message: string) => void;
+  onRoomError?: (error: GameSocketError) => void;
 }
 
 export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoomError }: UseGameRoomOptions) {
@@ -38,8 +34,8 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
   const activeKey = getGameRoomSessionKey({ roomId, userId, enabled });
   const { gameOver, room } = getVisibleGameRoomSnapshot(snapshot, activeKey);
 
-  const handleRoomError = useEffectEvent((message: string) => {
-    onRoomError?.(message);
+  const handleRoomError = useEffectEvent((error: GameSocketError) => {
+    onRoomError?.(error);
   });
 
   const handleGameOver = useEffectEvent(async (nextGameOver: GameOverState, nextRoom: RoomState) => {
@@ -64,11 +60,14 @@ export function useGameRoom({ roomId, userId, enabled = true, onGameOver, onRoom
     };
 
     const handleConnectError = (error: Error) => {
-      handleRoomError(error.message);
+      handleRoomError({
+        code: 'SOCKET_CONNECT_ERROR',
+        message: error.message,
+      });
     };
 
-    const handleServerError = (error: string | SocketErrorPayload) => {
-      handleRoomError(typeof error === 'string' ? error : error.message);
+    const handleServerError = (error: string | GameSocketError) => {
+      handleRoomError(typeof error === 'string' ? { message: error } : error);
     };
 
     const handleGameStarted = (nextRoom: RoomState) => {

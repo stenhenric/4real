@@ -1,5 +1,6 @@
 import { cn } from '../../utils/cn';
 import type { MatchDTO } from '../../types/api';
+import { getProfileMatchOutcomePresentation } from '../../features/profile/profilePresentation';
 import { buildMiniMatchBoardCells, getMiniMatchDiscClass } from './miniMatchBoard';
 
 function MiniBoardPreview({ match }: { match: MatchDTO }) {
@@ -29,12 +30,12 @@ interface MiniMatchCardProps {
 }
 
 export function MiniMatchCard({ match, currentUserId }: MiniMatchCardProps) {
-  const outcome =
-    match.winnerId === currentUserId
-      ? 'VICTORY'
-      : match.winnerId === 'draw'
-        ? 'DRAW'
-        : 'DEFEAT';
+  const outcome = getProfileMatchOutcomePresentation(match, currentUserId ?? '');
+  const outcomeClass = outcome.tone === 'success'
+    ? 'text-success-text'
+    : outcome.tone === 'warning'
+      ? 'text-warning-text'
+      : 'text-danger-text';
 
   return (
     <article className="sketch-card grid gap-4 p-4 transition-colors hover:bg-black/5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -46,8 +47,8 @@ export function MiniMatchCard({ match, currentUserId }: MiniMatchCardProps) {
         </p>
         <p className="mt-1 text-[10px] font-mono font-bold uppercase opacity-45">
           Outcome:{' '}
-          <span className={outcome === 'VICTORY' ? 'text-success-text' : outcome === 'DRAW' ? 'text-warning-text' : 'text-danger-text'}>
-            {outcome}
+          <span className={outcomeClass}>
+            {outcome.label}
           </span>
         </p>
       </div>

@@ -15,6 +15,11 @@ export interface ProfileAchievement {
   unlocked: boolean;
 }
 
+export interface ProfileMatchOutcomePresentation {
+  label: 'VICTORY' | 'DEFEAT' | 'DRAW' | 'CANCELED' | 'EXPIRED' | 'NO CONTEST';
+  tone: 'success' | 'danger' | 'warning';
+}
+
 export const PROFILE_MATCH_FILTERS: Array<{ id: ProfileMatchFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'wins', label: 'Wins' },
@@ -86,6 +91,33 @@ export function getVisibleProfileMatches(
     if (filter === 'draws') return isDraw(match);
     return isWagered(match);
   });
+}
+
+export function getProfileMatchOutcomePresentation(
+  match: MatchDTO,
+  userId: string,
+): ProfileMatchOutcomePresentation {
+  if (isNoContest(match)) {
+    if (match.settlementReason === 'waiting_expired') {
+      return { label: 'EXPIRED', tone: 'warning' };
+    }
+
+    if (match.settlementReason === 'resigned') {
+      return { label: 'CANCELED', tone: 'warning' };
+    }
+
+    return { label: 'NO CONTEST', tone: 'warning' };
+  }
+
+  if (isDraw(match)) {
+    return { label: 'DRAW', tone: 'warning' };
+  }
+
+  if (isWin(match, userId)) {
+    return { label: 'VICTORY', tone: 'success' };
+  }
+
+  return { label: 'DEFEAT', tone: 'danger' };
 }
 
 function hasRecentWinStreak(history: MatchDTO[], userId: string): boolean {

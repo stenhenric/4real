@@ -10,6 +10,8 @@ import { MatchService } from '../../../../server/services/match.service.ts';
 import { RealtimeMatchService } from '../../../../server/services/realtime-match.service.ts';
 import { setRedisClientForTests } from '../../../../server/services/redis.service.ts';
 import { UserService } from '../../../../server/services/user.service.ts';
+import { getSocketErrorPayload } from '../../../../server/sockets/game.socket.ts';
+import { internalServerError, notFound } from '../../../../server/utils/http-error.ts';
 import { SOCKET_IO_TRANSPORTS } from '../../../../shared/socket-config.ts';
 
 function registerRealtimeEnvCleanup(t: TestContext) {
@@ -423,6 +425,111 @@ test('checkWin returns exactly four cells when a move completes a longer connect
     [5, 1],
   ]);
 });
+
+test('RealtimeMatchService.makeMove completes a winning move as a game-over result', async (t) => {
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  process.env.NODE_ENV = 'test';
+  const roomId = 'room-winning-move';
+  const player1Id = new mongoose.Types.ObjectId();
+  const player2Id = new mongoose.Types.ObjectId();
+  const moves = [
+    { userId: player1Id.toString(), col: 0, row: 5 },
+    { userId: player2Id.toString(), col: 1, row: 5 },
+    { userId: player1Id.toString(), col: 0, row: 4 },
+    { userId: player2Id.toString(), col: 1, row: 4 },
+    { userId: player1Id.toString(), col: 0, row: 3 },
+    { userId: player2Id.toString(), col: 2, row: 5 },
+  ];
+  const registry = new GameRoomRegistry({
+    waitingRoomTtlMs: 1_000,
+    activeRoomTtlMs: 1_000,
+    completedRoomTtlMs: 1_000,
+    cleanupIntervalMs: 1_000,
+  });
+  const realtimeMatchService = new RealtimeMatchService(registry);
+  const activeMatch = {
+    _id: new mongoose.Types.ObjectId(),
+    roomId,
+    player1Id,
+    player2Id,
+    p1Username: 'host',
+    p2Username: 'guest',
+    status: 'active',
+    wager: '0.000000',
+    isPrivate: false,
+    moveHistory: moves,
+  };
+
+  const findUserMock = mock.method(UserService, 'findById', async (id: string) => ({
+    _id: new mongoose.Types.ObjectId(id),
+    username: id === player1Id.toString() ? 'host' : 'guest',
+    elo: 300,
+  } as any));
+  const getMatchMock = mock.method(MatchService, 'getMatchByRoomId', async () => activeMatch as any);
+  const completeMatchMock = mock.method(MatchService, 'completeMatch', async (
+    completedRoomId: string,
+    winnerId: string,
+    completedMoves: typeof moves,
+  ) => {
+    assert.equal(completedRoomId, roomId);
+    assert.equal(winnerId, player1Id.toString());
+    assert.equal(completedMoves.length, 7);
+
+    return {
+      ...activeMatch,
+      status: 'completed',
+      winnerId,
+      settlementReason: 'winner',
+      outcome: 'player1_win',
+      moveHistory: completedMoves,
+    } as any;
+  });
+
+  t.after(() => findUserMock.mock.restore());
+  t.after(() => getMatchMock.mock.restore());
+  t.after(() => completeMatchMock.mock.restore());
+
+  const result = await realtimeMatchService.makeMove({
+    roomId,
+    userId: player1Id.toString(),
+    col: 0,
+  });
+
+  assert.ok(result);
+  assert.equal(result.type, 'game-over');
+  assert.equal(result.winnerId, player1Id.toString());
+  assert.equal(result.room.status, 'completed');
+  assert.equal(result.room.currentTurn, null);
+  assert.equal(result.room.winnerId, player1Id.toString());
+  assert.deepEqual(result.winningLine, [
+    [2, 0],
+    [3, 0],
+    [4, 0],
+    [5, 0],
+  ]);
+  assert.equal((await registry.get(roomId))?.status, 'completed');
+});
+
+test('socket error payloads preserve operational match codes and hide internals', () => {
+  assert.deepEqual(getSocketErrorPayload(notFound('Match not found', 'MATCH_NOT_FOUND')), {
+    code: 'MATCH_NOT_FOUND',
+    message: 'Match not found',
+  });
+    assert.deepEqual(getSocketErrorPayload(internalServerError('rating secret detail', 'MATCH_SETTLEMENT_FAILED')), {
+      code: 'MATCH_SETTLEMENT_FAILED',
+      message: 'Unexpected socket error',
+    });
+    const codedInternalError = new Error('raw coded database detail') as Error & { code: string };
+    codedInternalError.code = 'MONGO_WRITE_FAILED';
+    assert.deepEqual(getSocketErrorPayload(codedInternalError), {
+      code: 'MONGO_WRITE_FAILED',
+      message: 'Unexpected socket error',
+    });
+    assert.deepEqual(getSocketErrorPayload(new Error('raw database detail')), {
+      code: 'SOCKET_ERROR',
+      message: 'Unexpected socket error',
+    });
+  });
 
 test('GameRoomRegistry keeps distributed room membership when a stale socket disconnects after reconnect', async (t) => {
   registerRealtimeEnvCleanup(t);
